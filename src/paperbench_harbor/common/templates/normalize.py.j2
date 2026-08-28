@@ -117,7 +117,12 @@ def normalize(materials: Path, submission: Path, private: Path) -> None:
     tex = tex.replace(r"\usepackage[final]{neurips_2025}", r"\usepackage[final,main]{neurips_2025}")
     tex = re.sub(r"\\iclrfinalcopy\b", "", tex)
 
-    if re.search(r"\\cite[pt]\*?\{", tex) and "\\usepackage{natbib}" not in tex:
+    uses_cvpr = re.search(r"\\usepackage(?:\[[^]]*\])?\{cvpr\}", tex)
+    if (
+        re.search(r"\\cite[pt]\*?\{", tex)
+        and "\\usepackage{natbib}" not in tex
+        and not uses_cvpr
+    ):
         documentclass = re.search(r"\\documentclass(?:\[[^]]*\])?\{[^}]*\}", tex)
         if documentclass:
             position = documentclass.end()

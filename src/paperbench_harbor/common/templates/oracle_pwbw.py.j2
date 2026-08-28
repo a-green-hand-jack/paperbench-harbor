@@ -80,7 +80,7 @@ _UNICODE_TRANSLATIONS = {
     "\u210f": r"$\hbar$",
     "\u00b2": r"$^2$",
     "\u00b3": r"$^3$",
-    "\u2032": r"$^\prime$",
+    "\u2032": "$'$",
 }
 
 
@@ -91,13 +91,13 @@ def _escape_text(segment: str) -> str:
         segment = segment.replace(char, "\\" + char)
     segment = re.sub(r"\*\*(.+?)\*\*", r"\\textbf{\1}", segment)
     segment = re.sub(r"`([^`]+)`", r"\\texttt{\1}", segment)
-    for source, replacement in _UNICODE_TRANSLATIONS.items():
-        segment = segment.replace(source, replacement)
-    for char in ("&", "%", "#"):
+    for char in ("&", "%", "#", "$"):
         segment = segment.replace(char, "\\" + char)
     segment = segment.replace("^", r"\textasciicircum{}")
     segment = re.sub(r"(?<!\\)_", r"\\_", segment)
     segment = segment.replace("~", r"\textasciitilde{}")
+    for source, replacement in _UNICODE_TRANSLATIONS.items():
+        segment = segment.replace(source, replacement)
     segment = "".join(char if ord(char) < 128 else " " for char in segment)
     return segment
 
