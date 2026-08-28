@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from paperbench_harbor.adapters.paperwritingbench.converter import (
+    PaperWritingBenchConversionConfig,
+    convert_paperwritingbench,
+)
+
+FORBIDDEN_ENV_NAMES = {"idea_dense.md", "main.pdf", "source_manifest.json"}
+
+
+def _make_paper(source: Path, venue: str, paper_id: str) -> None:
+    paper_dir = source / venue / "papers" / paper_id
+    raw = paper_dir / "raw_materials"
+    raw.mkdir(parents=True)
+    (paper_dir / f"{paper_id}.pdf").write_bytes(b"%PDF-1.4 fake")
+    (raw / "idea_sparse.md").write_text("# Title\n## Problem Statement\nA problem.\n", encoding="utf-8")
+    (raw / "idea_dense.md").write_text("# Dense idea\n", encoding="utf-8")
+    (raw / "experimental_log.md").write_text("## Experimental Setup\n- dataset\n", encoding="utf-8")
+    (raw / "figures").mkdir()
+    (raw / "figures" / "figure_1.png").write_bytes(b"\x89PNG fake")
+    (raw / "figures" / "info.json").write_text(
+        '[{"name": "figure_1.png", "caption": "A caption."}]', encoding="utf-8"
+    )
+    (raw / "original_paper_gt_citations_gpt-5.json").write_text(
+        '{"citation_info": [{"citation_text": "Alice. T. 2024.", '
+        '"extracted_paper_title": "T", "fetched_paper_title": "T"}], "p0_ids": [], "p1_ids": []}',
+        encoding="utf-8",
+    )
+
+
+def _make_source(tmp_path: Path) -> Path:
+    source = tmp_path / "source"
+    _make_paper(source, "cvpr2025", "cvpr2025_aaaa")
+    _make_paper(source, "cvpr2025", "cvpr2025_bbbb")
+    _make_paper(source, "iclr2025", "iclr2025_cccc")
+    return source
+
+
+def test_convert_creates_expected_structure(tmp_path: Path) -> None:
+    config = PaperWritingBenchConversionConfig(
+        source=_make_source(tmp_path), output_dir=tmp_path / "out", protocol="sparse-plotoff"
+    )
+    assert convert_paperwritingbench(config) == 3
+
+    task_dir = tmp_path / "out" / "pwbw-0001"
+    assert (task_dir / "task.toml").is_file()
+    assert (task_dir / "instruction.md").is_file()
+    materials = task_dir / "environment" / "materials"
+    assert (materials / "idea_sparse.md").is_file()
+    assert (materials / "experimental_log.md").is_file()
+    assert (materials / "figures" / "figure_1.png").is_file()
+    assert (materials / "conference_template" / "template.tex").is_file()
+    assert (task_dir / "solution" / "solve.sh").is_file()
+    assert (task_dir / "solution" / "oracle_pwbw.py").is_file()
+    assert (task_dir / "solution" / "private" / "cvpr2025_aaaa.pdf").is_file()
+    assert (task_dir / "tests" / "private" / "idea_dense.md").is_file()
+    assert (task_dir / "tests" / "private" / "source_manifest.json").is_file()
+
+    names = {
+        path.name
+        for path in (task_dir / "environment").rglob("*")
+        if path.is_file()
+    }
+    assert names.isdisjoint(FORBIDDEN_ENV_NAMES)
+    assert not any(name.startswith("original_paper_gt_citations") for name in names)
+
+    dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
+    assert '"task_id": "pwbw-0003"' in dataset_manifest
+    assert '"upstream_paper_id": "iclr2025_cccc"' in dataset_manifest
+
+
+def test_venue_ordering_is_deterministic(tmp_path: Path) -> None:
+    config = PaperWritingBenchConversionConfig(
+        source=_make_source(tmp_path), output_dir=tmp_path / "out", protocol="sparse-plotoff"
+    )
+    assert convert_paperwritingbench(config) == 3
+    assert convert_paperwritingbench(config) == 0
+    assert convert_paperwritingbench(
+        PaperWritingBenchConversionConfig(
+            source=config.source,
+            output_dir=config.output_dir,
+            protocol="sparse-plotoff",
+            overwrite=True,
+        )
+    ) == 3
+
+
+def test_limit_selects_first_papers(tmp_path: Path) -> None:
+    config = PaperWritingBenchConversionConfig(
+        source=_make_source(tmp_path),
+        output_dir=tmp_path / "out",
+        protocol="sparse-plotoff",
+        limit=2,
+    )
+    assert convert_paperwritingbench(config) == 2
+    assert not (tmp_path / "out" / "pwbw-0003").exists()
+
+
+def test_unimplemented_protocol_raises(tmp_path: Path) -> None:
+    config = PaperWritingBenchConversionConfig(
+        source=_make_source(tmp_path),
+        output_dir=tmp_path / "out",
+        protocol="dense-plotoff",
+    )
+    with pytest.raises(NotImplementedError):
+        convert_paperwritingbench(config)
+
+
+def test_unknown_protocol_raises(tmp_path: Path) -> None:
+    config = PaperWritingBenchConversionConfig(
+        source=_make_source(tmp_path), output_dir=tmp_path / "out", protocol="nope"
+    )
+    with pytest.raises(ValueError):
+        convert_paperwritingbench(config)
