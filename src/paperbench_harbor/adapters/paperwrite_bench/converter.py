@@ -73,16 +73,31 @@ def _read_config(config_path: Path) -> _PaperMetadata:
     )
 
 
-def _referenced_style_files(template_tex: Path) -> list[str]:
-    """Return .sty files bundled for conference styles referenced by the template."""
+_CONFERENCE_TEMPLATES_DIR = (
+    Path(__file__).resolve().parents[4] / "packaging" / "conference-templates"
+)
+
+
+def _referenced_style_files(template_tex: Path) -> dict[str, Path]:
+    """Map conference style names referenced by the template to bundled files."""
     text = template_tex.read_text(encoding="utf-8", errors="replace")
-    referenced = {
-        match.group(1)
-        for match in re.finditer(r"\\usepackage(?:\[[^]]*\])?\{([^}]+)\}", text)
-        for name in match.group(1).split(",")
-        if (_STYLES_DIR / f"{name.strip()}.sty").is_file()
-    }
-    return sorted(referenced)
+    found: dict[str, Path] = {}
+    for match in re.finditer(r"\\usepackage(?:\[[^]]*\])?\{([^}]+)\}", text):
+        for raw_name in match.group(1).split(","):
+            name = raw_name.strip()
+            if name in found:
+                continue
+            flat = _STYLES_DIR / f"{name}.sty"
+            if flat.is_file():
+                found[name] = flat
+                continue
+            if _CONFERENCE_TEMPLATES_DIR.is_dir():
+                for template_dir in sorted(_CONFERENCE_TEMPLATES_DIR.iterdir()):
+                    bundled = template_dir / f"{name}.sty"
+                    if bundled.is_file():
+                        found[name] = bundled
+                        break
+    return found
 
 
 def _copy_public_materials(resources: Path, environment_dir: Path, overview: str) -> list[Path]:
@@ -116,12 +131,44 @@ def _copy_public_materials(resources: Path, environment_dir: Path, overview: str
 
 def _copy_styles(template_tex: Path, environment_dir: Path, tests_dir: Path) -> None:
     styles = _referenced_style_files(template_tex)
-    for name in styles:
-        style = _STYLES_DIR / f"{name}.sty"
+    for name, style in styles.items():
         for target_root in (environment_dir, tests_dir):
             texmf = target_root / "texmf"
             texmf.mkdir(parents=True, exist_ok=True)
             shutil.copy2(style, texmf / f"{name}.sty")
+
+
+def _referenced_bst_files(*tex_files: Path) -> dict[str, Path]:
+    """Map bibliography styles referenced by any source to bundled files."""
+    found: dict[str, Path] = {}
+    search_dirs = [_STYLES_DIR]
+    if _CONFERENCE_TEMPLATES_DIR.is_dir():
+        search_dirs.extend(sorted(_CONFERENCE_TEMPLATES_DIR.iterdir()))
+    for tex_file in tex_files:
+        if not tex_file.is_file():
+            continue
+        text = tex_file.read_text(encoding="utf-8", errors="replace")
+        for match in re.finditer(r"\\bibliographystyle\{([^}]+)\}", text):
+            name = match.group(1).strip()
+            if name in found:
+                continue
+            for directory in search_dirs:
+                bundled = directory / f"{name}.bst"
+                if bundled.is_file():
+                    found[name] = bundled
+                    break
+    return found
+
+
+def _copy_bibliography_styles(
+    environment_dir: Path, tests_dir: Path, *tex_files: Path
+) -> None:
+    styles = _referenced_bst_files(*tex_files)
+    for name, style in styles.items():
+        for target_root in (environment_dir, tests_dir):
+            texmf = target_root / "texmf"
+            texmf.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(style, texmf / f"{name}.bst")
 
 
 def _copy_private_materials(paper_dir: Path, solution_private: Path, tests_private: Path, overview: str) -> list[Path]:
@@ -237,6 +284,12 @@ def _convert_paper(
     public_files = _copy_public_materials(resources, environment_dir, overview)
     has_code = (environment_dir / "materials" / "code").is_dir()
     _copy_styles(template_tex, environment_dir, tests_dir)
+    _copy_bibliography_styles(
+        environment_dir,
+        tests_dir,
+        template_tex,
+        original / "main.tex",
+    )
     private_files = _copy_private_materials(paper_dir, solution_private, tests_private, overview)
 
     audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)

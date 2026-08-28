@@ -2,7 +2,8 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TEXINPUTS=/workspace/texmf//:
+    TEXINPUTS=/workspace/texmf//: \
+    BSTINPUTS=/workspace/texmf//:
 
 # Network is only available during image build; tasks run with
 # allow_internet=false, so agent tooling must be baked in here.
