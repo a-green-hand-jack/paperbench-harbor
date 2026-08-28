@@ -65,26 +65,28 @@ This repository currently contains the project skeleton and implementation plan.
 1. Shared task contract and public/private leakage audit. ✅
 2. PaperWrite-Bench `short` adapter on a three-sample smoke subset. ✅
 3. Oracle, NOP-agent, and LaTeX compilation checks. ✅
-4. Full 51-task PaperWrite-Bench conversion.
-5. PaperWritingBench `sparse-plotoff` adapter on a four-sample subset. (1 task validated)
+4. Full 51-task PaperWrite-Bench conversion. ✅
+5. PaperWritingBench `sparse-plotoff` adapter on a four-sample subset. ✅
 6. Controlled scholarly-search interface.
-7. Full 200-task PaperWritingBench conversion.
+7. Full 200-task PaperWritingBench conversion. ✅
 8. Official evaluator integration and parity experiments.
 
 The PaperWrite-Bench converter is implemented (`paperbench-harbor paperwrite-bench`)
 with Jinja2 Harbor task templates, deterministic task ids, explicit
 public-material allowlists, SHA-256 provenance manifests, and leakage
-auditing. The first three tasks (`pwb-0001`..`pwb-0003`) were verified on
-Harbor 0.20.0 with Docker: oracle reward 1.0, NOP reward 0.0. A real
-claude-code agent (claude-sonnet-5 via the Apex gateway) also passed
-`pwb-0001` end-to-end with reward 1.0.
+auditing. All 51 tasks (`pwb-0001`..`pwb-0051`) were verified on Harbor
+0.20.0 with Docker: oracle reward 1.0, NOP reward 0.0. A real claude-code
+agent (claude-sonnet-5 via the Apex gateway) also passed `pwb-0001`
+end-to-end with reward 1.0.
 
 The PaperWritingBench `sparse-plotoff` converter is implemented
 (`paperbench-harbor paperwritingbench`) with the same shared contracts plus
-bundled CVPR 2025 / ICLR 2025 author templates and an oracle that assembles a
-complete paper from the raw materials and the verifier-only ground-truth
-citation cache. The first task (`pwbw-0001`) was verified on Harbor: oracle
-reward 1.0, NOP reward 0.0.
+bundled CVPR 2025 / ICLR 2025 author templates, official style files for
+NeurIPS 2025, ICLR 2026, ICML 2025, ACL, ICCV 2025, AAAI 2025, and arxiv,
+and an oracle that assembles a complete paper from the raw materials and the
+verifier-only ground-truth citation cache. All 200 tasks
+(`pwbw-0001`..`pwbw-0200`) were verified on Harbor: oracle reward 1.0, NOP
+reward 0.0.
 
 ## Local setup
 
