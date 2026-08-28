@@ -99,7 +99,12 @@ def _fix_citations(tex: str, bibliography: Path) -> str:
         if canonical:
             tex = re.sub(re.escape("{" + key + "}"), lambda _match: "{" + canonical + "}", tex)
         else:
-            append.append(f"@misc{{{key},\n  title = {{{key}}},\n  year = {{2025}}\n}}")
+            append.append(
+                "@misc{" + key + ",\n"
+                "  title = {" + key + "},\n"
+                "  year = {2025}\n"
+                "}"
+            )
     if append:
         with bibliography.open("a", encoding="utf-8") as handle:
             handle.write("\n\n" + "\n\n".join(append) + "\n")
