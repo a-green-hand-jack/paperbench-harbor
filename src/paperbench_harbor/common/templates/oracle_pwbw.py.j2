@@ -99,15 +99,50 @@ def _figure_blocks(figures_dir: Path) -> str:
     return "\n".join(blocks)
 
 
+def _escape_text(segment: str) -> str:
+    segment = re.sub(r"\*\*(.+?)\*\*", r"\\textbf{\1}", segment)
+    segment = re.sub(r"`([^`]+)`", r"\\texttt{\1}", segment)
+    for char in ("&", "%", "#"):
+        segment = segment.replace(char, "\\" + char)
+    segment = re.sub(r"(?<!\\)_", r"\\_", segment)
+    segment = segment.replace("~", r"\\textasciitilde{}")
+    return segment
+
+
+def _latexify(text: str) -> str:
+    """Minimal markdown-to-LaTeX for the oracle paper body.
+
+    Inline math ($...$) is preserved, LaTeX commands are kept verbatim, and
+    bullets become itemize lists. Not a general converter; it only needs to
+    handle the upstream raw-material style.
+    """
+    parts = text.split("$")
+    escaped = [_escape_text(part) if index % 2 == 0 else part for index, part in enumerate(parts)]
+    body = "$".join(escaped)
+
+    lines: list[str] = []
+    in_list = False
+    for line in body.splitlines():
+        bullet = re.match(r"^(\s*)-\s+(.*)$", line)
+        if bullet:
+            if not in_list:
+                lines.append("\\begin{itemize}")
+                in_list = True
+            lines.append("  \\item " + bullet.group(2).strip())
+            continue
+        if in_list:
+            lines.append("\\end{itemize}")
+            in_list = False
+        lines.append(line.strip() if line.strip() else "")
+    if in_list:
+        lines.append("\\end{itemize}")
+    return "\n".join(lines)
+
+
 def _markdown_section(label: str, body: str) -> str:
     if not body:
         return ""
-    return (
-        "\\section{" + label + "}\n"
-        "\\begin{markdown*}{smartEllipses=false}\n"
-        + body
-        + "\n\\end{markdown*}\n"
-    )
+    return "\\section{" + label + "}\n" + _latexify(body) + "\n"
 
 
 def _main_tex(
@@ -139,15 +174,6 @@ def _main_tex(
     conclusion = _markdown_section("Conclusion", _section_body(idea_text, "Expected Contribution"))
 
     body = "\n".join(part for part in (intro, related, method, experiments, conclusion) if part)
-
-    if "\\usepackage{markdown}" not in template:
-        documentclass = re.search(r"\\documentclass(?:\[[^]]*\])?\{[^}]*\}", template)
-        if documentclass:
-            insertion = (
-                "\\usepackage{markdown}\n\\usepackage[normalem]{ulem}\n"
-            )
-            position = documentclass.end()
-            template = template[:position] + "\n" + insertion + template[position:]
 
     doc = template.replace("\\begin{document}", "\\begin{document}\n" + body + "\n", 1)
     if "\\bibliography" in doc:
