@@ -66,7 +66,7 @@ This repository currently contains the project skeleton and implementation plan.
 2. PaperWrite-Bench `short` adapter on a three-sample smoke subset. ✅
 3. Oracle, NOP-agent, and LaTeX compilation checks. ✅
 4. Full 51-task PaperWrite-Bench conversion.
-5. PaperWritingBench `sparse-plotoff` adapter on a four-sample subset.
+5. PaperWritingBench `sparse-plotoff` adapter on a four-sample subset. (1 task validated)
 6. Controlled scholarly-search interface.
 7. Full 200-task PaperWritingBench conversion.
 8. Official evaluator integration and parity experiments.
@@ -75,7 +75,16 @@ The PaperWrite-Bench converter is implemented (`paperbench-harbor paperwrite-ben
 with Jinja2 Harbor task templates, deterministic task ids, explicit
 public-material allowlists, SHA-256 provenance manifests, and leakage
 auditing. The first three tasks (`pwb-0001`..`pwb-0003`) were verified on
-Harbor 0.20.0 with Docker: oracle reward 1.0, NOP reward 0.0.
+Harbor 0.20.0 with Docker: oracle reward 1.0, NOP reward 0.0. A real
+claude-code agent (claude-sonnet-5 via the Apex gateway) also passed
+`pwb-0001` end-to-end with reward 1.0.
+
+The PaperWritingBench `sparse-plotoff` converter is implemented
+(`paperbench-harbor paperwritingbench`) with the same shared contracts plus
+bundled CVPR 2025 / ICLR 2025 author templates and an oracle that assembles a
+complete paper from the raw materials and the verifier-only ground-truth
+citation cache. The first task (`pwbw-0001`) was verified on Harbor: oracle
+reward 1.0, NOP reward 0.0.
 
 ## Local setup
 
