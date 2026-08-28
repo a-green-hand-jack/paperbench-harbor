@@ -6,7 +6,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from paperbench_harbor.common.audit import audit_forbidden_names
@@ -63,13 +62,26 @@ class _PaperMetadata:
 
 
 def _read_config(config_path: Path) -> _PaperMetadata:
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    raw: dict[str, str] = {}
+    for line in config_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        key, separator, value = line.partition(": ")
+        if not separator:
+            continue
+        value = value.strip()
+        if key == "column":
+            # Upstream occasionally ships merged lines like
+            # "column: 2columnconference: CVPR25"; keep only the column token.
+            match = re.match(r"(\d+column)", value)
+            value = match.group(1) if match else value.split()[0]
+        raw[key] = value
     return _PaperMetadata(
         paper_id=config_path.parent.parent.name,
-        paper_type=str(raw.get("type", "")),
-        num_page=str(raw.get("num_page", "")),
-        column=str(raw.get("column", "")),
-        conference=str(raw.get("conference", "")),
+        paper_type=raw.get("type", ""),
+        num_page=raw.get("num_page", ""),
+        column=raw.get("column", ""),
+        conference=raw.get("conference", ""),
     )
 
 
@@ -361,11 +373,13 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = config.output_dir / "dataset-manifest.jsonl"
-    manifest_lines = []
+    manifest: dict[tuple[str, str], dict] = {}
     if manifest_path.is_file():
-        manifest_lines = [
-            line for line in manifest_path.read_text(encoding="utf-8").splitlines() if line.strip()
-        ]
+        for line in manifest_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            manifest[(entry["task_id"], entry["upstream_paper_id"])] = entry
 
     converted = 0
     for index, paper_dir in enumerate(paper_dirs, start=1):
@@ -385,19 +399,21 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
             upstream_revision=config.upstream_revision,
         )
 
-        manifest_lines.append(
-            json.dumps(
-                {
-                    "task_id": task_id,
-                    "upstream_paper_id": paper_dir.name,
-                    "overview": config.overview,
-                },
-                sort_keys=True,
-            )
-        )
+        manifest[(task_id, paper_dir.name)] = {
+            "task_id": task_id,
+            "upstream_paper_id": paper_dir.name,
+            "overview": config.overview,
+        }
         converted += 1
 
     if converted:
-        manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+        manifest_path.write_text(
+            "\n".join(
+                json.dumps(entry, sort_keys=True)
+                for entry in sorted(manifest.values(), key=lambda item: item["task_id"])
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     return converted

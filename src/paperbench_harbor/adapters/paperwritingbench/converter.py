@@ -268,11 +268,13 @@ def convert_paperwritingbench(config: PaperWritingBenchConversionConfig) -> int:
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = config.output_dir / "dataset-manifest.jsonl"
-    manifest_lines = []
+    manifest: dict[tuple[str, str], dict] = {}
     if manifest_path.is_file():
-        manifest_lines = [
-            line for line in manifest_path.read_text(encoding="utf-8").splitlines() if line.strip()
-        ]
+        for line in manifest_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            manifest[(entry["task_id"], entry["upstream_paper_id"])] = entry
 
     converted = 0
     for index, (paper_dir, metadata) in enumerate(papers, start=1):
@@ -293,20 +295,22 @@ def convert_paperwritingbench(config: PaperWritingBenchConversionConfig) -> int:
             upstream_revision=config.upstream_revision,
         )
 
-        manifest_lines.append(
-            json.dumps(
-                {
-                    "task_id": task_id,
-                    "upstream_paper_id": metadata.paper_id,
-                    "venue": metadata.venue,
-                    "protocol": config.protocol,
-                },
-                sort_keys=True,
-            )
-        )
+        manifest[(task_id, metadata.paper_id)] = {
+            "task_id": task_id,
+            "upstream_paper_id": metadata.paper_id,
+            "venue": metadata.venue,
+            "protocol": config.protocol,
+        }
         converted += 1
 
     if converted:
-        manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+        manifest_path.write_text(
+            "\n".join(
+                json.dumps(entry, sort_keys=True)
+                for entry in sorted(manifest.values(), key=lambda item: item["task_id"])
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     return converted
