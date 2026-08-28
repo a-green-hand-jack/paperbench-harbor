@@ -1,0 +1,30 @@
+# Harbor Task Configuration
+# Schema version 1.4
+
+[task]
+name = "pwb-0001"
+title = "Reconstruct paper from research materials (PaperWrite-Bench short)"
+description = "Write a complete scientific paper from research overview, figures, and references"
+version = "1.0.0"
+schema_version = "1.4"
+
+[task.metadata]
+benchmark = "PaperWrite-Bench"
+dataset = "paperwrite-bench-short"
+protocol = "short"
+upstream_id = "smoke-sample-001"
+network_policy = "none"
+
+[task.tags]
+categories = ["paper-writing", "scientific-writing", "latex"]
+difficulty = "high"
+estimated_time_minutes = 120
+
+[task.scoring]
+max_score = 100.0
+pass_threshold = 50.0
+
+[task.resources]
+cpu_limit = "4"
+memory_limit = "8G"
+timeout_seconds = 7200

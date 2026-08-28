@@ -1,0 +1,33 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\title{Compact Feature Representations for Synthetic Document Classification}
+\author{Anonymous}
+\date{}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We evaluate a compact feature representation for classifying deterministic synthetic documents into two categories. A logistic-regression classifier trained on 16-dimensional features obtains 0.90 accuracy on a held-out test split.
+\end{abstract}
+
+\section{Introduction}
+We study a controlled document-classification setting in which all inputs are synthetic. The purpose is to validate a reproducible paper-writing task contract rather than make a claim about a real-world corpus.
+
+\section{Related Work}
+Reproducible agent evaluation requires explicit task inputs and stable output artifacts \cite{harbor2024}.
+
+\section{Method}
+We generate 1,000 deterministic synthetic documents. Each document is represented by a 16-dimensional feature vector, and a logistic-regression classifier predicts one of two categories.
+
+\section{Experiments}
+We reserve 20 percent of the documents for testing and train on the remaining 80 percent. Accuracy on the held-out partition is the sole reported metric.
+
+\section{Results}
+The classifier obtains 0.90 held-out accuracy. This number is illustrative and applies only to the synthetic setup.
+
+\section{Conclusion}
+The result demonstrates that the supplied materials support a complete, compilable paper. The task does not establish performance on real-world data.
+
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}

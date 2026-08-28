@@ -11,6 +11,10 @@ build/
 # Generated benchmark data
 datasets/*
 !datasets/.gitkeep
+# Keep the committed synthetic smoke task; real generated datasets remain ignored.
+!datasets/paperwrite-bench-short/
+!datasets/paperwrite-bench-short/pwb-0001/
+!datasets/paperwrite-bench-short/pwb-0001/**
 upstream-data/
 runs/
 results/

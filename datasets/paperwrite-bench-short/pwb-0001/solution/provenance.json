@@ -1,0 +1,18 @@
+{
+  "benchmark": "PaperWrite-Bench",
+  "dataset": "paperwrite-bench-short",
+  "protocol": "short",
+  "upstream_id": "smoke-sample-001",
+  "upstream_revision": "synthetic-fixture-v1",
+  "public_materials": [
+    "research_overview.md",
+    "paper_template.tex",
+    "references.bib"
+  ],
+  "private_materials": [
+    "ground_truth.tex",
+    "ground_truth.pdf",
+    "eval_points.json"
+  ],
+  "network": false
+}
