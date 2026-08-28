@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "paperbench-harbor"
+version = "0.1.0"
+description = "Harbor adapters for PaperWritingBench and PaperWrite-Bench"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "a-green-hand-jack" },
+]
+dependencies = [
+  "jinja2>=3.1",
+  "pydantic>=2.0",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+datasets = [
+  "datasets>=3.0",
+  "huggingface-hub>=0.25",
+]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.9",
+]
+
+[project.scripts]
+paperbench-harbor = "paperbench_harbor.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paperbench_harbor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
