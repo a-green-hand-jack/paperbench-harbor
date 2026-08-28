@@ -4,10 +4,24 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     TEXINPUTS=/workspace/texmf//:
 
+# Network is only available during image build; tasks run with
+# allow_internet=false, so agent tooling must be baked in here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        git \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         texlive-full \
     && rm -rf /var/lib/apt/lists/*
+
+ARG CLAUDECODE_VERSION=2.1.199
+RUN curl -fsSL https://downloads.claude.ai/claude-code-releases/bootstrap.sh \
+    | bash -s -- ${CLAUDECODE_VERSION}
+ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /workspace
 COPY texmf/ /workspace/texmf/
