@@ -202,6 +202,9 @@ def _render_templates(
     (task_dir / "solution" / "solve.sh").write_text(
         environment.get_template("solve.sh.j2").render(**context), encoding="utf-8"
     )
+    (task_dir / "solution" / "normalize.py").write_text(
+        environment.get_template("normalize.py.j2").render(**context), encoding="utf-8"
+    )
 
 
 def _convert_paper(

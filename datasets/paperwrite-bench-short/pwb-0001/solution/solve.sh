@@ -12,19 +12,10 @@ SUBMISSION="${1:-/workspace/submission}"
 rm -rf "$SUBMISSION"
 mkdir -p "$SUBMISSION"
 
-# Ground-truth source: normalize the bibliography filename to the shared
-# submission contract, keeping citation keys untouched.
-sed -E 's/\\bibliography\{[^}]*\}/\\bibliography{references}/' \
-    "$SOLUTION_DIR/private/main.tex" > "$SUBMISSION/main.tex"
-
-cp "$MATERIALS_DIR/references.bib" "$SUBMISSION/references.bib"
-
-if [ -d "$MATERIALS_DIR/figures" ]; then
-    cp -R "$MATERIALS_DIR/figures" "$SUBMISSION/figures"
-fi
-if [ -d "$MATERIALS_DIR/tables" ]; then
-    cp -R "$MATERIALS_DIR/tables" "$SUBMISSION/tables"
-fi
+# Ground-truth source is normalized (bibliography filename, conference track
+# option, figure/table path resolution) so it compiles from the public
+# materials without altering paper content.
+python3 "$SOLUTION_DIR/normalize.py" "$MATERIALS_DIR" "$SUBMISSION" "$SOLUTION_DIR/private"
 
 if command -v pdflatex >/dev/null 2>&1 && command -v bibtex >/dev/null 2>&1; then
     (
