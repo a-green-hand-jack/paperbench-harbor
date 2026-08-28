@@ -141,11 +141,13 @@ def _main_tex(
     body = "\n".join(part for part in (intro, related, method, experiments, conclusion) if part)
 
     if "\\usepackage{markdown}" not in template:
-        template = template.replace(
-            "\\documentclass",
-            "\\usepackage{markdown}\n\\usepackage[normalem]{ulem}\n\\documentclass",
-            1,
-        )
+        documentclass = re.search(r"\\documentclass(?:\[[^]]*\])?\{[^}]*\}", template)
+        if documentclass:
+            insertion = (
+                "\\usepackage{markdown}\n\\usepackage[normalem]{ulem}\n"
+            )
+            position = documentclass.end()
+            template = template[:position] + "\n" + insertion + template[position:]
 
     doc = template.replace("\\begin{document}", "\\begin{document}\n" + body + "\n", 1)
     if "\\bibliography" in doc:
