@@ -67,7 +67,14 @@ def test_recompiles_without_shell_escape():
         ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", "main.tex"],
     ]
     for command in commands:
-        result = subprocess.run(command, cwd=build_dir, capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            cwd=build_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if command[0] == "bibtex":
             # Upstream references.bib files are occasionally malformed; bibtex
             # is best-effort and unresolved citations are not a compile error.

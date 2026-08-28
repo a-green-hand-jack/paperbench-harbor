@@ -288,6 +288,9 @@ def _convert_paper(
     tests_private = tests_dir / "private"
     for path in (environment_dir, solution_dir, solution_private, tests_dir, tests_private):
         path.mkdir(parents=True, exist_ok=True)
+    # The shared environment Dockerfile unconditionally copies texmf/; keep it
+    # present even when no extra style files are bundled for this paper.
+    (environment_dir / "texmf").mkdir(exist_ok=True)
 
     template_tex = resources / "template.tex"
     if not template_tex.is_file():
