@@ -60,9 +60,9 @@ def _build_references(citations: list[dict], submission: Path) -> list[str]:
     for index, citation in enumerate(citations, start=1):
         key = f"ref{index}"
         title = citation.get("fetched_paper_title") or citation.get("extracted_paper_title", "")
-        title = title.replace("\\", " ").replace('"', "").replace("&", r"\&")
+        title = _escape_text(title.replace("\\", " ").replace('"', ""))
         lines.append("@misc{" + key + ",")
-        lines.append("  author = {" + _author_field(citation) + "},")
+        lines.append("  author = {" + _escape_text(_author_field(citation)) + "},")
         lines.append("  title = {" + title + "},")
         lines.append("  year = {" + _year(citation) + "},")
         lines.append("}")
