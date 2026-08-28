@@ -14,6 +14,7 @@ import json
 import re
 import shutil
 import sys
+import unicodedata
 from pathlib import Path
 
 
@@ -94,12 +95,14 @@ def _figure_blocks(figures_dir: Path) -> str:
         name = figure["name"]
         if not (figures_dir / name).is_file():
             continue
-        caption = figure.get("caption", name).replace("&", r"\&")
+        caption = _escape_text(figure.get("caption", name))
         blocks.append(_figure_block(name, caption, "oracle" + str(index)))
     return "\n".join(blocks)
 
 
 def _escape_text(segment: str) -> str:
+    segment = unicodedata.normalize("NFKD", segment)
+    segment = "".join(char for char in segment if not unicodedata.combining(char))
     segment = re.sub(r"\*\*(.+?)\*\*", r"\\textbf{\1}", segment)
     segment = re.sub(r"`([^`]+)`", r"\\texttt{\1}", segment)
     for char in ("&", "%", "#"):
@@ -154,7 +157,12 @@ def _main_tex(
     citation_keys: list[str],
 ) -> str:
     template = (template_dir / "template.tex").read_text(encoding="utf-8", errors="replace")
-    template = re.sub(r"\\title\{[^}]*\}", "\\title{" + title + "}", template, count=1)
+    template = re.sub(
+        r"\\title\{[^}]*\}",
+        lambda _match: "\\title{" + title + "}",
+        template,
+        count=1,
+    )
 
     cites = ",".join(citation_keys)
     cite_command = "\\cite{" + cites + "}" if cites else ""
