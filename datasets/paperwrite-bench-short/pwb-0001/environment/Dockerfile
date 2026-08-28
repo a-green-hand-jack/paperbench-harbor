@@ -2,7 +2,7 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TEXMFHOME=/workspace/texmf
+    TEXINPUTS=/workspace/texmf//:
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

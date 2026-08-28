@@ -5,7 +5,7 @@
 FROM python:3.13-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TEXMFHOME=/tests/texmf
+    TEXINPUTS=/tests/texmf//:
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
