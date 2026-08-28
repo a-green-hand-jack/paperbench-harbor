@@ -7,13 +7,26 @@ class LeakageError(RuntimeError):
     """Raised when verifier-only material appears in the writer environment."""
 
 
-def audit_forbidden_names(public_root: Path, forbidden_names: set[str]) -> None:
-    """Fail conversion if a public task tree contains a forbidden filename."""
+def audit_forbidden_names(
+    public_root: Path,
+    forbidden_names: set[str],
+    ignore_globs: tuple[str, ...] = (),
+) -> None:
+    """Fail conversion if a public task tree contains a forbidden filename.
 
+    `ignore_globs` are pathlib-style patterns relative to `public_root` whose
+    matches are exempt, e.g. ("materials/code/**",) for public source trees.
+    """
+
+    ignored_paths = {
+        path
+        for glob in ignore_globs
+        for path in public_root.glob(glob)
+    }
     leaked = [
         path
         for path in public_root.rglob("*")
-        if path.is_file() and path.name in forbidden_names
+        if path.is_file() and path not in ignored_paths and path.name in forbidden_names
     ]
     if leaked:
         rendered = "\n".join(f"- {path}" for path in leaked)

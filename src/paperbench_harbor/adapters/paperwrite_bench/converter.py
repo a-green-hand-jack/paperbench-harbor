@@ -292,7 +292,9 @@ def _convert_paper(
     )
     private_files = _copy_private_materials(paper_dir, solution_private, tests_private, overview)
 
-    audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)
+    audit_forbidden_names(
+        environment_dir, FORBIDDEN_PUBLIC_NAMES, ignore_globs=("materials/code/**",)
+    )
     forbidden_other_overview = OVERVIEW_FILENAMES["long" if overview == "short" else "short"]
     audit_forbidden_names(environment_dir, {forbidden_other_overview})
 
