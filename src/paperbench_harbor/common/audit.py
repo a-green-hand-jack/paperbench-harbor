@@ -18,10 +18,17 @@ def audit_forbidden_names(
     matches are exempt, e.g. ("materials/code/**",) for public source trees.
     """
 
+    patterns: list[str] = []
+    for glob in ignore_globs:
+        if glob.endswith("/**"):
+            base = glob[:-3]
+            patterns.extend((base, f"{base}/*", f"{base}/**/*"))
+        else:
+            patterns.append(glob)
     ignored_paths = {
         path
-        for glob in ignore_globs
-        for path in public_root.glob(glob)
+        for pattern in patterns
+        for path in public_root.glob(pattern)
     }
     leaked = [
         path
