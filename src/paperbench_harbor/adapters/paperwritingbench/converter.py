@@ -25,6 +25,7 @@ _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "common" / "templates"
 _CONFERENCE_TEMPLATES_DIR = (
     Path(__file__).resolve().parents[4] / "packaging" / "conference-templates"
 )
+_VENDOR_DIR = Path(__file__).resolve().parents[2] / "vendor"
 _CITATION_CACHE_PATTERN = re.compile(r"^original_paper_gt_citations_.+\.json$")
 
 _PAPER_ORDER_RE = re.compile(r"(\d+)")
@@ -109,6 +110,9 @@ def _copy_private_materials(paper_dir: Path, raw: Path, solution_private: Path, 
         destination = solution_private / pdf.name
         shutil.copy2(pdf, destination)
         copied.append(destination)
+        evaluator_copy = tests_private / pdf.name
+        shutil.copy2(pdf, evaluator_copy)
+        copied.append(evaluator_copy)
 
     idea_dense = raw / "idea_dense.md"
     if idea_dense.is_file():
@@ -154,6 +158,7 @@ def _render_templates(
         "venue": metadata.venue,
         "num_page": "8",
         "column": "two-column",
+        "grader_module": "grader_pwbw",
     }
     (task_dir / "task.toml").write_text(
         environment.get_template("task.toml.j2").render(**context), encoding="utf-8"
@@ -178,6 +183,9 @@ def _render_templates(
     )
     (task_dir / "solution" / "oracle_pwbw.py").write_text(
         environment.get_template("oracle_pwbw.py.j2").render(**context), encoding="utf-8"
+    )
+    (task_dir / "tests" / "grader_pwbw.py").write_text(
+        environment.get_template("grader_pwbw.py.j2").render(**context), encoding="utf-8"
     )
 
 
@@ -204,6 +212,11 @@ def _convert_paper(
 
     public_files = _copy_public_materials(raw, environment_dir, metadata.venue)
     private_files = _copy_private_materials(paper_dir, raw, solution_private, tests_private)
+
+    shutil.copytree(
+        _VENDOR_DIR / "paper_orchestra",
+        tests_dir / "vendor" / "paper_orchestra",
+    )
 
     audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)
 
