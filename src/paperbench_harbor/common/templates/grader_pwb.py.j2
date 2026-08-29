@@ -50,6 +50,7 @@ def main() -> None:
             figure_summary_path=figure_summary if figure_summary.exists() else None,
             eval_mode="rubric",
         )
+        official["citation_summary"]["citation_f1"] = citation
         result = official
 
     OUTPUT.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
