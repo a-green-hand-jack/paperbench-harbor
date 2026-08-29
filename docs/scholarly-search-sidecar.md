@@ -18,6 +18,11 @@ title. This makes a fixed index and cutoff reproducible. The sidecar does not
 silently fetch the live web; refreshing the index is an explicit upstream-data
 step and should be recorded as an artifact.
 
+For the upstream Semantic Scholar enrichment path, use
+`/search?q=Exact+Paper+Title&source=semantic_scholar&cutoff_year=2024-11`.
+The sidecar uses `SEMANTIC_SCHOLAR_API_KEY` when present, applies the cutoff
+before fuzzy title matching, and returns only a matching paper record.
+
 This is the controlled retrieval primitive. Full upstream parity additionally
 requires populating a benchmark-approved index and wiring the agent container
 to the sidecar endpoint; arbitrary live internet access is not equivalent to
