@@ -104,6 +104,14 @@ def normalize(title: str) -> str:
 
 
 def main() -> None:
+    if not os.environ.get("JUDGE_API_KEY"):
+        OUTPUT.write_text(
+            json.dumps({"skipped": "JUDGE_API_KEY not set; official scoring requires a judge model"}),
+            encoding="utf-8",
+        )
+        print(f"OFFICIAL_EVAL_SKIPPED {OUTPUT}")
+        return
+
     judge = _judge_model()
     gt_pdfs = list(Path("/tests/private").glob("*.pdf"))
     if not gt_pdfs:
