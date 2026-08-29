@@ -76,6 +76,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         assert (task_dir / "environment" / "materials" / "research_overview.md").is_file()
         assert (task_dir / "environment" / "materials" / "template.tex").is_file()
         assert (task_dir / "environment" / "materials" / "references.bib").is_file()
+        assert (task_dir / "environment" / "materials" / "AGENTS.md").is_file()
         assert (task_dir / "solution" / "solve.sh").is_file()
         assert (task_dir / "solution" / "private" / "main.tex").is_file()
         assert (task_dir / "tests" / "test.sh").is_file()
