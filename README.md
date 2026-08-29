@@ -5,14 +5,14 @@ Harbor adapters and evaluation infrastructure for two automated scientific-paper
 - **PaperWritingBench**, introduced with *PaperOrchestra: A Multi-Agent Framework for Automated AI Research Paper Writing*.
 - **PaperWrite-Bench**, introduced with *Paper Reconstruction Evaluation: Evaluating Presentation and Hallucination in AI-written Papers*.
 
-The project converts upstream benchmark samples into isolated Harbor tasks before any writing agent is evaluated. Its primary concerns are reproducibility, public/private data separation, LaTeX artifact contracts, safe verification, and later integration of the official benchmark evaluators.
+The project converts upstream benchmark samples into isolated Harbor tasks before any writing agent is evaluated. Its primary concerns are reproducibility, public/private data separation, LaTeX artifact contracts, safe verification, and running the official benchmark evaluators alongside Harbor verification.
 
 ## Initial protocols
 
 | Benchmark | Initial Harbor protocol | Writer network policy |
 |---|---|---|
-| PaperWritingBench | `sparse-plotoff` | Controlled scholarly retrieval only |
-| PaperWrite-Bench | `short` | No network |
+| PaperWritingBench | `sparse-plotoff` | Internet enabled; controlled scholarly-search sidecar not yet implemented |
+| PaperWrite-Bench | `short` | Internet enabled for the writer; verifier recompilation remains network-free |
 
 The protocols are deliberately separate. Sparse/dense inputs, PlotOn/PlotOff settings, and short/long reconstruction overviews must not be mixed in one reported result.
 
@@ -67,9 +67,10 @@ This repository currently contains the project skeleton and implementation plan.
 3. Oracle, NOP-agent, and LaTeX compilation checks. ✅
 4. Full 51-task PaperWrite-Bench conversion. ✅
 5. PaperWritingBench `sparse-plotoff` adapter on a four-sample subset. ✅
-6. Controlled scholarly-search interface.
+6. Controlled scholarly-search interface. ✅
 7. Full 200-task PaperWritingBench conversion. ✅
-8. Official evaluator integration and parity experiments.
+8. Official evaluator integration. ✅
+9. Upstream-versus-Harbor parity experiments.
 
 The PaperWrite-Bench converter is implemented (`paperbench-harbor paperwrite-bench`)
 with Jinja2 Harbor task templates, deterministic task ids, explicit
@@ -87,6 +88,24 @@ and an oracle that assembles a complete paper from the raw materials and the
 verifier-only ground-truth citation cache. All 200 tasks
 (`pwbw-0001`..`pwbw-0200`) were verified on Harbor: oracle reward 1.0, NOP
 reward 0.0.
+
+Official evaluator integration is implemented in the verifier. PaperWrite-Bench
+uses vendored PaperRecon scoring for deterministic citation F1 and, when
+`JUDGE_API_KEY` is configured, judge-backed per-section rubric scoring plus
+figure/table coverage. PaperWritingBench uses vendored PaperOrchestra
+autoraters for AgentReview, literature-review quality, and stage-1 citation F1
+(reference extraction and title matching). These metrics are written to
+`/logs/verifier/evaluation.json`; they are diagnostic benchmark metrics and do
+not affect Harbor's binary reward. The PaperWritingBench evaluator skips all
+LLM autoraters when no judge key is configured.
+
+The repository provides a dependency-free, cutoff-aware scholarly-search
+sidecar over a versioned JSONL index (`scripts/scholarly_search_sidecar.py`).
+The sidecar is the reproducible retrieval primitive; populating a benchmark-
+approved index and starting it alongside Harbor are deployment steps. Tasks
+still retain internet access for compatibility with the upstream writer
+surface. Official evaluator wiring has been completed, but upstream-versus-
+Harbor score parity has not yet been established.
 
 ## Local setup
 

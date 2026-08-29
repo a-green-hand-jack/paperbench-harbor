@@ -2,8 +2,8 @@
 
 This document records how the generated Harbor tasks were checked against the
 upstream PaperWrite-Bench (PaperRecon) and PaperWritingBench
-(PaperOrchestra) writing pipelines, and which differences are intentional
-adaptations.
+(PaperOrchestra) writing pipelines, which official evaluators are implemented,
+and which differences remain intentional adaptations or parity gaps.
 
 Verified against upstream revisions:
 
@@ -48,10 +48,11 @@ upstream does.
 - Output contract: upstream agents edit `template.tex`; Harbor requires the
   submission contract `main.tex` + `references.bib` + `figures/` +
   `final.pdf`. Inputs are unchanged; only the output path is fixed.
-- Network policy: Harbor tasks run with `allow_internet=false`. Upstream does
-  not sandbox the writer's network. Materials are self-contained (all
-  citations come from `references.bib`), but this is a deliberate hardening
-  that must be accounted for in parity experiments.
+- Network policy: Harbor tasks currently run with `allow_internet=true`, like
+  the upstream writer-facing surface. Verifier recompilation and smoke tests
+  remain isolated from the network. A controlled, cutoff-aware scholarly-search
+  sidecar is not implemented yet, so PaperWritingBench literature retrieval is
+  not reproducible in the upstream sense.
 - Harness post-processing (reflection loop, page-limit adjustment, chktex,
   "AI-Generated" watermark) is not part of the Harbor task; the agent has the
   full agent timeout to do equivalent self-correction.
@@ -74,25 +75,48 @@ Harbor task `environment/materials/` mirrors this exactly:
 
 ### Intentional adaptations
 
-- No scholarly-search interface yet: upstream's literature agent performs a
-  web search with a research cutoff. The controlled-search sidecar is planned
-  (implementation step 6); until then tasks run without network and the
-  writer must construct the bibliography from the materials alone. This is a
-  known protocol gap, documented in `docs/implementation-plan.md`.
+- Controlled scholarly-search sidecar: the repository now provides a
+  dependency-free HTTP sidecar over a versioned JSONL index. It enforces the
+  publication cutoff before deterministic ranking. Tasks retain internet access
+  for compatibility, while a benchmark run can provide the sidecar endpoint
+  and fixed index explicitly. Populating and operating that index is still a
+  deployment concern, not part of conversion.
 - Pipeline shape: upstream is multi-agent (outline -> literature -> sections
   -> refinement). Harbor measures a single writing agent end-to-end; the
   benchmark's evaluation target is the produced paper, not the pipeline.
 
 ## Evaluation layer (both benchmarks)
 
-The Harbor verifier is currently smoke-level: submission contract, restricted
-recompilation (`-no-shell-escape`, no network), and a deterministic
-citation-vs-bibliography check. The upstream scoring (per-section rubric vs
-`eval_points.json`, hallucination analysis, citation F1 for PaperWrite-Bench;
-rubric + P0/P1 citation verification + side-by-side comparison for
-PaperWritingBench) is NOT yet integrated. Harbor scores are therefore not yet
-comparable with published upstream numbers; parity experiments remain
-(implementation step 8).
+The verifier performs the Harbor smoke checks (submission contract, restricted
+recompilation with `-no-shell-escape` and no network, and citation-vs-
+bibliography validation) and invokes official evaluator code as a separate,
+non-blocking metrics step. Results are written to
+`/logs/verifier/evaluation.json`; they never determine the binary Harbor
+reward.
+
+### PaperWrite-Bench / PaperRecon
+
+- Deterministic citation F1 always runs.
+- With `JUDGE_API_KEY`, the vendored per-section rubric evaluator runs against
+  `eval_points.json`, including figure/table coverage and context scoring.
+- The upstream agentic hallucination-verification pass is not available in the
+  verifier image because its coding-agent CLI is not bundled.
+
+### PaperWritingBench / PaperOrchestra
+
+- With `JUDGE_API_KEY`, the vendored AgentReview ensemble and
+  literature-review quality autoraters run against the recompiled submission
+  PDF.
+- Citation F1 runs at stage 1: reference extraction and title matching. The
+  upstream arXiv-ID fetch and P0/P1 classification stages are not run inside
+  the verifier.
+- Without `JUDGE_API_KEY`, the LLM autoraters are skipped and the evaluator
+  records that status instead of blocking the Harbor reward.
+
+The evaluator wiring is implemented, but upstream-versus-Harbor parity
+experiments have not yet been run. Harbor evaluator outputs therefore must not
+be presented as comparable with published upstream numbers; parity remains an
+open validation step.
 
 ## Validation evidence
 
@@ -101,3 +125,7 @@ comparable with published upstream numbers; parity experiments remain
 - Real-agent end-to-end runs (claude-code, claude-sonnet-5 via the Apex
   gateway): `pwb-0001` reward 1.0 (14-page paper), `pwbw-0001` reward 1.0
   (8-page CVPR paper).
+
+These results validate task conversion and Harbor's binary verifier contract.
+They do not constitute upstream evaluator parity results or numeric evidence
+that the official judge-backed metrics match upstream runs.
