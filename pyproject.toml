@@ -24,6 +24,11 @@ datasets = [
   "huggingface-hub>=0.25",
   "Pillow>=10.0",
 ]
+sidecar = [
+  "python-dotenv>=1.0",
+  "requests>=2.0",
+  "thefuzz>=0.22",
+]
 dev = [
   "pytest>=8.0",
   "ruff>=0.9",

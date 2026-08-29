@@ -34,9 +34,11 @@ Write a complete scientific paper based on the raw research materials in
    `references.bib`, and you must not cite works you have not obtained.
 6. Follow the page limit and formatting rules from
    `/workspace/materials/conference_template/guidelines.md`.
-7. Network access is available. You may search the scholarly literature for your
-   literature review; all claims must still be grounded in the provided
-   materials and experiments.
+7. Network access is available. Use the local PaperOrchestra sidecar for
+   scholarly literature retrieval; it applies the research cutoff before
+   fuzzy title matching and Semantic Scholar enrichment. Set
+   `SEMANTIC_SCHOLAR_API_KEY` if available. All claims must still be grounded
+   in the provided materials and experiments.
 8. Compile the final paper successfully with `pdflatex` and `bibtex` before
    finishing.
 

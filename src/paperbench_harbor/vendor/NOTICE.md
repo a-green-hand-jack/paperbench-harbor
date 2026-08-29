@@ -21,3 +21,9 @@ are fully supported).
 
 For PaperWritingBench the same approach is used with the PaperOrchestra
 autoraters under `vendor/paper_orchestra/`.
+
+The `vendor/paper_orchestra/upstream_search/` subtree additionally contains
+the upstream PaperOrchestra literature-search agent and Semantic Scholar
+utility (Google LLC, Apache-2.0), pinned from the upstream repository. The
+Harbor sidecar wraps the upstream Semantic Scholar enrichment contract without
+printing or persisting API keys.

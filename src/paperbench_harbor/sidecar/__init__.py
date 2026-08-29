@@ -1,0 +1,1 @@
+"""PaperOrchestra scholarly-search sidecar."""

@@ -217,6 +217,15 @@ def _convert_paper(
         _VENDOR_DIR / "paper_orchestra",
         tests_dir / "vendor" / "paper_orchestra",
     )
+    # Ship the upstream literature-search utility with the writer environment.
+    shutil.copytree(
+        _VENDOR_DIR / "paper_orchestra" / "upstream_search",
+        environment_dir / "paper_orchestra_search",
+    )
+    shutil.copy2(
+        Path(__file__).resolve().parents[2] / "sidecar" / "server.py",
+        environment_dir / "paper_orchestra_sidecar.py",
+    )
 
     audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)
 
