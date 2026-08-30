@@ -1,14 +1,23 @@
 # PaperOrchestra Sidecar
 
-PaperWritingBench tasks ship the pinned PaperOrchestra literature-search
-components in `environment/paper_orchestra_search/` and the sidecar launcher as
+PaperWritingBench tasks ship the pinned complete PaperOrchestra pipeline in
+`environment/paper_orchestra/` and the sidecar launcher as
 `/workspace/paper_orchestra_sidecar.py`.
 
-Start the sidecar in the writer environment:
+The generated Docker environment starts the sidecar automatically before the
+Harbor agent command through `/workspace/entrypoint.sh`. No interactive
+container operation is required.
 
-```bash
-python3 /workspace/paper_orchestra_sidecar.py --host 127.0.0.1 --port 8765 &
+The sidecar readiness endpoint is:
+
+```text
+GET /healthz
 ```
+
+The environment entrypoint waits for this endpoint before executing the agent.
+
+The upstream pipeline is copied from `google-research/paper-orchestra`; the
+sidecar is only an HTTP adapter around its search components.
 
 The sidecar exposes the two upstream search stages:
 

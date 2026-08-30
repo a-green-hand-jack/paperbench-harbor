@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+log_file=/workspace/paper_orchestra_sidecar.log
+adc_file=/tmp/paper-orchestra-application-default-credentials.json
+
+if [ -f /run/secrets/paper-orchestra.env ]; then
+  set -a
+  . /run/secrets/paper-orchestra.env
+  set +a
+fi
+
+if [ -n "${GOOGLE_APPLICATION_CREDENTIALS_JSON_B64:-}" ]; then
+  printf '%s' "${GOOGLE_APPLICATION_CREDENTIALS_JSON_B64}" | base64 -d >"${adc_file}"
+  chmod 600 "${adc_file}"
+  export GOOGLE_APPLICATION_CREDENTIALS="${adc_file}"
+fi
+
+python3 /workspace/paper_orchestra_sidecar.py \
+  --host 127.0.0.1 \
+  --port 8765 >"${log_file}" 2>&1 &
+sidecar_pid=$!
+
+cleanup() {
+  kill "${sidecar_pid}" 2>/dev/null || true
+  rm -f "${adc_file}"
+}
+trap cleanup INT TERM EXIT
+
+attempt=0
+while ! curl -fsS http://127.0.0.1:8765/healthz >/dev/null 2>&1; do
+  if ! kill -0 "${sidecar_pid}" 2>/dev/null; then
+    printf '%s\n' 'PaperOrchestra sidecar failed to start.' >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  if [ "${attempt}" -ge 60 ]; then
+    printf '%s\n' 'Timed out waiting for PaperOrchestra sidecar.' >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+# The writer only needs the local HTTP service, not upstream credentials.
+unset GEMINI_API_KEY SEMANTIC_SCHOLAR_API_KEY VERTEX_AI_PROJECT VERTEX_AI_LOCATION
+exec "$@"

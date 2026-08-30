@@ -101,13 +101,13 @@ autoraters for AgentReview, literature-review quality, and stage-1 citation F1
 not affect Harbor's binary reward. The PaperWritingBench evaluator skips all
 LLM autoraters when no judge key is configured.
 
-The repository provides a dependency-free, cutoff-aware scholarly-search
-sidecar over a versioned JSONL index (`scripts/scholarly_search_sidecar.py`).
-The sidecar is the reproducible retrieval primitive; populating a benchmark-
-approved index and starting it alongside Harbor are deployment steps. Tasks
-still retain internet access for compatibility with the upstream writer
-surface. Official evaluator wiring has been completed, but upstream-versus-
-Harbor score parity has not yet been established.
+The repository vendors the complete Apache-2.0 PaperOrchestra pipeline and
+exposes its scholarly-search stages through a thin HTTP sidecar. Generated
+PaperWritingBench Docker environments start the sidecar automatically before
+the Harbor agent command; tasks still retain internet access for compatibility
+with the upstream writer surface. Official evaluator wiring has been
+completed, but upstream-versus-Harbor score parity has not yet been
+established.
 
 ## Local setup
 

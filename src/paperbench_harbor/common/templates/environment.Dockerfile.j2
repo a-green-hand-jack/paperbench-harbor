@@ -27,15 +27,17 @@ RUN curl -fsSL https://downloads.claude.ai/claude-code-releases/bootstrap.sh \
 ENV PATH="/root/.local/bin:${PATH}"
 
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    google-genai requests thefuzz python-dotenv
+    google-genai json_repair matplotlib openai opencv-python pydantic \
+    PyMuPDF pymupdf4llm pyOpenSSL pypdf python-dotenv rich streamlit \
+    thefuzz tqdm
 
 WORKDIR /workspace
 COPY texmf/ /workspace/texmf/
 COPY materials/ /workspace/materials/
-{% if include_paper_orchestra %}
-COPY paper_orchestra_search/ /workspace/paper_orchestra_search/
+COPY paper_orchestra/ /workspace/paper_orchestra/
 COPY paper_orchestra_sidecar.py /workspace/paper_orchestra_sidecar.py
-{% endif %}
+COPY entrypoint.sh /workspace/entrypoint.sh
 RUN mkdir -p /workspace/submission
 
+ENTRYPOINT ["/workspace/entrypoint.sh"]
 CMD ["/bin/sh"]
