@@ -77,6 +77,11 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         assert (task_dir / "environment" / "materials" / "template.tex").is_file()
         assert (task_dir / "environment" / "materials" / "references.bib").is_file()
         assert (task_dir / "environment" / "materials" / "AGENTS.md").is_file()
+        assert (task_dir / "environment" / "texmf" / ".keep").is_file()
+        agents = (task_dir / "environment" / "materials" / "AGENTS.md").read_text(encoding="utf-8")
+        assert "Always include references within" not in agents
+        assert "do not embed it with a `filecontents` environment" in agents
+        assert "external `references.bib`" in agents
         assert (task_dir / "solution" / "solve.sh").is_file()
         assert (task_dir / "solution" / "private" / "main.tex").is_file()
         assert (task_dir / "tests" / "test.sh").is_file()
@@ -131,3 +136,19 @@ def test_unsupported_overview_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Unsupported overview"):
         convert_paperwrite_bench(config)
+
+
+def test_all_agent_instructions_use_external_references_file() -> None:
+    agents_dir = (
+        Path(__file__).parents[1]
+        / "src"
+        / "paperbench_harbor"
+        / "adapters"
+        / "paperwrite_bench"
+        / "agents_md"
+    )
+    for paper_type in ("method", "benchmark", "both"):
+        agents = (agents_dir / f"AGENTS_{paper_type}.md").read_text(encoding="utf-8")
+        assert "Always include references within" not in agents
+        assert "reference.bib" not in agents.replace("references.bib", "")
+        assert "external `references.bib`" in agents

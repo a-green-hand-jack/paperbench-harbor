@@ -53,6 +53,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert (materials / "idea_sparse.md").is_file()
     assert (materials / "experimental_log.md").is_file()
     assert (materials / "figures" / "figure_1.png").is_file()
+    assert (task_dir / "environment" / "texmf" / ".keep").is_file()
     assert (materials / "conference_template" / "template.tex").is_file()
     assert (task_dir / "solution" / "solve.sh").is_file()
     assert (task_dir / "solution" / "oracle_pwbw.py").is_file()

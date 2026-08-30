@@ -120,9 +120,9 @@ Ensure you are always writing good compilable LaTeX code. Common mistakes that s
 
 Ensure proper citation usage:
 
-- Always include references within \\begin{{filecontents}}{{references.bib}} ... \\end{{filecontents}}, even if they haven't changed from the previous round.
+- Keep the bibliography in the external `references.bib` file supplied in the workspace; do not embed it with a `filecontents` environment. Update that file only when the task requires it.
 - Before citing any paper, ALWAYS read the references.bib file first to find the correct citation key. Do NOT create new fictional bibtex entries.
-- Do not make any changes to reference.bib
+- Do not make any changes to references.bib
 - Verify all citation keys match exactly with those in references.bib before using them in the text.
 - Each section, especially Related Work, should have multiple citations.
 

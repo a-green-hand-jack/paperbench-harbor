@@ -311,7 +311,9 @@ def _convert_paper(
         path.mkdir(parents=True, exist_ok=True)
     # The shared environment Dockerfile unconditionally copies texmf/; keep it
     # present even when no extra style files are bundled for this paper.
-    (environment_dir / "texmf").mkdir(exist_ok=True)
+    texmf_dir = environment_dir / "texmf"
+    texmf_dir.mkdir(exist_ok=True)
+    (texmf_dir / ".keep").touch()
 
     template_tex = resources / "template.tex"
     if not template_tex.is_file():
