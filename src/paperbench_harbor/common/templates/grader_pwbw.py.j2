@@ -103,6 +103,15 @@ def normalize(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
 
+def _configure_judge_environment() -> None:
+    """Bridge Harbor's judge gate to the OpenAI-compatible autorater backend."""
+    judge_key = os.environ.get("JUDGE_API_KEY")
+    if judge_key and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = judge_key
+    if os.environ.get("OPENAI_BASE_URL") and not os.environ.get("OPENAI_API_BASE"):
+        os.environ["OPENAI_API_BASE"] = os.environ["OPENAI_BASE_URL"]
+
+
 def main() -> None:
     if not os.environ.get("JUDGE_API_KEY"):
         OUTPUT.write_text(
@@ -112,6 +121,7 @@ def main() -> None:
         print(f"OFFICIAL_EVAL_SKIPPED {OUTPUT}")
         return
 
+    _configure_judge_environment()
     judge = _judge_model()
     gt_pdfs = list(Path("/tests/private").glob("*.pdf"))
     if not gt_pdfs:

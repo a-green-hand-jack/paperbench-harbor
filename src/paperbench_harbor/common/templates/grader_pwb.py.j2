@@ -26,6 +26,15 @@ from paper_recon.evaluation.evaluate_per_section import evaluate_paper  # noqa: 
 OUTPUT = Path("/logs/verifier/evaluation.json")
 
 
+def _configure_judge_environment() -> None:
+    """Bridge Harbor's judge gate to the OpenAI-compatible evaluator backend."""
+    judge_key = os.environ.get("JUDGE_API_KEY")
+    if judge_key and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = judge_key
+    if os.environ.get("OPENAI_BASE_URL") and not os.environ.get("OPENAI_API_BASE"):
+        os.environ["OPENAI_API_BASE"] = os.environ["OPENAI_BASE_URL"]
+
+
 def main() -> None:
     pred = Path("/workspace/submission/main.tex")
     gt_root = Path("/tests/private/ground_truth_sources")
@@ -36,6 +45,7 @@ def main() -> None:
     result = {"citation_f1": citation}
 
     if os.environ.get("JUDGE_API_KEY"):
+        _configure_judge_environment()
         llm_config = LLMConfig(model=judge_model)
         agent_config = AgentConfig(agent="ClaudeCode", model=judge_model, max_turns=1)
         eval_points = Path("/tests/private/eval_points.json")
