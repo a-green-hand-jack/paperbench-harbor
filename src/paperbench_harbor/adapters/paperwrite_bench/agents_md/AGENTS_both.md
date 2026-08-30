@@ -10,7 +10,9 @@ You are planning to submit to a top-tier ML conference, which has guidelines:
 - Do not change the overall style which is mandated by the conference. Keep to the current method of including the references.bib file.
 - Do not remove the \graphicspath directive or no figures will be found.
 - Do not add `Acknowledgements` section to the paper.
-- Use a single backslash (\) for LaTeX commands instead of a double backslash (\\).
+- Use one backslash for LaTeX commands, such as `\section`. Do not write `\\section`. Standard LaTeX table row endings (`\\`) are allowed.
+
+The files `/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only; do not modify them. Write the completed document to `/workspace/submission/main.tex`. Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If figures are used, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/` and use relative paths. Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
 
 Here are some tips for each section of the paper:
 
@@ -73,7 +75,7 @@ Ensure you are always writing good compilable LaTeX code. Common mistakes that s
 
 Ensure proper citation usage:
 
-- Keep the bibliography in the external `references.bib` file supplied in the workspace; do not embed it with a `filecontents` environment. Update that file only when the task requires it.
+- Keep the bibliography in the external `references.bib` file supplied in the workspace; do not embed it with a `filecontents` environment.
 - Before citing any paper, ALWAYS read the references.bib file first to find the correct citation key. Do NOT create new fictional bibtex entries.
 - Do not make any changes to references.bib
 - Verify all citation keys match exactly with those in references.bib before using them in the text.
