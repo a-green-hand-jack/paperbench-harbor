@@ -50,7 +50,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert (task_dir / "task.toml").is_file()
     assert (task_dir / "instruction.md").is_file()
     instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
-    assert "supporting style/guideline files as read-only inputs" in instruction
+    assert "`/workspace/materials/conference_template/template.tex` and the\n   supporting style/guideline files as read-only inputs" in instruction
     assert "write the completed document to\n   `/workspace/submission/main.tex`" in instruction
     assert "fill it" not in instruction
     assert "main.tex` is the\nauthoritative compilation entry point, not necessarily the only LaTeX source\nfile" in instruction
