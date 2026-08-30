@@ -10,6 +10,7 @@ from typing import TypedDict
 from pydantic import BaseModel, ValidationError
 
 from paper_recon.common.llm import get_response_from_llm
+from paper_recon.common.latex import FIGURE_REFERENCE_PATTERN, expand_latex_source
 from paper_recon.common.log import get_logger
 
 logger = get_logger(__file__)
@@ -109,7 +110,7 @@ def normalize_figure_filename(filename: str) -> str:
 
 def extract_figures_from_latex(latex_path: Path) -> list[Figure]:
     r"""Extract all \begin{figure} / \begin{figure*} environments from a LaTeX file."""
-    content = latex_path.read_text(encoding="utf-8")
+    content = expand_latex_source(latex_path)
 
     doc_start = content.find(r"\begin{document}")
     doc_end = content.find(r"\end{document}")
@@ -373,7 +374,7 @@ def extract_figure_references(
     When classified_sections is provided, uses section names that match
     the classification results from classify_sections_for_paper.
     """
-    content = latex_path.read_text(encoding="utf-8")
+    content = expand_latex_source(latex_path)
 
     doc_start = content.find(r"\begin{document}")
     doc_end = content.find(r"\end{document}")
@@ -385,17 +386,21 @@ def extract_figure_references(
     section_map = build_section_position_map_from_classified(content, classified_sections)
     references: list[FigureReference] = []
 
-    ref_pattern = r"\\(?:auto)?[cC]?ref\{(fig:[^}]+)\}"
-    for match in re.finditer(ref_pattern, content):
-        label = match.group(1).strip()
-        position = match.start()
-        section = _find_section_at_position(position, section_map)
-        ctx_start = max(0, position - 100)
-        ctx_end = min(len(content), position + 100)
-        context_snippet = content[ctx_start:ctx_end].replace("\n", " ").strip()
-        references.append(
-            FigureReference(label=label, section=section, context_snippet=context_snippet)
-        )
+    for match in FIGURE_REFERENCE_PATTERN.finditer(content):
+        labels = [label.strip() for label in match.group(1).split(",")]
+        labels = [label for label in labels if label.startswith("fig:")]
+        for label in labels:
+            position = match.start()
+            ctx_start = max(0, position - 100)
+            ctx_end = min(len(content), position + 100)
+            context_snippet = content[ctx_start:ctx_end].replace("\n", " ").strip()
+            references.append(
+                FigureReference(
+                    label=label,
+                    section=_find_section_at_position(position, section_map),
+                    context_snippet=context_snippet,
+                )
+            )
 
     logger.info("Extracted %d figure references from %s", len(references), latex_path)
     return references

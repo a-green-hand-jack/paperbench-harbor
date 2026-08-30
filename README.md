@@ -52,11 +52,13 @@ Both adapters use the same expected writer output:
 /workspace/submission/
 ├── main.tex
 ├── references.bib
-├── figures/
-└── final.pdf
+└── figures/ (optional)
 ```
 
 The verifier treats `main.tex` as the source of truth and recompiles it in a sandbox without ground truth or judge credentials.
+
+Dataset release and reproducibility guidance is documented in
+`docs/dataset-versioning.md`.
 
 ## Development status
 

@@ -32,8 +32,10 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir \
 WORKDIR /workspace
 COPY texmf/ /workspace/texmf/
 COPY materials/ /workspace/materials/
+{% if include_paper_orchestra %}
 COPY paper_orchestra_search/ /workspace/paper_orchestra_search/
 COPY paper_orchestra_sidecar.py /workspace/paper_orchestra_sidecar.py
+{% endif %}
 RUN mkdir -p /workspace/submission
 
 CMD ["/bin/sh"]

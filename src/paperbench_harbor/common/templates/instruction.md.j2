@@ -40,10 +40,9 @@ This Harbor task requires a fixed output contract in addition to the benchmark i
 ├── sections/     (optional: files imported by main.tex)
 ├── figures/    (only if your paper uses figures)
 ├── styles/      (optional: non-standard source dependencies)
-└── final.pdf
 ```
 
-Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserve any needed subdirectories, preserve the `\graphicspath` directive configured for the `figures/` directory, and use paths relative to `figures/` in `main.tex` (for example, `\includegraphics{foo.png}`, not `\includegraphics{figures/foo.png}`). Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
+Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserve any needed subdirectories, and reference them with paths relative to the submission root (for example, `\includegraphics{figures/foo.png}`). If the supplied template has a `\graphicspath` that prepends `figures/`, remove or update it so it does not prepend `figures/` twice. Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently.
 
 You may use any workspace layout for planning and drafting, including directories such as `/workspace/writing/`. For final submission, `/workspace/submission/` must be self-contained. `main.tex` is the authoritative compilation entry point, not necessarily the only LaTeX source file; it may use braced `\input{...}` or `\include{...}` commands to reference files inside `/workspace/submission/`, using paths relative to the submission root. Before finishing, copy every source dependency required by `main.tex` into `/workspace/submission/`. Do not rely on absolute paths, parent-directory paths, or files under `/workspace/materials/` during final compilation.
 
