@@ -25,6 +25,7 @@ datasets = [
   "Pillow>=10.0",
 ]
 sidecar = [
+  "google-genai>=1.0",
   "python-dotenv>=1.0",
   "requests>=2.0",
   "thefuzz>=0.22",

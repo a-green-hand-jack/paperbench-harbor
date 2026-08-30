@@ -27,7 +27,7 @@ RUN curl -fsSL https://downloads.claude.ai/claude-code-releases/bootstrap.sh \
 ENV PATH="/root/.local/bin:${PATH}"
 
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    requests thefuzz python-dotenv
+    google-genai requests thefuzz python-dotenv
 
 WORKDIR /workspace
 COPY texmf/ /workspace/texmf/
