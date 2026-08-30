@@ -208,7 +208,9 @@ def _convert_paper(
         path.mkdir(parents=True, exist_ok=True)
     # The shared environment Dockerfile unconditionally copies texmf/; keep it
     # present even when no extra style files are bundled for this venue.
-    (environment_dir / "texmf").mkdir(exist_ok=True)
+    texmf_dir = environment_dir / "texmf"
+    texmf_dir.mkdir(exist_ok=True)
+    (texmf_dir / ".keep").touch()
 
     public_files = _copy_public_materials(raw, environment_dir, metadata.venue)
     private_files = _copy_private_materials(paper_dir, raw, solution_private, tests_private)

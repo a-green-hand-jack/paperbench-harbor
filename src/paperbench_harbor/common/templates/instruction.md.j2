@@ -17,11 +17,11 @@ We have VLM-based table descriptions in `/workspace/materials/table_summary.txt`
 To better understand the methodology and experiments, please also refer to `/workspace/materials/code/` as the proposed method's code implementation.
 {% endif %}
 
-Please read the current `/workspace/materials/template.tex` file and update it to produce a complete, coherent, and scientifically accurate paper. This must be an acceptable complete LaTeX writeup, suitable for a {{ num_page }}-page {{ column_type }} paper.
+Please read the current `/workspace/materials/template.tex` file as a starting point for a complete, coherent, and scientifically accurate paper. The files `/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only; do not modify either file. This must be an acceptable complete LaTeX writeup, suitable for a {{ num_page }}-page {{ column_type }} paper.
 
 Make sure to use the citations from `/workspace/materials/references.bib` and report results accurately based on the experimental data provided. `references.bib` can be very large. Do NOT read the entire file at once. Instead, use Grep to search for relevant citation keys or authors, then Read only the specific portions you need.
 
-Start by reading `template.tex` to understand the current state, then edit it to incorporate all the information above into a complete paper.
+Start by reading `template.tex` to understand the current state, then write the completed document to `/workspace/submission/main.tex`.
 
 Please note: For the bibliography, do not use the `\begin{filecontents}{references.bib}` environment. Instead, all citations should refer to an external file named `references.bib`.
 
@@ -37,10 +37,16 @@ This Harbor task requires a fixed output contract in addition to the benchmark i
 /workspace/submission/
 ├── main.tex
 ├── references.bib
+├── sections/     (optional: files imported by main.tex)
 ├── figures/    (only if your paper uses figures)
+├── styles/      (optional: non-standard source dependencies)
 └── final.pdf
 ```
 
-`main.tex` is authoritative. The verifier recompiles it in a separate sandbox without shell escape; a submitted PDF does not replace a successful recompilation. Network access is available if you need to fetch LaTeX packages or look up supporting material.
+Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserve any needed subdirectories, preserve the `\graphicspath` directive configured for the `figures/` directory, and use paths relative to `figures/` in `main.tex` (for example, `\includegraphics{foo.png}`, not `\includegraphics{figures/foo.png}`). Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
+
+You may use any workspace layout for planning and drafting, including directories such as `/workspace/writing/`. For final submission, `/workspace/submission/` must be self-contained. `main.tex` is the authoritative compilation entry point, not necessarily the only LaTeX source file; it may use braced `\input{...}` or `\include{...}` commands to reference files inside `/workspace/submission/`, using paths relative to the submission root. Before finishing, copy every source dependency required by `main.tex` into `/workspace/submission/`. Do not rely on absolute paths, parent-directory paths, or files under `/workspace/materials/` during final compilation.
+
+The verifier recompiles `main.tex` in a separate sandbox without shell escape; a submitted PDF does not replace a successful recompilation. Network access is available if you need to fetch LaTeX packages or look up supporting material.
 
 You have 3600 seconds (1 hour) to complete this task.

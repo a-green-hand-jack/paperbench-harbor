@@ -5,8 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TEXINPUTS=/workspace/texmf//: \
     BSTINPUTS=/workspace/texmf//:
 
-# Network is only available during image build; tasks run with
-# allow_internet=false, so agent tooling must be baked in here.
+# Network is only available during image build; task internet policy is defined
+# by the generated task manifest.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
