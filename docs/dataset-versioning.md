@@ -36,9 +36,17 @@ revision; it does not rewrite or delete the old one.
 
 ## Current Dataset
 
-`Jack-Jieke-Wu/Paper-Writing-Exam` currently contains the corrected 251-task
+[`Jack-Jieke-Wu/Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam)
+currently contains the corrected 251-task
 release at tag `v0.2.0` and revision
 `5fe375dbd440409f0180e10dee213b1685c8f40d`. It was generated from Harbor merge
 commit `738db763c80c2e06f844bff5c5c2269aa0e6cdd6`. The earlier revision
 `b3672c640689d377dd17ccc2960d215c8d64dd7f` remains available for historical
 comparison but predates the issue #6 follow-up fixes.
+
+On the Ubuntu Harbor host, the corresponding generated task trees are:
+
+```text
+/home/user/dev/paperbench-harbor/datasets/paperwrite-bench-short
+/home/user/dev/paperbench-harbor/datasets/paperwritingbench-sparse-plotoff
+```

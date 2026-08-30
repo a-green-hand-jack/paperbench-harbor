@@ -16,6 +16,20 @@ The project converts upstream benchmark samples into isolated Harbor tasks befor
 
 The protocols are deliberately separate. Sparse/dense inputs, PlotOn/PlotOff settings, and short/long reconstruction overviews must not be mixed in one reported result.
 
+## Dataset Release
+
+The public Harbor dataset is available on [Hugging Face](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam).
+
+| Harbor directory | Tasks | Protocol |
+|---|---:|---|
+| `paperwrite-bench-short` | 51 | PaperWrite-Bench `short` |
+| `paperwritingbench-sparse-plotoff` | 200 | PaperWritingBench `sparse-plotoff` |
+
+The current release is tagged `v0.2.0` at immutable revision
+`5fe375dbd440409f0180e10dee213b1685c8f40d` and contains 251 tasks. For
+reproducible runs, use that tag or revision instead of the Hub default branch.
+Dataset release details are recorded in `docs/dataset-versioning.md`.
+
 ## Repository layout
 
 ```text
@@ -103,6 +117,13 @@ autoraters for AgentReview, literature-review quality, and stage-1 citation F1
 `/logs/verifier/evaluation.json`; they are diagnostic benchmark metrics and do
 not affect Harbor's binary reward. The PaperWritingBench evaluator skips all
 LLM autoraters when no judge key is configured.
+
+The latest bounded Codex API-key validation ran five tasks from each dataset
+in parallel (`pwb-0001`..`pwb-0005` and `pwbw-0001`..`pwbw-0005`). All 10
+completed with Harbor reward `1.0` and no trial errors. Nine official evaluator
+artifacts were written; one PaperWritingBench evaluator run received empty
+judge responses during citation title extraction and did not write
+`evaluation.json`. This did not affect the Harbor binary reward.
 
 For judge-backed runs, Harbor must pass credentials to the separate verifier container;
 setting them only in the parent shell is insufficient. Use Harbor's verifier environment

@@ -87,9 +87,10 @@ upstream does.
   Inputs are unchanged; only the output path is fixed.
 - Network policy: Harbor tasks currently run with `allow_internet=true`, like
   the upstream writer-facing surface. Verifier recompilation and smoke tests
-  remain isolated from the network. A controlled, cutoff-aware scholarly-search
-  sidecar is not implemented yet, so PaperWritingBench literature retrieval is
-  not reproducible in the upstream sense.
+  remain isolated from the network. The repository provides a controlled,
+  cutoff-aware scholarly-search sidecar, but populating and operating its
+  versioned index is still a deployment concern; open-internet retrieval is
+  therefore not automatically reproducible in every run.
 - Harness post-processing (reflection loop, page-limit adjustment, chktex,
   "AI-Generated" watermark) is not part of the Harbor task; the agent has the
   full agent timeout to do equivalent self-correction.
@@ -162,6 +163,12 @@ open validation step.
 - Real-agent end-to-end runs (claude-code, claude-sonnet-5 via the Apex
   gateway): `pwb-0001` reward 1.0 (14-page paper), `pwbw-0001` reward 1.0
   (8-page CVPR paper).
+- Bounded Codex API-key run: five `paperwrite-bench-short` tasks and five
+  `paperwritingbench-sparse-plotoff` tasks completed in parallel; all 10
+  received Harbor reward 1.0 with no trial errors. Nine official evaluator
+  artifacts were written. The remaining PaperWritingBench evaluator call
+  received empty judge responses during citation title extraction and failed
+  before writing `evaluation.json`; this did not affect binary reward.
 - Bounded judge-backed `pwbw-0001` run with three ensemble reviews: reward 1.0,
   citation F1 `0.8831`, literature-review score `16`; the evaluator wrote
   `/logs/verifier/evaluation.json` and no credential value appeared in logs or
