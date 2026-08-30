@@ -247,6 +247,7 @@ def _render_templates(
         "has_code": has_code,
         "agents_md": agents_md,
         "grader_module": "grader_pwb",
+        "include_paper_orchestra": False,
     }
     (task_dir / "task.toml").write_text(
         environment.get_template("task.toml.j2").render(**context), encoding="utf-8"
@@ -311,7 +312,9 @@ def _convert_paper(
         path.mkdir(parents=True, exist_ok=True)
     # The shared environment Dockerfile unconditionally copies texmf/; keep it
     # present even when no extra style files are bundled for this paper.
-    (environment_dir / "texmf").mkdir(exist_ok=True)
+    texmf_dir = environment_dir / "texmf"
+    texmf_dir.mkdir(exist_ok=True)
+    (texmf_dir / ".keep").touch()
 
     template_tex = resources / "template.tex"
     if not template_tex.is_file():
@@ -339,6 +342,12 @@ def _convert_paper(
     if ground_truth.is_file():
         shutil.copy2(ground_truth, tests_private / "ground_truth.tex")
         private_files.append(tests_private / "ground_truth.tex")
+        ground_truth_tree = tests_private / "ground_truth_sources"
+        shutil.copytree(original, ground_truth_tree)
+        # Keep GT source dependencies and evaluation resources beside main.tex
+        # so hallucination verification receives the same coherent root.
+        shutil.copytree(resources, ground_truth_tree, dirs_exist_ok=True)
+        private_files.extend(path for path in ground_truth_tree.rglob("*") if path.is_file())
     for filename in ("figure_summary.txt", "table_summary.txt"):
         source = resources / filename
         if source.is_file():

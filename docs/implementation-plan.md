@@ -69,8 +69,7 @@ The writer produces:
 /workspace/submission/
 ├── main.tex
 ├── references.bib
-├── figures/
-└── final.pdf
+└── figures/ (optional)
 ```
 
 `main.tex` is authoritative. The verifier recompiles it in a restricted compiler environment with no ground truth, no judge credentials, no network, and shell escape disabled.

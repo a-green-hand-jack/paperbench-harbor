@@ -8,9 +8,11 @@ You are planning to submit to a top-tier ML conference, which has guidelines:
 
 - In general, try to use the available space and include all relevant information.
 - Do not change the overall style which is mandated by the conference. Keep to the current method of including the references.bib file.
-- Do not remove the \graphicspath directive or no figures will be found.
+- Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserving any needed subdirectories, and reference them with paths relative to the submission root (for example, `\includegraphics{figures/foo.png}`). If the template has a `\graphicspath` that prepends `figures/`, remove or update it so it does not prepend `figures/` twice.
 - Do not add `Acknowledgements` section to the paper.
-- Use a single backslash (\) for LaTeX commands instead of a double backslash (\\).
+- Use one backslash for LaTeX commands, such as `\section`. Do not write `\\section`. Standard LaTeX table row endings (`\\`) are allowed.
+
+The files `/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only; do not modify them. Write the completed document to `/workspace/submission/main.tex`. Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently.
 
 The paper should be written as a benchmark / evaluation paper. Do not force the structure or claims of a method paper onto it. In particular:
 
@@ -120,9 +122,9 @@ Ensure you are always writing good compilable LaTeX code. Common mistakes that s
 
 Ensure proper citation usage:
 
-- Always include references within \\begin{{filecontents}}{{references.bib}} ... \\end{{filecontents}}, even if they haven't changed from the previous round.
+- Keep the bibliography in the external `references.bib` file supplied in the workspace; do not embed it with a `filecontents` environment.
 - Before citing any paper, ALWAYS read the references.bib file first to find the correct citation key. Do NOT create new fictional bibtex entries.
-- Do not make any changes to reference.bib
+- Do not make any changes to references.bib
 - Verify all citation keys match exactly with those in references.bib before using them in the text.
 - Each section, especially Related Work, should have multiple citations.
 

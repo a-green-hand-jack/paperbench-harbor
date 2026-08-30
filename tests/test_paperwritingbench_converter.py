@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -49,10 +50,19 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     task_dir = tmp_path / "out" / "pwbw-0001"
     assert (task_dir / "task.toml").is_file()
     assert (task_dir / "instruction.md").is_file()
+    instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
+    assert "`/workspace/materials/conference_template/template.tex` and the\n   supporting style/guideline files as read-only inputs" in instruction
+    assert "write the completed document to\n   `/workspace/submission/main.tex`" in instruction
+    assert "fill it" not in instruction
+    assert "main.tex` is the\nauthoritative compilation entry point, not necessarily the only LaTeX source\nfile" in instruction
+    assert "braced `\\input{...}` or `\\include{...}` commands to\nreference files inside `/workspace/submission/`, using paths relative to the\nsubmission root" in instruction
+    assert "every source dependency\nrequired by `main.tex` into `/workspace/submission/`" in instruction
+    assert "Do not rely on absolute\npaths, parent-directory paths, or files under `/workspace/materials/`" in instruction
     materials = task_dir / "environment" / "materials"
     assert (materials / "idea_sparse.md").is_file()
     assert (materials / "experimental_log.md").is_file()
     assert (materials / "figures" / "figure_1.png").is_file()
+    assert (task_dir / "environment" / "texmf" / ".keep").is_file()
     assert (materials / "conference_template" / "template.tex").is_file()
     upstream = task_dir / "environment" / "paper_orchestra"
     assert (upstream / "paper_writing_cli.py").is_file()
@@ -72,6 +82,23 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     }
     assert names.isdisjoint(FORBIDDEN_ENV_NAMES)
     assert not any(name.startswith("original_paper_gt_citations") for name in names)
+
+    dockerfile = (task_dir / "environment" / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY paper_orchestra_search/ /workspace/paper_orchestra_search/" in dockerfile
+    assert "COPY paper_orchestra_sidecar.py /workspace/paper_orchestra_sidecar.py" in dockerfile
+    sources = re.findall(r"^COPY\s+(\S+?)/?\s+/", dockerfile, flags=re.MULTILINE)
+    environment = task_dir / "environment"
+    assert all((environment / source).exists() for source in sources)
+
+    grader = (
+        Path(__file__).parents[1]
+        / "src"
+        / "paperbench_harbor"
+        / "common"
+        / "templates"
+        / "grader_pwb.py.j2"
+    ).read_text(encoding="utf-8")
+    assert "hal_verification_dir=gt_root" in grader
 
     dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
     assert '"task_id": "pwbw-0003"' in dataset_manifest

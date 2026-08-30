@@ -12,7 +12,6 @@ class SubmissionContract:
     main_tex: str = "main.tex"
     bibliography: str = "references.bib"
     figures_dir: str = "figures"
-    final_pdf: str = "final.pdf"
 
     @property
     def required_relative_paths(self) -> tuple[str, ...]:

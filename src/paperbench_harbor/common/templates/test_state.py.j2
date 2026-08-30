@@ -9,24 +9,51 @@ from pathlib import Path
 SUBMISSION = Path("/workspace/submission")
 MAIN_TEX = SUBMISSION / "main.tex"
 BIB = SUBMISSION / "references.bib"
+_SOURCE_COMMAND = re.compile(r"\\(?:input|include)\s*\{([^}]+)\}")
+
+
+def _expand_tex(path: Path, root: Path | None = None, active: set[Path] | None = None) -> str:
+    """Read local input/include files without allowing paths outside submission."""
+    root = (root or path.parent).resolve()
+    active = active or set()
+    resolved = path.resolve()
+    if resolved in active or not resolved.is_relative_to(root) or not resolved.is_file():
+        return ""
+    active = active | {resolved}
+    text = resolved.read_text(encoding="utf-8", errors="replace")
+
+    def replace(match):
+        requested = Path(match.group(1).strip())
+        candidates = []
+        # Prefer documented root-relative paths, then conventional local paths.
+        for base in (root, resolved.parent):
+            candidates.append(base / requested)
+            if requested.suffix == "":
+                candidates.append(base / f"{requested}.tex")
+        for candidate in candidates:
+            if candidate.is_file() and candidate.resolve().is_relative_to(root):
+                return _expand_tex(candidate, root, active)
+        return match.group(0)
+
+    return _SOURCE_COMMAND.sub(replace, text)
 
 
 def _citation_keys(main_tex: Path) -> set[str]:
     """Extract cited BibTeX keys from a LaTeX document."""
-    text = main_tex.read_text(encoding="utf-8", errors="replace")
+    text = _expand_tex(main_tex)
     keys: set[str] = set()
-    patterns = (
-        r"\\cite\*?\{([^}]*)\}",
-        r"\\citep\{([^}]*)\}",
-        r"\\citet\{([^}]*)\}",
-        r"\\citetalias\{([^}]*)\}",
+    pattern = re.compile(
+        r"\\(?P<command>[A-Za-z]*cite[A-Za-z]*\*?)"
+        r"(?:\s*\[[^\]]*\]){0,2}\s*\{(?P<keys>[^}]*)\}",
+        flags=re.DOTALL,
     )
-    for pattern in patterns:
-        for match in re.finditer(pattern, text):
-            for key in re.split(r",", match.group(1)):
-                key = key.strip()
-                if key:
-                    keys.add(key)
+    for match in pattern.finditer(text):
+        if match.group("command").lower().startswith("nocite"):
+            continue
+        for key in match.group("keys").split(","):
+            key = key.strip()
+            if key:
+                keys.add(key)
     return keys
 
 

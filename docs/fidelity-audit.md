@@ -46,8 +46,8 @@ upstream does.
 ### Intentional adaptations (not part of the writer input)
 
 - Output contract: upstream agents edit `template.tex`; Harbor requires the
-  submission contract `main.tex` + `references.bib` + `figures/` +
-  `final.pdf`. Inputs are unchanged; only the output path is fixed.
+  submission contract `main.tex` + `references.bib` + optional `figures/`.
+  Inputs are unchanged; only the output path is fixed.
 - Network policy: Harbor tasks currently run with `allow_internet=true`, like
   the upstream writer-facing surface. Verifier recompilation and smoke tests
   remain isolated from the network. A controlled, cutoff-aware scholarly-search

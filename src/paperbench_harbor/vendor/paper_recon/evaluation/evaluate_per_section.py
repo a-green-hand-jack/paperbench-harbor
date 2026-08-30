@@ -15,6 +15,7 @@ from paper_recon.common.coding_agent import run_agent
 from paper_recon.common.config import AgentConfig, LLMConfig
 from paper_recon.common.llm import get_response_from_llm
 from paper_recon.common.log import get_logger
+from paper_recon.common.latex import expand_latex_source
 from paper_recon.evaluation.evaluate_citation import (
     CitationSectionEvaluation,
     CitationSummary,
@@ -344,7 +345,7 @@ from paper_recon.evaluation.evaluate_table import (  # noqa: E402
 
 def extract_sections_from_latex(latex_path: Path) -> list[Section]:
     """Extract sections from a LaTeX file."""
-    content = latex_path.read_text(encoding="utf-8")
+    content = expand_latex_source(latex_path)
 
     # Extract content between \begin{document} and \end{document}
     doc_start = content.find(r"\begin{document}")
@@ -1022,7 +1023,7 @@ def evaluate_paper(
     # Hallucination mode: run hallucination analysis only and return early
     if eval_mode == "hallucination":
         logger.info("Running hallucination-only analysis...")
-        gt_full_content = gt_latex_path.read_text(encoding="utf-8")
+        gt_full_content = expand_latex_source(gt_latex_path)
         hal_sections: list[tuple[str, str]] = []
         for gt_section, pred_section in matched_sections:
             sec_name = (
@@ -1350,7 +1351,7 @@ def evaluate_paper(
     hallucination_summary: dict = {}
     if eval_mode == "all":
         logger.info("Running hallucination claim analysis...")
-        gt_full_content = gt_latex_path.read_text(encoding="utf-8")
+        gt_full_content = expand_latex_source(gt_latex_path)
 
         # Collect sections to evaluate
         gt_section_map = {s.name: s.content for s in gt_sections}
@@ -1477,7 +1478,7 @@ def evaluate_paper(
             total_contradictory_minor,
         )
     else:
-        gt_full_content = gt_latex_path.read_text(encoding="utf-8")
+        gt_full_content = expand_latex_source(gt_latex_path)
 
     overall_result = {}
 
