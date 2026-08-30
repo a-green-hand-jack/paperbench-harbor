@@ -125,6 +125,10 @@ open validation step.
 - Real-agent end-to-end runs (claude-code, claude-sonnet-5 via the Apex
   gateway): `pwb-0001` reward 1.0 (14-page paper), `pwbw-0001` reward 1.0
   (8-page CVPR paper).
+- Bounded judge-backed `pwbw-0001` run with three ensemble reviews: reward 1.0,
+  citation F1 `0.8831`, literature-review score `16`; the evaluator wrote
+  `/logs/verifier/evaluation.json` and no credential value appeared in logs or
+  artifacts.
 
 These results validate task conversion and Harbor's binary verifier contract.
 They do not constitute upstream evaluator parity results or numeric evidence

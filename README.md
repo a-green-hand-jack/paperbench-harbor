@@ -55,7 +55,10 @@ Both adapters use the same expected writer output:
 └── figures/ (optional)
 ```
 
-The verifier treats `main.tex` as the source of truth and recompiles it in a sandbox without ground truth or judge credentials.
+The binary smoke checks treat `main.tex` as the source of truth and recompile it in a
+sandbox without ground truth or judge credentials. The optional official-metrics step
+runs in the separate verifier and receives judge credentials only when explicitly
+configured with Harbor's verifier environment flags below.
 
 Dataset release and reproducibility guidance is documented in
 `docs/dataset-versioning.md`.
@@ -100,6 +103,25 @@ autoraters for AgentReview, literature-review quality, and stage-1 citation F1
 `/logs/verifier/evaluation.json`; they are diagnostic benchmark metrics and do
 not affect Harbor's binary reward. The PaperWritingBench evaluator skips all
 LLM autoraters when no judge key is configured.
+
+For judge-backed runs, Harbor must pass credentials to the separate verifier container;
+setting them only in the parent shell is insufficient. Use Harbor's verifier environment
+flags with values sourced from a private secret file, for example:
+
+```bash
+set -a
+. /path/to/private/judge.env
+set +a
+harbor run ... \
+  --verifier-env 'JUDGE_API_KEY=${JUDGE_API_KEY}' \
+  --verifier-env OPENAI_API_BASE=https://api.example.invalid/v1 \
+  --verifier-env JUDGE_MODEL=gpt-5.4
+```
+
+The verifier templates use `JUDGE_API_KEY` as the explicit enable gate and bridge it to
+`OPENAI_API_KEY` when the latter is not supplied. They also bridge `OPENAI_BASE_URL` to
+`OPENAI_API_BASE`. Secret values are never embedded in task files or printed by the
+evaluator.
 
 The repository vendors the complete Apache-2.0 PaperOrchestra pipeline and
 exposes its scholarly-search stages through a thin HTTP sidecar. Generated
