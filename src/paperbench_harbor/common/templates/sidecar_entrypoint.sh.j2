@@ -2,6 +2,13 @@
 set -eu
 
 log_file=/workspace/paper_orchestra_sidecar.log
+
+if [ -f /run/secrets/paper-orchestra.env ]; then
+  set -a
+  . /run/secrets/paper-orchestra.env
+  set +a
+fi
+
 python3 /workspace/paper_orchestra_sidecar.py \
   --host 127.0.0.1 \
   --port 8765 >"${log_file}" 2>&1 &
@@ -26,4 +33,6 @@ while ! curl -fsS http://127.0.0.1:8765/healthz >/dev/null 2>&1; do
   sleep 1
 done
 
+# The writer only needs the local HTTP service, not upstream credentials.
+unset GEMINI_API_KEY SEMANTIC_SCHOLAR_API_KEY VERTEX_AI_PROJECT VERTEX_AI_LOCATION
 exec "$@"
