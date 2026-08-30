@@ -36,8 +36,9 @@ revision; it does not rewrite or delete the old one.
 
 ## Current Dataset
 
-`Jack-Jieke-Wu/Paper-Writing-Exam` currently contains the 251-task release at
-revision `b3672c640689d377dd17ccc2960d215c8d64dd7f`. That revision predates
-the issue #6 follow-up fixes. The next regenerated release should use a new
-version and document the merge commit and final Hub revision in its dataset
-card.
+`Jack-Jieke-Wu/Paper-Writing-Exam` currently contains the corrected 251-task
+release at tag `v0.2.0` and revision
+`5fe375dbd440409f0180e10dee213b1685c8f40d`. It was generated from Harbor merge
+commit `738db763c80c2e06f844bff5c5c2269aa0e6cdd6`. The earlier revision
+`b3672c640689d377dd17ccc2960d215c8d64dd7f` remains available for historical
+comparison but predates the issue #6 follow-up fixes.
