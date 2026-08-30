@@ -180,12 +180,18 @@ def _audit_verifier(
                 f"verifier-only content leaked into writer environment: {entry.upstream}"
             )
 
-    # Forbidden-name check as a second, independent layer.
+    # Forbidden-name check as a second, independent layer. It must mirror the
+    # converter's exemptions: upstream PWB code repositories legitimately
+    # contain files named like config.yaml, so materials/code/** is exempt.
     forbidden = {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json"}
     if benchmark == "PaperWritingBench":
         forbidden.add("idea_dense.md")
     try:
-        audit_forbidden_names(task_dir / "environment", forbidden)
+        audit_forbidden_names(
+            task_dir / "environment",
+            forbidden,
+            ignore_globs=("materials/code/**",) if benchmark == "PaperWrite-Bench" else (),
+        )
     except RuntimeError as exc:  # LeakageError
         report.errors.append(str(exc))
 
