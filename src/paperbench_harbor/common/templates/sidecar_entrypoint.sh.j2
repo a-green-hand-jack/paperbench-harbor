@@ -2,11 +2,18 @@
 set -eu
 
 log_file=/workspace/paper_orchestra_sidecar.log
+adc_file=/tmp/paper-orchestra-application-default-credentials.json
 
 if [ -f /run/secrets/paper-orchestra.env ]; then
   set -a
   . /run/secrets/paper-orchestra.env
   set +a
+fi
+
+if [ -n "${GOOGLE_APPLICATION_CREDENTIALS_JSON_B64:-}" ]; then
+  printf '%s' "${GOOGLE_APPLICATION_CREDENTIALS_JSON_B64}" | base64 -d >"${adc_file}"
+  chmod 600 "${adc_file}"
+  export GOOGLE_APPLICATION_CREDENTIALS="${adc_file}"
 fi
 
 python3 /workspace/paper_orchestra_sidecar.py \
@@ -16,6 +23,7 @@ sidecar_pid=$!
 
 cleanup() {
   kill "${sidecar_pid}" 2>/dev/null || true
+  rm -f "${adc_file}"
 }
 trap cleanup INT TERM EXIT
 
