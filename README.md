@@ -57,6 +57,9 @@ Both adapters use the same expected writer output:
 
 The verifier treats `main.tex` as the source of truth and recompiles it in a sandbox without ground truth or judge credentials.
 
+Dataset release and reproducibility guidance is documented in
+`docs/dataset-versioning.md`.
+
 ## Development status
 
 This repository currently contains the project skeleton and implementation plan. The recommended implementation order is:
