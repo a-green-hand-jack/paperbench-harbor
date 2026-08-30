@@ -224,8 +224,9 @@ def test_short_dockerfile_omits_paper_orchestra_sources(tmp_path: Path) -> None:
     )
     convert_paperwrite_bench(config)
     dockerfile = (tmp_path / "out" / "pwb-0001" / "environment" / "Dockerfile").read_text()
-    assert "paper_orchestra_search" not in dockerfile
-    assert "paper_orchestra_sidecar.py" not in dockerfile
+    assert "paper_orchestra" not in dockerfile
+    assert "entrypoint.sh" not in dockerfile
+    assert "ENTRYPOINT" not in dockerfile
 
 
 def test_generated_dockerfile_copy_sources_exist(tmp_path: Path) -> None:
