@@ -11,7 +11,7 @@ The project converts upstream benchmark samples into isolated Harbor tasks befor
 
 | Benchmark | Initial Harbor protocol | Writer network policy |
 |---|---|---|
-| PaperWritingBench | `sparse-plotoff` | Internet enabled; controlled scholarly-search sidecar not yet implemented |
+| PaperWritingBench | `sparse-plotoff` | Internet enabled; PaperOrchestra search sidecar available |
 | PaperWrite-Bench | `short` | Internet enabled for the writer; verifier recompilation remains network-free |
 
 The protocols are deliberately separate. Sparse/dense inputs, PlotOn/PlotOff settings, and short/long reconstruction overviews must not be mixed in one reported result.
