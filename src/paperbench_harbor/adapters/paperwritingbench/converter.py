@@ -217,14 +217,17 @@ def _convert_paper(
         _VENDOR_DIR / "paper_orchestra",
         tests_dir / "vendor" / "paper_orchestra",
     )
-    # Ship the upstream literature-search utility with the writer environment.
+    # Ship the complete upstream PaperOrchestra pipeline with the writer environment.
     shutil.copytree(
-        _VENDOR_DIR / "paper_orchestra" / "upstream_search",
-        environment_dir / "paper_orchestra_search",
+        _VENDOR_DIR / "paper_orchestra" / "upstream_pipeline",
+        environment_dir / "paper_orchestra",
     )
     shutil.copy2(
         Path(__file__).resolve().parents[2] / "sidecar" / "server.py",
         environment_dir / "paper_orchestra_sidecar.py",
+    )
+    (environment_dir / "entrypoint.sh").write_text(
+        environment.get_template("sidecar_entrypoint.sh.j2").render(), encoding="utf-8"
     )
 
     audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)
@@ -247,7 +250,11 @@ def _convert_paper(
         },
     )
 
-    for script in (solution_dir / "solve.sh", tests_dir / "test.sh"):
+    for script in (
+        environment_dir / "entrypoint.sh",
+        solution_dir / "solve.sh",
+        tests_dir / "test.sh",
+    ):
         script.chmod(0o755)
 
 
