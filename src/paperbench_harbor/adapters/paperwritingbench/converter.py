@@ -159,6 +159,7 @@ def _render_templates(
         "num_page": "8",
         "column": "two-column",
         "grader_module": "grader_pwbw",
+        "include_paper_orchestra": True,
     }
     (task_dir / "task.toml").write_text(
         environment.get_template("task.toml.j2").render(**context), encoding="utf-8"

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from paper_recon.common.log import get_logger
+from paper_recon.common.latex import expand_latex_source
 
 logger = get_logger(__file__)
 
@@ -90,7 +91,7 @@ def default_citation_summary(total_sections: int) -> CitationSummary:
 
 def _extract_all_citation_keys(latex_path: Path) -> set[str]:
     """Extract all citation keys from a LaTeX file."""
-    text = latex_path.read_text(encoding="utf-8", errors="replace")
+    text = expand_latex_source(latex_path)
     keys: set[str] = set()
     for match in CITATION_COMMAND_PATTERN.finditer(text):
         command = match.group("command")
@@ -109,7 +110,7 @@ def _extract_bib_keys(latex_path: Path) -> set[str]:
     keys: set[str] = set()
 
     # Search for bib entries in filecontents
-    text = latex_path.read_text(encoding="utf-8", errors="replace")
+    text = expand_latex_source(latex_path)
     for match in FILECONTENTS_BIB_PATTERN.finditer(text):
         for bib_match in bib_pattern.finditer(match.group("body")):
             keys.add(bib_match.group(1).strip())

@@ -10,6 +10,7 @@ from typing import TypedDict
 from pydantic import BaseModel, Field
 
 from paper_recon.common.config import LLMConfig
+from paper_recon.common.latex import expand_latex_source
 from paper_recon.common.llm import get_response_from_llm
 from paper_recon.common.log import get_logger
 
@@ -80,7 +81,7 @@ class TableSummary(TypedDict, total=True):
 
 
 def extract_tables_from_latex(latex_path: Path) -> list[Table]:
-    content = latex_path.read_text(encoding="utf-8")
+    content = expand_latex_source(latex_path)
 
     tables = []
     table_pattern = r"\\begin\s*\{(table\*?|wraptable)\}"
