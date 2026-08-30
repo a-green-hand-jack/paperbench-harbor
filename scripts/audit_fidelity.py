@@ -29,6 +29,12 @@ import json
 import tempfile
 from pathlib import Path
 
+from paperbench_harbor.adapters.lifesci_paperrecon.harbor import (
+    BENCHMARK as LSPR_BENCHMARK,
+)
+from paperbench_harbor.adapters.lifesci_paperrecon.harbor import (
+    lifesci_paperrecon_conversion_config,
+)
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
@@ -82,6 +88,61 @@ def _audit_paperwrite(args: argparse.Namespace) -> int:
         )
         reports.append(report)
     return _write_reports(args, reports, _determinism_paperwrite)
+
+
+def _audit_lifesci_paperrecon(args: argparse.Namespace) -> int:
+    """Audit the biology corpus against its generated source tree.
+
+    The upstream root here is the corpus produced by
+    `scripts/build_lifesci_paperrecon_source.py`, not a third-party dataset: this
+    benchmark is built in-repo, so "fidelity" means the Harbor tasks preserve
+    the pinned source corpus exactly.
+    """
+    entries = _load_manifest(args.dataset)
+    reports = []
+    for entry in entries:
+        task_id = entry["task_id"]
+        upstream_paper_id = entry["upstream_paper_id"]
+        task_dir = args.dataset / task_id
+        if not task_dir.is_dir():
+            raise SystemExit(f"task dir missing: {task_dir}")
+        reports.append(
+            run_fidelity_audit(
+                benchmark=LSPR_BENCHMARK,
+                task_id=task_id,
+                upstream_paper_id=upstream_paper_id,
+                upstream_root=args.source,
+                task_dir=task_dir,
+                protocol=args.overview,
+                venue=None,
+            )
+        )
+    return _write_reports(args, reports, _determinism_lifesci_paperrecon)
+
+
+def _determinism_lifesci_paperrecon(args: argparse.Namespace, summary: dict) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp)
+        digests = []
+        for run in ("a", "b"):
+            out = scratch / run
+            convert_paperwrite_bench(
+                lifesci_paperrecon_conversion_config(
+                    source=args.source,
+                    output_dir=out,
+                    upstream_revision=args.upstream_revision,
+                    overview=args.overview,
+                    overwrite=True,
+                )
+            )
+            digests.append(_tree_digest(out))
+        manifest_a = (scratch / "a" / "dataset-manifest.jsonl").read_bytes()
+        manifest_b = (scratch / "b" / "dataset-manifest.jsonl").read_bytes()
+        summary["determinism_tree_identical"] = digests[0] == digests[1]
+        summary["determinism_manifest_identical"] = manifest_a == manifest_b
+        summary["determinism_ok"] = (
+            summary["determinism_tree_identical"] and summary["determinism_manifest_identical"]
+        )
 
 
 def _audit_paperwritingbench(args: argparse.Namespace) -> int:
@@ -184,6 +245,18 @@ def build_parser() -> argparse.ArgumentParser:
     pwb.add_argument("--overview", default="short", choices=["short", "long"])
     pwb.add_argument("--output", type=Path, required=True, help="report output directory")
     pwb.set_defaults(func=_audit_paperwrite)
+
+    bio = sub.add_parser(
+        "lifesci-paperrecon", help="Audit LifeSci-PaperRecon dataset"
+    )
+    bio.add_argument("--source", type=Path, required=True, help="generated bio source corpus root")
+    bio.add_argument("--dataset", type=Path, required=True, help="Harbor dataset root")
+    bio.add_argument(
+        "--upstream-revision", required=True, help="pinned construction-pipeline revision"
+    )
+    bio.add_argument("--overview", default="short", choices=["short", "long"])
+    bio.add_argument("--output", type=Path, required=True, help="report output directory")
+    bio.set_defaults(func=_audit_lifesci_paperrecon)
 
     pwbw = sub.add_parser("paperwritingbench", help="Audit PaperWritingBench dataset")
     pwbw.add_argument("--source", type=Path, required=True, help="upstream PaperWritingBench root")

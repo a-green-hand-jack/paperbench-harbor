@@ -1,0 +1,750 @@
+"""The deterministic gate between an opencode construction run and the corpus.
+
+Everything in this module is contract checking, not paper-specific judgment,
+which is exactly why it is plain code rather than more agent turns: the agent
+decides *how* to make a paper fit the layout, and this module decides whether it
+actually did. The agent cannot negotiate with it.
+
+Three properties matter, in increasing order of how expensive they are to
+discover later:
+
+1. **Layout** — the files the Harbor converter reads are present, and the ones
+   that would leak the answer are not.
+2. **Provenance** — what the agent recorded matches what a human approved in
+   :mod:`.papers`. A silently substituted paper is worse than a failed build,
+   so a mismatch is a hard failure and never a warning.
+3. **Solvability** — the oracle scores `1.0`. This is checked by *reproducing
+   the oracle*: the real `normalize.py` template is rendered and run against a
+   real `materials/` tree built by the converter's own copy helper, and the
+   result is recompiled with the verifier's restricted flags. Reimplementing
+   any of that here would let the check and the thing it checks drift apart.
+
+A failing report is written to be read by the construction agent
+(:meth:`ValidationReport.agent_feedback`), because the designed response to a
+failure is another opencode turn, not a hand-written patch.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+from paperbench_harbor.adapters.lifesci_paperrecon.harbor import AGENTS_MD_DIR
+from paperbench_harbor.adapters.paperwrite_bench.converter import (
+    FORBIDDEN_PUBLIC_NAMES,
+    OVERVIEW_FILENAMES,
+    _copy_public_materials,
+    _read_config,
+)
+from paperbench_harbor.common.audit import LeakageError, audit_forbidden_names
+from paperbench_harbor.construction.lifesci_paperrecon.latex import (
+    CompileResult,
+    compile_restricted,
+)
+from paperbench_harbor.construction.lifesci_paperrecon.papers import (
+    ACCEPTED_LICENSES,
+    PAPER_TYPES,
+    PaperSpec,
+)
+
+_TEMPLATES_DIR = (
+    Path(__file__).resolve().parents[2] / "common" / "templates"
+)
+
+#: Ground truth, verifier-only. `provenance.json` is this benchmark's addition
+#: to the upstream layout (approved plan, Phase 1 step 9).
+REQUIRED_ORIGINAL_FILES = ("config.yaml", "main.tex", "main.pdf", "provenance.json")
+
+#: Writer-visible. `research_overview_long.md` is required even though the
+#: pilot converts with `--overview short`: the converter files the unselected
+#: variant under `tests/private/`, and building only one closes off the long
+#: protocol for good.
+REQUIRED_RESOURCE_FILES = (
+    "template.tex",
+    OVERVIEW_FILENAMES["short"],
+    OVERVIEW_FILENAMES["long"],
+    "references.bib",
+    "figure_summary.txt",
+    "table_summary.txt",
+)
+
+#: `code/` is required, not optional: the approved plan makes a public
+#: redistribution-permissive repository a selection criterion for this
+#: benchmark (confirmed decision 3), so an empty `code/` means the paper should
+#: not have been selected.
+REQUIRED_RESOURCE_DIRS = ("figures", "code")
+
+#: Names that must never appear under `resources/`, which the converter copies
+#: wholesale into the writer-visible environment. `resources/code/` is exempt
+#: because it is a verbatim third-party source tree and the converter exempts
+#: it too.
+FORBIDDEN_RESOURCE_NAMES = FORBIDDEN_PUBLIC_NAMES | {"provenance.json"}
+
+REQUIRED_PROVENANCE_FIELDS = (
+    "title",
+    "arxiv_id",
+    "arxiv_version",
+    "arxiv_category",
+    "license_label",
+    "license_url",
+    "source_url",
+    "fetch_date",
+    "code_repo",
+    "code_commit",
+    # Required to be *recorded*, not to have any particular value. An
+    # unlicensed code repository no longer blocks construction (owner decision,
+    # 2026-08-31), so the only defence left against that fact getting lost is
+    # forcing it into provenance, where the Phase 5 dataset card reads it.
+    "code_license",
+)
+
+#: The biology-adapted overview skeleton (approved plan, Phase 1 step 4),
+#: replacing PaperWrite-Bench's Motivation/Proposed Method/Contributions shape.
+#: Each entry is a set of acceptable spellings for one required heading.
+REQUIRED_OVERVIEW_HEADINGS: tuple[tuple[str, ...], ...] = (
+    ("title",),
+    ("research question", "hypothesis"),
+    ("approach", "experimental approach", "computational approach"),
+    ("key findings", "findings"),
+    ("biological significance", "significance"),
+    ("takeaway",),
+)
+
+#: Sanity bounds, not style rules. The floor catches an agent that emitted a
+#: heading skeleton with no content; the ceiling catches one that pasted the
+#: paper in, which would hand the writing agent the answer.
+OVERVIEW_BOUNDS = {
+    OVERVIEW_FILENAMES["short"]: (700, 7000),
+    OVERVIEW_FILENAMES["long"]: (2500, 30000),
+}
+
+_SOURCE_COMMAND_RE = re.compile(r"\\(?:input|include)\s*\{([^}]+)\}")
+_CITE_RE = re.compile(
+    r"\\(?P<command>[A-Za-z]*cite[A-Za-z]*\*?)"
+    r"(?:\s*\[[^\]]*\]){0,2}\s*\{(?P<keys>[^}]*)\}",
+    flags=re.DOTALL,
+)
+_BIB_KEY_RE = re.compile(r"@\w+\s*\{\s*([^,\s]+)")
+_SECTION_RE = re.compile(r"\\(?:sub)*section\*?\s*\{")
+_COLUMN_RE = re.compile(r"^\d+column$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    """One contract violation, phrased so the construction agent can act on it.
+
+    `remedy` is not decoration: the retry turn is driven by this text, and an
+    issue that only says what is wrong tends to produce a fix to the symptom.
+    """
+
+    code: str
+    message: str
+    remedy: str = ""
+
+    def render(self) -> str:
+        line = f"[{self.code}] {self.message}"
+        return f"{line}\n    -> {self.remedy}" if self.remedy else line
+
+
+@dataclass
+class ValidationReport:
+    paper_id: str
+    paper_dir: Path
+    issues: list[ValidationIssue] = field(default_factory=list)
+    compiles: list[CompileResult] = field(default_factory=list)
+    #: Set when compilation was deliberately not attempted, so a caller never
+    #: mistakes "not checked" for "passed".
+    compile_skipped_reason: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return not self.issues and all(result.ok for result in self.compiles)
+
+    def fail(self, code: str, message: str, remedy: str = "") -> None:
+        self.issues.append(ValidationIssue(code=code, message=message, remedy=remedy))
+
+    def summary(self) -> str:
+        lines = [f"{self.paper_id}: {'PASS' if self.ok else 'FAIL'}"]
+        if self.compile_skipped_reason:
+            lines.append(f"  compile: SKIPPED ({self.compile_skipped_reason})")
+        for result in self.compiles:
+            lines.append(f"  compile {result.summary()}")
+        for issue in self.issues:
+            lines.append(f"  {issue.render()}")
+        return "\n".join(lines)
+
+    def agent_feedback(self) -> str:
+        """The failure, formatted as the body of a follow-up opencode turn."""
+
+        blocks: list[str] = []
+        if self.issues:
+            blocks.append(
+                "Contract violations:\n"
+                + "\n".join(f"- {issue.render()}" for issue in self.issues)
+            )
+        broken = [result for result in self.compiles if not result.ok]
+        if broken:
+            blocks.append(
+                "Compilation failures (same flags the Harbor verifier uses, "
+                "`pdflatex -interaction=nonstopmode -halt-on-error "
+                "-no-shell-escape`, no network):\n\n"
+                + "\n\n".join(result.summary() for result in broken)
+            )
+        return "\n\n".join(blocks)
+
+
+# --------------------------------------------------------------------------- #
+# helpers
+# --------------------------------------------------------------------------- #
+
+
+def _expand_tex(path: Path, root: Path | None = None, active: set[Path] | None = None) -> str:
+    """Inline `\\input`/`\\include` exactly as the shipped verifier does.
+
+    Copied deliberately from `common/templates/test_state.py.j2` rather than
+    approximated: a paper that splits its body across `\\input` files would
+    otherwise pass a citation check here that the verifier fails.
+    """
+
+    root = (root or path.parent).resolve()
+    active = active or set()
+    resolved = path.resolve()
+    if resolved in active or not resolved.is_relative_to(root) or not resolved.is_file():
+        return ""
+    active = active | {resolved}
+    text = resolved.read_text(encoding="utf-8", errors="replace")
+
+    def replace(match: re.Match[str]) -> str:
+        requested = Path(match.group(1).strip())
+        candidates = []
+        for base in (root, resolved.parent):
+            candidates.append(base / requested)
+            if requested.suffix == "":
+                candidates.append(base / f"{requested}.tex")
+        for candidate in candidates:
+            if candidate.is_file() and candidate.resolve().is_relative_to(root):
+                return _expand_tex(candidate, root, active)
+        return match.group(0)
+
+    return _SOURCE_COMMAND_RE.sub(replace, text)
+
+
+def _citation_keys(text: str) -> set[str]:
+    keys: set[str] = set()
+    for match in _CITE_RE.finditer(text):
+        if match.group("command").lower().startswith("nocite"):
+            continue
+        for key in match.group("keys").split(","):
+            key = key.strip()
+            if key:
+                keys.add(key)
+    return keys
+
+
+def _bib_keys(bibliography: Path) -> set[str]:
+    text = bibliography.read_text(encoding="utf-8", errors="replace")
+    return set(_BIB_KEY_RE.findall(text))
+
+
+def _is_complete_document(text: str) -> bool:
+    return bool(re.search(r"\\documentclass\s*(\[[^]]*\])?\s*\{", text)) and (
+        "\\begin{document}" in text and "\\end{document}" in text
+    )
+
+
+def _render_normalize_script(destination: Path) -> Path:
+    """Write out the *shipped* oracle normalizer, not a copy of its behaviour."""
+
+    environment = Environment(
+        loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+        undefined=StrictUndefined,
+        keep_trailing_newline=True,
+    )
+    destination.write_text(
+        environment.get_template("normalize.py.j2").render(), encoding="utf-8"
+    )
+    return destination
+
+
+# --------------------------------------------------------------------------- #
+# individual checks
+# --------------------------------------------------------------------------- #
+
+
+def _check_layout(report: ValidationReport) -> None:
+    original = report.paper_dir / "original"
+    resources = report.paper_dir / "resources"
+
+    for filename in REQUIRED_ORIGINAL_FILES:
+        if not (original / filename).is_file():
+            report.fail(
+                "missing-original",
+                f"original/{filename} is missing",
+                "Produce every file in the contract; the Harbor converter reads "
+                "them by exact name.",
+            )
+    for filename in REQUIRED_RESOURCE_FILES:
+        if not (resources / filename).is_file():
+            report.fail(
+                "missing-resource",
+                f"resources/{filename} is missing",
+                "Produce every file in the contract; the Harbor converter reads "
+                "them by exact name.",
+            )
+    for dirname in REQUIRED_RESOURCE_DIRS:
+        directory = resources / dirname
+        if not directory.is_dir() or not any(directory.rglob("*")):
+            report.fail(
+                "missing-resource-dir",
+                f"resources/{dirname}/ is missing or empty",
+                "figures/ must hold the paper's extracted figure assets; code/ "
+                "must hold the paper's public analysis repository, which is a "
+                "selection criterion for this benchmark.",
+            )
+
+    if resources.is_dir():
+        try:
+            audit_forbidden_names(
+                resources, FORBIDDEN_RESOURCE_NAMES, ignore_globs=("code/**",)
+            )
+        except LeakageError as error:
+            report.fail(
+                "leakage",
+                str(error),
+                "resources/ is copied verbatim into the writer's environment. "
+                "Ground truth (main.tex, main.pdf, config.yaml, provenance.json) "
+                "belongs under original/ only.",
+            )
+
+
+def _check_config(report: ValidationReport, spec: PaperSpec) -> None:
+    config_path = report.paper_dir / "original" / "config.yaml"
+    if not config_path.is_file():
+        return
+    metadata = _read_config(config_path)
+
+    if metadata.paper_type not in PAPER_TYPES:
+        report.fail(
+            "config-type",
+            f"config.yaml type={metadata.paper_type!r} is not one of {PAPER_TYPES}",
+            f"Write `type: {spec.paper_type}`.",
+        )
+    elif metadata.paper_type != spec.paper_type:
+        report.fail(
+            "config-type",
+            f"config.yaml type={metadata.paper_type!r} but this paper was "
+            f"approved as {spec.paper_type!r}",
+            f"Write `type: {spec.paper_type}`. The paper type is a human "
+            "selection decision and is not the agent's to change.",
+        )
+    else:
+        # The converter silently falls back to AGENTS_computational.md for an
+        # unknown type, which would hand a wet-lab paper the wrong writing
+        # instructions without any error.
+        agents_md = AGENTS_MD_DIR / f"AGENTS_{metadata.paper_type}.md"
+        if not agents_md.is_file():
+            report.fail(
+                "config-type",
+                f"no writing instructions exist for type={metadata.paper_type!r} "
+                f"({agents_md} not found)",
+            )
+
+    if not metadata.num_page.isdigit() or int(metadata.num_page) <= 0:
+        report.fail(
+            "config-num-page",
+            f"config.yaml num_page={metadata.num_page!r} is not a positive integer",
+            "Write the ground-truth paper's page count, e.g. `num_page: 16`.",
+        )
+    if not _COLUMN_RE.match(metadata.column):
+        report.fail(
+            "config-column",
+            f"config.yaml column={metadata.column!r} does not match `<n>column`",
+            "Write `column: 1column` or `column: 2column`, matching the paper's "
+            "actual layout.",
+        )
+    if not metadata.conference.strip():
+        report.fail(
+            "config-conference",
+            "config.yaml conference is empty",
+            f"Write the arXiv venue, e.g. `conference: arXiv {spec.expected_category}`.",
+        )
+
+
+def _check_provenance(report: ValidationReport, spec: PaperSpec) -> None:
+    path = report.paper_dir / "original" / "provenance.json"
+    if not path.is_file():
+        return
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        report.fail(
+            "provenance-parse",
+            f"provenance.json is not valid JSON: {error}",
+            "Write a single JSON object with the required fields.",
+        )
+        return
+    if not isinstance(record, dict):
+        report.fail("provenance-parse", "provenance.json is not a JSON object")
+        return
+
+    for field_name in REQUIRED_PROVENANCE_FIELDS:
+        if not str(record.get(field_name, "")).strip():
+            report.fail(
+                "provenance-field",
+                f"provenance.json is missing a non-empty {field_name!r}",
+                "Record what you actually observed on the live arXiv page and "
+                "repository; do not copy it from the task prompt.",
+            )
+
+    # Substitution guard. These are the facts a human approved, so a mismatch
+    # stops the build rather than adjusting the expectation.
+    checks = (
+        ("arxiv_id", spec.arxiv_id),
+        ("arxiv_version", spec.expected_version),
+        ("arxiv_category", spec.expected_category),
+        ("license_label", spec.expected_license),
+    )
+    for field_name, expected in checks:
+        if not expected:
+            continue
+        actual = str(record.get(field_name, "")).strip()
+        if actual and actual != expected:
+            report.fail(
+                "provenance-mismatch",
+                f"provenance.json {field_name}={actual!r} but the approved "
+                f"selection says {expected!r}",
+                "Do not substitute a different paper or version. If the live "
+                "arXiv page really disagrees with the approved selection, stop "
+                "and say so in provenance.json's `blocked` field instead of "
+                "building the paper.",
+            )
+
+    license_label = str(record.get("license_label", "")).strip()
+    if license_label and license_label not in ACCEPTED_LICENSES:
+        report.fail(
+            "provenance-license",
+            f"license {license_label!r} is not redistribution-permissive "
+            f"(accepted: {', '.join(ACCEPTED_LICENSES)})",
+            "This benchmark redistributes material derived from the paper, so a "
+            "non-permissive license disqualifies it. Stop rather than proceed.",
+        )
+
+    repo = str(record.get("code_repo", "")).strip().rstrip("/").removesuffix(".git")
+    expected_repo = spec.code_repo.rstrip("/").removesuffix(".git")
+    if repo and repo.lower() != expected_repo.lower():
+        report.fail(
+            "provenance-mismatch",
+            f"provenance.json code_repo={repo!r} but the approved selection "
+            f"says {expected_repo!r}",
+        )
+
+    fetch_date = str(record.get("fetch_date", "")).strip()
+    if fetch_date:
+        if not _ISO_DATE_RE.match(fetch_date):
+            report.fail(
+                "provenance-date",
+                f"fetch_date={fetch_date!r} is not an ISO `YYYY-MM-DD` date",
+            )
+        else:
+            try:
+                date.fromisoformat(fetch_date)
+            except ValueError:
+                report.fail("provenance-date", f"fetch_date={fetch_date!r} is not a real date")
+
+
+def _check_template(report: ValidationReport) -> None:
+    """The template is a skeleton the writer fills in, not a draft of the paper."""
+
+    template = report.paper_dir / "resources" / "template.tex"
+    main = report.paper_dir / "original" / "main.tex"
+    if not template.is_file():
+        return
+    text = template.read_text(encoding="utf-8", errors="replace")
+
+    if not _is_complete_document(text):
+        report.fail(
+            "template-not-a-document",
+            "resources/template.tex is not a complete LaTeX document",
+            "It must carry the paper's own preamble and a "
+            "\\begin{document}...\\end{document} body, and compile on its own.",
+        )
+    sections = len(_SECTION_RE.findall(text))
+    if sections < 3:
+        report.fail(
+            "template-no-skeleton",
+            f"resources/template.tex declares only {sections} sectioning commands",
+            "The template is the paper's section skeleton: keep every "
+            "\\section/\\subsection heading from the ground truth, with the "
+            "prose removed.",
+        )
+    if _citation_keys(text):
+        report.fail(
+            "template-leaks-citations",
+            "resources/template.tex contains \\cite commands",
+            "Citations are part of the answer. Strip the body text, including "
+            "its citations, and keep only headings and the "
+            "\\bibliography/\\bibliographystyle lines.",
+        )
+
+    if main.is_file():
+        body_ratio = _body_size(text) / max(_body_size(_expand_tex(main)), 1)
+        if body_ratio > 0.25:
+            report.fail(
+                "template-leaks-prose",
+                f"resources/template.tex retains {body_ratio:.0%} of the ground "
+                "truth's body text",
+                "Remove the paper's prose from the template; a writing agent "
+                "that is handed the text has nothing left to reconstruct.",
+            )
+
+
+def _body_size(text: str) -> int:
+    """Characters of prose between `\\begin{document}` and `\\end{document}`."""
+
+    start = text.find("\\begin{document}")
+    end = text.rfind("\\end{document}")
+    if start < 0 or end < 0:
+        return len(text)
+    body = text[start + len("\\begin{document}") : end]
+    body = re.sub(r"%.*", "", body)
+    body = re.sub(r"\\[A-Za-z@]+\*?(\[[^\]]*\])?(\{[^{}]*\})?", " ", body)
+    return len(re.sub(r"\s+", " ", body).strip())
+
+
+def _check_overviews(report: ValidationReport) -> None:
+    resources = report.paper_dir / "resources"
+    lengths: dict[str, int] = {}
+    for filename, (floor, ceiling) in OVERVIEW_BOUNDS.items():
+        path = resources / filename
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        lengths[filename] = len(text)
+
+        if not floor <= len(text) <= ceiling:
+            report.fail(
+                "overview-length",
+                f"resources/{filename} is {len(text)} characters, outside the "
+                f"{floor}-{ceiling} range",
+                "The short overview is a compact brief; the long one adds "
+                "detail. Neither is the paper itself.",
+            )
+        lowered = text.lower()
+        missing = [
+            " / ".join(variants)
+            for variants in REQUIRED_OVERVIEW_HEADINGS
+            if not any(variant in lowered for variant in variants)
+        ]
+        if missing:
+            report.fail(
+                "overview-skeleton",
+                f"resources/{filename} is missing required sections: "
+                + "; ".join(missing),
+                "Use the biology overview skeleton: Title, Research Question or "
+                "Hypothesis, Approach, Key Findings, Biological Significance, "
+                "Takeaway.",
+            )
+        if "\\begin{document}" in text or _SECTION_RE.search(text):
+            report.fail(
+                "overview-is-latex",
+                f"resources/{filename} contains LaTeX document structure",
+                "The overview is Markdown prose describing the study, not a "
+                "copy of the paper source.",
+            )
+
+    short_name = OVERVIEW_FILENAMES["short"]
+    long_name = OVERVIEW_FILENAMES["long"]
+    if (
+        short_name in lengths
+        and long_name in lengths
+        and lengths[long_name] <= lengths[short_name]
+    ):
+        report.fail(
+            "overview-ordering",
+            f"{long_name} ({lengths[long_name]}) is not longer than "
+            f"{short_name} ({lengths[short_name]})",
+            "The two variants are different protocols: the long overview "
+            "must carry strictly more detail.",
+        )
+
+
+def _check_summaries(report: ValidationReport) -> None:
+    """Every extracted asset must be described, or the writer cannot place it."""
+
+    resources = report.paper_dir / "resources"
+    pairs = (("figures", "figure_summary.txt"), ("tables", "table_summary.txt"))
+    for dirname, summary_name in pairs:
+        summary = resources / summary_name
+        directory = resources / dirname
+        if not summary.is_file():
+            continue
+        text = summary.read_text(encoding="utf-8", errors="replace")
+        if not text.strip():
+            report.fail(
+                "summary-empty",
+                f"resources/{summary_name} is empty",
+                f"Describe each file in {dirname}/, or state explicitly that "
+                "the paper has none.",
+            )
+            continue
+        if not directory.is_dir():
+            continue
+        undescribed = sorted(
+            path.name
+            for path in directory.rglob("*")
+            if path.is_file() and path.name not in text and path.stem not in text
+        )
+        if undescribed:
+            report.fail(
+                "summary-incomplete",
+                f"{summary_name} does not mention: {', '.join(undescribed[:10])}"
+                + (f" (+{len(undescribed) - 10} more)" if len(undescribed) > 10 else ""),
+                f"Give every asset in {dirname}/ a caption keyed by its "
+                "filename; an asset the writer cannot identify is unusable.",
+            )
+
+
+def _check_citations(report: ValidationReport) -> None:
+    """The exact check the verifier runs, applied to the ground truth.
+
+    If it fails here, the oracle cannot score `1.0` and the task is broken.
+    """
+
+    main = report.paper_dir / "original" / "main.tex"
+    bibliography = report.paper_dir / "resources" / "references.bib"
+    if not main.is_file() or not bibliography.is_file():
+        return
+    defined = _bib_keys(bibliography)
+    if not defined:
+        report.fail(
+            "bib-empty",
+            "resources/references.bib defines no entries",
+            "Convert the paper's bibliography (including a `.bbl`-only or "
+            "inline `\\bibitem` one) into real BibTeX entries.",
+        )
+        return
+    missing = sorted(_citation_keys(_expand_tex(main)) - defined)
+    if missing:
+        report.fail(
+            "citations-unresolved",
+            f"main.tex cites {len(missing)} key(s) absent from references.bib: "
+            f"{', '.join(missing[:10])}"
+            + (f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""),
+            "The verifier fails a submission whose citations are not in "
+            "references.bib, so the ground truth must satisfy it too. Add the "
+            "real entries; never invent one.",
+        )
+
+
+# --------------------------------------------------------------------------- #
+# oracle-equivalent compilation
+# --------------------------------------------------------------------------- #
+
+
+def _check_compiles(report: ValidationReport, build_root: Path) -> None:
+    resources = report.paper_dir / "resources"
+    if not (resources / "template.tex").is_file():
+        return
+
+    build_root.mkdir(parents=True, exist_ok=True)
+
+    # 1. The writer's starting point. The task is unsolvable if the skeleton
+    #    handed to the agent does not compile before it writes a word.
+    report.compiles.append(
+        compile_restricted(resources, "template.tex", build_root / "template")
+    )
+
+    # 2. The oracle. Reproduced rather than approximated: the converter's own
+    #    materials copy, the shipped normalize.py, then the verifier's flags.
+    original = report.paper_dir / "original"
+    if not (original / "main.tex").is_file():
+        return
+
+    staging = build_root / "oracle"
+    if staging.exists():
+        shutil.rmtree(staging)
+    environment_dir = staging / "environment"
+    submission = staging / "submission"
+    submission.mkdir(parents=True)
+    try:
+        _copy_public_materials(resources, environment_dir, "short")
+    except FileNotFoundError as error:
+        report.fail("oracle-materials", str(error))
+        return
+
+    script = _render_normalize_script(staging / "normalize.py")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            str(environment_dir / "materials"),
+            str(submission),
+            str(original),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        report.fail(
+            "oracle-normalize",
+            "the oracle's normalize.py failed on this paper:\n"
+            + (result.stderr or result.stdout)[-2000:],
+            "The oracle resolves every \\includegraphics/\\input against the "
+            "public materials. Make sure each referenced asset exists in "
+            "resources/figures/ or resources/tables/ under a resolvable name.",
+        )
+        return
+
+    report.compiles.append(compile_restricted(submission, "main.tex", build_root / "oracle-build"))
+
+
+# --------------------------------------------------------------------------- #
+# entry point
+# --------------------------------------------------------------------------- #
+
+
+def validate_paper(
+    paper_dir: Path,
+    spec: PaperSpec,
+    *,
+    build_root: Path,
+    run_compile: bool = True,
+) -> ValidationReport:
+    """Check one constructed paper against everything downstream assumes.
+
+    `run_compile=False` exists for fast structural iteration only. It is never
+    a way to admit a paper: :attr:`ValidationReport.compile_skipped_reason`
+    records that solvability went unchecked.
+    """
+
+    report = ValidationReport(paper_id=spec.paper_id, paper_dir=paper_dir)
+    if not paper_dir.is_dir():
+        report.fail("missing-paper", f"{paper_dir} does not exist")
+        return report
+
+    _check_layout(report)
+    _check_config(report, spec)
+    _check_provenance(report, spec)
+    _check_template(report)
+    _check_overviews(report)
+    _check_summaries(report)
+    _check_citations(report)
+
+    if run_compile:
+        _check_compiles(report, build_root)
+    else:
+        report.compile_skipped_reason = "run_compile=False"
+
+    return report

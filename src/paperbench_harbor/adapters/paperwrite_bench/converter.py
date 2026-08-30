@@ -16,6 +16,22 @@ OVERVIEW_FILENAMES = {
     "short": "research_overview_short.md",
     "long": "research_overview_long.md",
 }
+
+# Defaults reproduce the original PaperWrite-Bench behaviour exactly; a second
+# corpus (for example the biology corpus built by
+# `construction.lifesci_paperrecon`) supplies its own values through
+# `PaperWriteBenchConversionConfig` without forking this module.
+DEFAULT_BENCHMARK = "PaperWrite-Bench"
+DEFAULT_TASK_ID_PREFIX = "pwb"
+DEFAULT_CATEGORY = "research-writing"
+DEFAULT_TAGS = ("paper-writing", "latex", "scientific-writing", "paperwrite-bench")
+DEFAULT_RELEVANT_EXPERIENCE = (
+    "Benchmark adaptation of PaperWrite-Bench into the Harbor task format, "
+    "preserving the upstream writing-agent contract."
+)
+DEFAULT_AGENTS_MD_DIR = Path(__file__).resolve().parent / "agents_md"
+DEFAULT_AGENTS_MD_FALLBACK = "AGENTS_method.md"
+
 PUBLIC_RESOURCE_FILES = (
     "template.tex",
     "references.bib",
@@ -51,6 +67,21 @@ class PaperWriteBenchConversionConfig:
     limit: int | None = None
     overwrite: bool = False
     upstream_revision: str | None = None
+
+    # --- benchmark identity (defaults keep PaperWrite-Bench unchanged) ------
+    benchmark: str = DEFAULT_BENCHMARK
+    task_id_prefix: str = DEFAULT_TASK_ID_PREFIX
+    category: str = DEFAULT_CATEGORY
+    tags: tuple[str, ...] = DEFAULT_TAGS
+    relevant_experience: str = DEFAULT_RELEVANT_EXPERIENCE
+    #: Directory holding `AGENTS_<paper_type>.md` writing instructions. The
+    #: upstream PaperWrite-Bench files are verbatim copies of PaperRecon's and
+    #: must not be edited, so a new benchmark points at its own directory.
+    agents_md_dir: Path = DEFAULT_AGENTS_MD_DIR
+    agents_md_fallback: str = DEFAULT_AGENTS_MD_FALLBACK
+    #: Emit the vendored PaperRecon official-metrics grader into `tests/`.
+    #: Disabled for benchmarks that have no upstream evaluator to reproduce.
+    include_official_grader: bool = True
 
 
 @dataclass(frozen=True)
@@ -220,6 +251,7 @@ def _render_templates(
     metadata: _PaperMetadata,
     has_code: bool,
     agents_md: str,
+    config: PaperWriteBenchConversionConfig,
 ) -> None:
     difficulty_explanation = (
         "Reconstructing a complete conference-quality paper from a research overview "
@@ -246,8 +278,11 @@ def _render_templates(
         "column_type": column_type,
         "has_code": has_code,
         "agents_md": agents_md,
-        "grader_module": "grader_pwb",
+        "grader_module": "grader_pwb" if config.include_official_grader else "",
         "include_paper_orchestra": False,
+        "category": config.category,
+        "tags_toml": json.dumps(list(config.tags)),
+        "relevant_experience": config.relevant_experience,
     }
     (task_dir / "task.toml").write_text(
         environment.get_template("task.toml.j2").render(**context), encoding="utf-8"
@@ -273,18 +308,17 @@ def _render_templates(
     (task_dir / "solution" / "normalize.py").write_text(
         environment.get_template("normalize.py.j2").render(**context), encoding="utf-8"
     )
-    (task_dir / "tests" / "grader_pwb.py").write_text(
-        environment.get_template("grader_pwb.py.j2").render(**context), encoding="utf-8"
-    )
+    if config.include_official_grader:
+        (task_dir / "tests" / "grader_pwb.py").write_text(
+            environment.get_template("grader_pwb.py.j2").render(**context), encoding="utf-8"
+        )
 
 
-def _load_agents_md(paper_type: str) -> str:
-    """Return the upstream benchmark instructions for a paper type."""
-    agents_dir = Path(__file__).resolve().parent / "agents_md"
-    filename = f"AGENTS_{paper_type}.md"
-    path = agents_dir / filename
+def _load_agents_md(paper_type: str, agents_dir: Path, fallback: str) -> str:
+    """Return the benchmark writing instructions for a paper type."""
+    path = agents_dir / f"AGENTS_{paper_type}.md"
     if not path.is_file():
-        path = agents_dir / "AGENTS_method.md"
+        path = agents_dir / fallback
     return path.read_text(encoding="utf-8")
 
 
@@ -293,9 +327,9 @@ def _convert_paper(
     paper_dir: Path,
     task_dir: Path,
     task_id: str,
-    overview: str,
-    upstream_revision: str | None,
+    config: PaperWriteBenchConversionConfig,
 ) -> None:
+    overview = config.overview
     original = paper_dir / "original"
     resources = paper_dir / "resources"
     config_path = original / "config.yaml"
@@ -331,7 +365,9 @@ def _convert_paper(
     )
     private_files = _copy_private_materials(paper_dir, solution_private, tests_private, overview)
 
-    agents_md = _load_agents_md(metadata.paper_type)
+    agents_md = _load_agents_md(
+        metadata.paper_type, config.agents_md_dir, config.agents_md_fallback
+    )
     agents_destination = environment_dir / "materials" / "AGENTS.md"
     agents_destination.write_text(agents_md, encoding="utf-8")
     public_files.append(agents_destination)
@@ -355,7 +391,8 @@ def _convert_paper(
             shutil.copy2(source, destination)
             private_files.append(destination)
 
-    shutil.copytree(_VENDOR_DIR / "paper_recon", tests_dir / "vendor" / "paper_recon")
+    if config.include_official_grader:
+        shutil.copytree(_VENDOR_DIR / "paper_recon", tests_dir / "vendor" / "paper_recon")
 
     audit_forbidden_names(
         environment_dir, FORBIDDEN_PUBLIC_NAMES, ignore_globs=("materials/code/**",)
@@ -363,14 +400,14 @@ def _convert_paper(
     forbidden_other_overview = OVERVIEW_FILENAMES["long" if overview == "short" else "short"]
     audit_forbidden_names(environment_dir, {forbidden_other_overview})
 
-    _render_templates(environment, task_dir, metadata, has_code, agents_md)
+    _render_templates(environment, task_dir, metadata, has_code, agents_md, config)
 
     write_source_manifest(
         destination=tests_private / "source_manifest.json",
-        benchmark="PaperWrite-Bench",
+        benchmark=config.benchmark,
         upstream_id=metadata.paper_id,
         protocol=overview,
-        upstream_revision=upstream_revision,
+        upstream_revision=config.upstream_revision,
         public_files=public_files,
         private_files=private_files,
         extra={
@@ -436,7 +473,7 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
 
     converted = 0
     for index, paper_dir in enumerate(paper_dirs, start=1):
-        task_id = f"pwb-{index:04d}"
+        task_id = f"{config.task_id_prefix}-{index:04d}"
         task_dir = config.output_dir / task_id
         if task_dir.exists():
             if not config.overwrite:
@@ -448,8 +485,7 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
             paper_dir=paper_dir,
             task_dir=task_dir,
             task_id=task_id,
-            overview=config.overview,
-            upstream_revision=config.upstream_revision,
+            config=config,
         )
 
         manifest[(task_id, paper_dir.name)] = {

@@ -1,11 +1,12 @@
 # paperbench-harbor
 
-Harbor adapters and evaluation infrastructure for two automated scientific-paper writing benchmarks:
+Harbor adapters and evaluation infrastructure for automated scientific-paper writing benchmarks. Two upstream ML/AI benchmarks are wrapped today, and a third, project-original non-ML/AI benchmark is under construction (see `docs/naming-convention.md` for the full brand-name ↔ upstream-name mapping):
 
-- **PaperWritingBench**, introduced with *PaperOrchestra: A Multi-Agent Framework for Automated AI Research Paper Writing*.
-- **PaperWrite-Bench**, introduced with *Paper Reconstruction Evaluation: Evaluating Presentation and Hallucination in AI-written Papers*.
+- **AI-PaperOrchestra** (upstream: **PaperWritingBench**), introduced with *PaperOrchestra: A Multi-Agent Framework for Automated AI Research Paper Writing*.
+- **AI-PaperRecon** (upstream: **PaperWrite-Bench**), introduced with *Paper Reconstruction Evaluation: Evaluating Presentation and Hallucination in AI-written Papers*.
+- **LifeSci-PaperRecon** (biology / life sciences, no upstream name — project-original, cloning AI-PaperRecon's recipe), see `docs/lifesci-paperrecon.md`.
 
-The project converts upstream benchmark samples into isolated Harbor tasks before any writing agent is evaluated. Its primary concerns are reproducibility, public/private data separation, LaTeX artifact contracts, safe verification, and running the official benchmark evaluators alongside Harbor verification.
+The project converts upstream benchmark samples into isolated Harbor tasks before any writing agent is evaluated. Its primary concerns are reproducibility, public/private data separation, LaTeX artifact contracts, safe verification, and running the official benchmark evaluators alongside Harbor verification. Code, dataset directories, and task IDs keep the upstream names (`PaperWrite-Bench`, `PaperWritingBench`) — the brand names above are used only in narrative documentation, per `docs/naming-convention.md`.
 
 ## Initial protocols
 

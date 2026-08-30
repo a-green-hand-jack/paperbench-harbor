@@ -27,14 +27,20 @@ from paperbench_harbor.fidelity.transforms import (
     KIND_COPY,
     KIND_MOVE,
     KIND_RENAME,
+    LSPR_BENCHMARK,
     FileTransform,
     classify_generated_vendor,
+    lspr_verifier_entries,
+    lspr_writer_transforms,
     pwb_verifier_entries,
     pwb_writer_transforms,
     pwbw_verifier_entries,
     pwbw_writer_transforms,
     sha256,
 )
+
+#: Benchmarks whose source corpus uses the generic PaperWrite-Bench layout.
+PAPERWRITE_LAYOUT_BENCHMARKS = ("PaperWrite-Bench", LSPR_BENCHMARK)
 
 
 class FidelityError(RuntimeError):
@@ -105,6 +111,10 @@ def _audit_writer_surface(
     """Verify every writer-visible file against a declared transform."""
     if benchmark == "PaperWrite-Bench":
         transforms = pwb_writer_transforms(upstream_root, paper_id, task_dir, overview_or_protocol)
+    elif benchmark == LSPR_BENCHMARK:
+        transforms = lspr_writer_transforms(
+            upstream_root, paper_id, task_dir, overview_or_protocol
+        )
     else:
         assert venue is not None
         transforms = pwbw_writer_transforms(upstream_root, paper_id, task_dir, venue)
@@ -149,6 +159,10 @@ def _audit_verifier(
     """Verify private copies are byte-identical and leak nothing to the writer."""
     if benchmark == "PaperWrite-Bench":
         entries = pwb_verifier_entries(upstream_root, paper_id, task_dir, overview_or_protocol)
+    elif benchmark == LSPR_BENCHMARK:
+        entries = lspr_verifier_entries(
+            upstream_root, paper_id, task_dir, overview_or_protocol
+        )
     else:
         assert venue is not None
         entries = pwbw_verifier_entries(upstream_root, paper_id, task_dir, venue)
@@ -186,11 +200,17 @@ def _audit_verifier(
     forbidden = {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json"}
     if benchmark == "PaperWritingBench":
         forbidden.add("idea_dense.md")
+    if benchmark == LSPR_BENCHMARK:
+        forbidden.add("provenance.json")
     try:
         audit_forbidden_names(
             task_dir / "environment",
             forbidden,
-            ignore_globs=("materials/code/**",) if benchmark == "PaperWrite-Bench" else (),
+            ignore_globs=(
+                ("materials/code/**",)
+                if benchmark in PAPERWRITE_LAYOUT_BENCHMARKS
+                else ()
+            ),
         )
     except RuntimeError as exc:  # LeakageError
         report.errors.append(str(exc))
@@ -254,7 +274,7 @@ def run_fidelity_audit(
         ok=True,
     )
 
-    if benchmark == "PaperWrite-Bench":
+    if benchmark in PAPERWRITE_LAYOUT_BENCHMARKS:
         _audit_writer_surface(task_dir, upstream_root, benchmark, upstream_paper_id, protocol, None, report)
         _audit_verifier(task_dir, upstream_root, benchmark, upstream_paper_id, protocol, None, report)
         _audit_contract(task_dir, report)

@@ -276,6 +276,116 @@ def pwb_verifier_entries(
 
 
 # --------------------------------------------------------------------------- #
+# LifeSci-PaperRecon (biology corpus, short/long overview)
+# --------------------------------------------------------------------------- #
+
+#: Benchmark name written into `task.toml`/`source_manifest.json` by the
+#: converter for the biology corpus.
+LSPR_BENCHMARK = "LifeSci-PaperRecon"
+
+#: The biology corpus has no `eval_points.json`: the pilot ships the binary
+#: Harbor smoke check only and the rubric evaluator is deferred. It does carry
+#: an extra verifier-only `original/provenance.json` recording the arXiv id,
+#: version, license and fetch date each sample was derived from.
+_LSPR_PRIVATE_ORIGINAL_FILES = ("main.tex", "main.pdf", "config.yaml", "provenance.json")
+
+
+def lspr_writer_transforms(
+    upstream_root: Path,
+    paper_id: str,
+    task_dir: Path,
+    overview: str,
+) -> list[FileTransform]:
+    """Declare all writer-visible transforms for one LifeSci-PaperRecon task.
+
+    The writer surface is structurally identical to PaperWrite-Bench's because
+    the biology corpus is built into the same generic layout and wrapped by the
+    same converter; only the provenance of `AGENTS.md` differs (this repo's own
+    biology instructions rather than PaperRecon's).
+    """
+
+    transforms = pwb_writer_transforms(upstream_root, paper_id, task_dir, overview)
+    return [
+        FileTransform(
+            kind=KIND_GENERATED,
+            target=transform.target,
+            note=(
+                "rendered from adapters/lifesci_paperrecon/agents_md/"
+                "AGENTS_<type>.md"
+            ),
+        )
+        if transform.target == "environment/materials/AGENTS.md"
+        else transform
+        for transform in transforms
+    ]
+
+
+def lspr_verifier_entries(
+    upstream_root: Path,
+    paper_id: str,
+    task_dir: Path,
+    overview: str,
+) -> list[VerifierEntry]:
+    """Map LifeSci-PaperRecon verifier-only sources to their private copies."""
+    paper_dir = upstream_root / paper_id
+    original = paper_dir / "original"
+    resources = paper_dir / "resources"
+    prefix = f"{paper_id}"
+    entries: list[VerifierEntry] = []
+
+    for filename in _LSPR_PRIVATE_ORIGINAL_FILES:
+        if not (original / filename).is_file():
+            continue
+        if filename == "provenance.json":
+            # Swept into the ground-truth tree by the converter's copytree of
+            # original/, not into solution/private/.
+            entries.append(
+                VerifierEntry(
+                    upstream=f"{prefix}/original/{filename}",
+                    targets=(f"tests/private/ground_truth_sources/{filename}",),
+                    note="construction provenance (arXiv id, version, license, fetch date)",
+                )
+            )
+            continue
+        entries.append(
+            VerifierEntry(
+                upstream=f"{prefix}/original/{filename}",
+                targets=(f"solution/private/{filename}",),
+                note="ground-truth source copy",
+            )
+        )
+
+    non_selected = _PWB_OVERVIEW_FILENAMES["long" if overview == "short" else "short"]
+    if (resources / non_selected).is_file():
+        entries.append(
+            VerifierEntry(
+                upstream=f"{prefix}/resources/{non_selected}",
+                targets=(f"tests/private/{non_selected}",),
+                note="non-selected overview variant kept verifier-only",
+            )
+        )
+    if (original / "main.tex").is_file():
+        entries.append(
+            VerifierEntry(
+                upstream=f"{prefix}/original/main.tex",
+                targets=("tests/private/ground_truth.tex",),
+                note="ground truth for the oracle and any future evaluator",
+            )
+        )
+    for filename in ("figure_summary.txt", "table_summary.txt"):
+        if (resources / filename).is_file():
+            entries.append(
+                VerifierEntry(
+                    upstream=f"{prefix}/resources/{filename}",
+                    targets=(f"tests/private/{filename}",),
+                    note="coverage summary",
+                    expected_in_writer=True,
+                )
+            )
+    return entries
+
+
+# --------------------------------------------------------------------------- #
 # PaperWritingBench (sparse-plotoff)
 # --------------------------------------------------------------------------- #
 

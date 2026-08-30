@@ -160,6 +160,16 @@ def _render_templates(
         "column": "two-column",
         "grader_module": "grader_pwbw",
         "include_paper_orchestra": True,
+        # Metadata previously hardcoded inside task.toml.j2; kept byte-identical
+        # here now that the template takes them as parameters.
+        "category": "research-writing",
+        "tags_toml": (
+            '["paper-writing", "latex", "scientific-writing", "paperwrite-bench"]'
+        ),
+        "relevant_experience": (
+            "Benchmark adaptation of PaperWrite-Bench into the Harbor task format, "
+            "preserving the upstream writing-agent contract."
+        ),
     }
     (task_dir / "task.toml").write_text(
         environment.get_template("task.toml.j2").render(**context), encoding="utf-8"

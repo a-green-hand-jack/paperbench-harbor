@@ -33,6 +33,12 @@ their conferences and are bundled solely for paper formatting.
 - `arxiv.sty` — kourgeorge/arxiv-style LaTeX style (arXiv preprint style),
   obtained from <https://github.com/kourgeorge/arxiv-style> (MIT, Copyright (c)
   2020 George Kour). Bundled unmodified.
+- `biometrika.bst` — Biometrika BibTeX style by Brett Presnell (1998),
+  generated with the `custom-bib` / `merlin.mbs` docstrip utility (LPPL).
+  Obtained unmodified from the arXiv e-print bundle of arXiv:2606.27607, which
+  ships it alongside its LaTeX source. Bundled because, unlike
+  `elsarticle-num.bst`, it is not part of `texlive-full` and the task image has
+  no network access at compile time.
 
 The benchmark papers themselves, their LaTeX sources, figures, tables, and
 code remain the intellectual property of their respective authors and are

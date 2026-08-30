@@ -11,7 +11,9 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 
+{% if grader_module %}
 # Official benchmark metrics (never affect the binary reward).
 if [ -f /workspace/submission/main.tex ]; then
   python3 /tests/{{ grader_module }}.py >> /logs/verifier/grader.log 2>&1 || true
 fi
+{% endif %}

@@ -15,6 +15,7 @@ datasets/*
 upstream-data/
 runs/
 results/
+jobs/
 artifacts/
 
 # Secrets and local configuration
@@ -36,3 +37,9 @@ artifacts/
 *.log
 *.out
 *.synctex.gz
+
+# Construction pipeline download cache
+.cache/
+
+# oh-my-claudecode runtime state
+.omc/
