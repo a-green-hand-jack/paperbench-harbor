@@ -85,7 +85,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         assert "/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only" in agents
         assert "Write the completed document to `/workspace/submission/main.tex`" in agents
         assert "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`" in agents
-        assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/` and use relative paths" in agents
+        assert "Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in agents
         assert "Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`" in agents
         assert (task_dir / "solution" / "solve.sh").is_file()
         assert (task_dir / "solution" / "private" / "main.tex").is_file()
@@ -172,7 +172,7 @@ def test_rendered_instruction_declares_submission_workflow(tmp_path: Path) -> No
     assert "`/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only" in instruction
     assert "write the completed document to `/workspace/submission/main.tex`" in instruction
     assert "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`" in instruction
-    assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/` and use relative paths" in instruction
+    assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in instruction
     assert "Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`" in instruction
     assert "Update that file only when the task requires it" not in instruction
     assert "update it to produce" not in instruction
@@ -184,7 +184,7 @@ def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:
         "`/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only",
         "Write the completed document to `/workspace/submission/main.tex`",
         "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`",
-        "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/` and use relative paths",
+        "Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`",
         "Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`",
     )
     for paper_type in ("method", "benchmark", "both"):
@@ -199,4 +199,13 @@ def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:
         agents = (output_dir / "pwb-0001" / "environment" / "materials" / "AGENTS.md").read_text(
             encoding="utf-8"
         )
-        assert all(phrase in agents for phrase in workflow_phrases)
+        instruction = (output_dir / "pwb-0001" / "instruction.md").read_text(encoding="utf-8")
+        assert all(phrase in agents for phrase in workflow_phrases[:3])
+        assert workflow_phrases[1] in instruction
+        assert workflow_phrases[2] in instruction
+        assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in instruction
+        assert "preserve the `\\graphicspath` directive configured for the `figures/` directory" in instruction
+        assert workflow_phrases[4] in instruction
+        assert "`\\graphicspath{{figures/}}`" in agents
+        assert "`\\includegraphics{foo.png}`" in agents
+        assert "`\\includegraphics{figures/foo.png}`" in agents

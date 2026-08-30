@@ -41,7 +41,7 @@ This Harbor task requires a fixed output contract in addition to the benchmark i
 └── final.pdf
 ```
 
-Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/` and use relative paths in `main.tex`. Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
+Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserve any needed subdirectories, preserve the `\graphicspath` directive configured for the `figures/` directory, and use paths relative to `figures/` in `main.tex` (for example, `\includegraphics{foo.png}`, not `\includegraphics{figures/foo.png}`). Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
 
 `main.tex` is authoritative. The verifier recompiles it in a separate sandbox without shell escape; a submitted PDF does not replace a successful recompilation. Network access is available if you need to fetch LaTeX packages or look up supporting material.
 

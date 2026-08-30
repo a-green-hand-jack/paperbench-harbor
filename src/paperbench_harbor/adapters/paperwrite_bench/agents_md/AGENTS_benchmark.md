@@ -8,11 +8,11 @@ You are planning to submit to a top-tier ML conference, which has guidelines:
 
 - In general, try to use the available space and include all relevant information.
 - Do not change the overall style which is mandated by the conference. Keep to the current method of including the references.bib file.
-- Do not remove the \graphicspath directive or no figures will be found.
+- Preserve the `\graphicspath{{figures/}}` directive. Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserving any needed subdirectories, and reference them with paths relative to `figures/` (for example, `\includegraphics{foo.png}`, not `\includegraphics{figures/foo.png}`).
 - Do not add `Acknowledgements` section to the paper.
 - Use one backslash for LaTeX commands, such as `\section`. Do not write `\\section`. Standard LaTeX table row endings (`\\`) are allowed.
 
-The files `/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only; do not modify them. Write the completed document to `/workspace/submission/main.tex`. Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If figures are used, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/` and use relative paths. Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
+The files `/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only; do not modify them. Write the completed document to `/workspace/submission/main.tex`. Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`.
 
 The paper should be written as a benchmark / evaluation paper. Do not force the structure or claims of a method paper onto it. In particular:
 
