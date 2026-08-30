@@ -11,6 +11,43 @@ Verified against upstream revisions:
 - `google-research/paper-orchestra` @ `ca1b3fa01c2970fc7cda32d16245db38d57b3f56`
   (PaperWritingBench)
 
+## Reproducible task-fidelity audit
+
+Since Issue #4, the per-task and dataset-level fidelity claims are produced by
+an automated audit instead of manual inspection. The audit verifies, against a
+fixed upstream source tree and revision, that every generated task preserves
+upstream writer-visible content (SHA-256), keeps verifier-only material
+byte-identical and out of the writer environment, respects the task contract,
+and that repeated conversion of the same fixed input is deterministic.
+
+```bash
+uv run scripts/audit_fidelity.py paperwrite-bench \
+    --source /path/to/PaperWrite-Bench \
+    --dataset /path/to/paperwrite-bench-short \
+    --upstream-revision <rev> \
+    --overview short \
+    --output reports/pwb
+uv run scripts/audit_fidelity.py paperwritingbench \
+    --source /path/to/PaperWritingBench \
+    --dataset /path/to/paperwritingbench-sparse-plotoff \
+    --upstream-revision <rev> \
+    --protocol sparse-plotoff \
+    --output reports/pwbw
+```
+
+The audit writes one `<task-id>.json` report per task plus a `summary.json`
+with the overall totals and the determinism result. The machine-readable
+source-to-Harbor transform declarations live in
+`src/paperbench_harbor/fidelity/transforms.py`; every writer-visible file must
+be accounted for by a declared copy/rename/move/generated/vendor transform, and
+any undeclared or semantically different file fails the audit.
+
+The converter CLI now requires a non-empty `--upstream-revision`, which is
+recorded both in each task's `source_manifest.json` and in the dataset-level
+`dataset-manifest.jsonl`. Per-task `source_manifest.json` file hashes are keyed
+by task-relative paths so the manifest is deterministic and portable across
+machines.
+
 ## PaperWrite-Bench (short)
 
 ### Writer-visible input surface
@@ -133,3 +170,19 @@ open validation step.
 These results validate task conversion and Harbor's binary verifier contract.
 They do not constitute upstream evaluator parity results or numeric evidence
 that the official judge-backed metrics match upstream runs.
+
+### Task-fidelity audit results
+
+The reproducible audit (Section "Reproducible task-fidelity audit") is run
+against the fixed upstream revisions and the published Harbor dataset revision
+(`Jack-Jieke-Wu/Paper-Writing-Exam` @ `v0.2.0`,
+`5fe375dbd440409f0180e10dee213b1685c8f40d`). Results:
+
+- Per-task reports and the dataset-level summary are written to
+  `reports/pwb/` and `reports/pwbw/` when the audit is run (they are generated
+  artifacts, not committed).
+- The audit asserts all 251 tasks preserve writer-visible and verifier-only
+  content against upstream, and that repeated conversion is deterministic.
+
+The numbers in this file were previously manual conclusions; the audit now
+provides the machine-checked equivalent.

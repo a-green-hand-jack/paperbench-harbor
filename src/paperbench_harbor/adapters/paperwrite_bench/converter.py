@@ -456,6 +456,7 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
             "task_id": task_id,
             "upstream_paper_id": paper_dir.name,
             "overview": config.overview,
+            "upstream_revision": config.upstream_revision,
         }
         converted += 1
 

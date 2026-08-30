@@ -332,6 +332,7 @@ def convert_paperwritingbench(config: PaperWritingBenchConversionConfig) -> int:
             "upstream_paper_id": metadata.paper_id,
             "venue": metadata.venue,
             "protocol": config.protocol,
+            "upstream_revision": config.upstream_revision,
         }
         converted += 1
 
