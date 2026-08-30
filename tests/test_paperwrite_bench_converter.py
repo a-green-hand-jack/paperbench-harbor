@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -86,13 +87,15 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         assert "Write the completed document to `/workspace/submission/main.tex`" in agents
         assert "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`" in agents
         assert "Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in agents
-        assert "Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`" in agents
+        assert "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently." in agents
         assert (task_dir / "solution" / "solve.sh").is_file()
         assert (task_dir / "solution" / "private" / "main.tex").is_file()
         assert (task_dir / "tests" / "test.sh").is_file()
         assert (task_dir / "tests" / "test_state.py").is_file()
         assert (task_dir / "tests" / "private" / "eval_points.json").is_file()
         assert (task_dir / "tests" / "private" / "source_manifest.json").is_file()
+        assert (task_dir / "tests" / "private" / "ground_truth_sources" / "main.tex").is_file()
+        assert (task_dir / "tests" / "private" / "ground_truth_sources" / "code" / "x.py").is_file()
 
         manifest = task_dir / "tests" / "private" / "source_manifest.json"
         assert f'"upstream_id": "{paper_id}"' in manifest.read_text(encoding="utf-8")
@@ -169,11 +172,12 @@ def test_rendered_instruction_declares_submission_workflow(tmp_path: Path) -> No
     convert_paperwrite_bench(config)
     instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(encoding="utf-8")
 
+    assert "final.pdf" not in instruction
     assert "`/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only" in instruction
     assert "write the completed document to `/workspace/submission/main.tex`" in instruction
     assert "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`" in instruction
     assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in instruction
-    assert "Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`" in instruction
+    assert "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently." in instruction
     assert "Update that file only when the task requires it" not in instruction
     assert "update it to produce" not in instruction
     assert "then edit it to incorporate" not in instruction
@@ -189,7 +193,7 @@ def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:
         "Write the completed document to `/workspace/submission/main.tex`",
         "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`",
         "Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`",
-        "Compile from `/workspace/submission/` and leave the final PDF at `/workspace/submission/final.pdf`",
+        "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently.",
     )
     for paper_type in ("method", "benchmark", "both"):
         output_dir = tmp_path / paper_type
@@ -208,8 +212,47 @@ def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:
         assert workflow_phrases[1] in instruction
         assert workflow_phrases[2] in instruction
         assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in instruction
-        assert "preserve the `\\graphicspath` directive configured for the `figures/` directory" in instruction
+        assert "reference them with paths relative to the submission root (for example, `\\includegraphics{figures/foo.png}`)" in instruction
         assert workflow_phrases[4] in instruction
-        assert "`\\graphicspath{{figures/}}`" in agents
-        assert "`\\includegraphics{foo.png}`" in agents
+        assert "`\\graphicspath{{figures/}}`" not in agents
         assert "`\\includegraphics{figures/foo.png}`" in agents
+
+
+def test_short_dockerfile_omits_paper_orchestra_sources(tmp_path: Path) -> None:
+    config = PaperWriteBenchConversionConfig(
+        source=_make_source(tmp_path), output_dir=tmp_path / "out", overview="short", limit=1
+    )
+    convert_paperwrite_bench(config)
+    dockerfile = (tmp_path / "out" / "pwb-0001" / "environment" / "Dockerfile").read_text()
+    assert "paper_orchestra_search" not in dockerfile
+    assert "paper_orchestra_sidecar.py" not in dockerfile
+
+
+def test_generated_dockerfile_copy_sources_exist(tmp_path: Path) -> None:
+    config = PaperWriteBenchConversionConfig(
+        source=_make_source(tmp_path), output_dir=tmp_path / "out", overview="short", limit=1
+    )
+    convert_paperwrite_bench(config)
+    environment = tmp_path / "out" / "pwb-0001" / "environment"
+    dockerfile = (environment / "Dockerfile").read_text(encoding="utf-8")
+    sources = re.findall(r"^COPY\s+(\S+?)/?\s+/", dockerfile, flags=re.MULTILINE)
+    assert sources
+    assert all((environment / source).exists() for source in sources)
+    grader = (tmp_path / "out" / "pwb-0001" / "tests" / "grader_pwb.py").read_text()
+    assert "hal_verification_dir=gt_root" in grader
+
+
+def test_existing_graphicspath_gets_consistent_guidance(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    for paper_id in PAPERS:
+        template = source / paper_id / "resources" / "template.tex"
+        template.write_text(
+            "\\documentclass{article}\n\\graphicspath{{figures/}}\n"
+            "\\begin{document}\n\\end{document}\n",
+            encoding="utf-8",
+        )
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+    )
+    instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(encoding="utf-8")
+    assert "does not prepend `figures/` twice" in instruction

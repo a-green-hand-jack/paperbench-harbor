@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,23 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     }
     assert names.isdisjoint(FORBIDDEN_ENV_NAMES)
     assert not any(name.startswith("original_paper_gt_citations") for name in names)
+
+    dockerfile = (task_dir / "environment" / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY paper_orchestra_search/ /workspace/paper_orchestra_search/" in dockerfile
+    assert "COPY paper_orchestra_sidecar.py /workspace/paper_orchestra_sidecar.py" in dockerfile
+    sources = re.findall(r"^COPY\s+(\S+?)/?\s+/", dockerfile, flags=re.MULTILINE)
+    environment = task_dir / "environment"
+    assert all((environment / source).exists() for source in sources)
+
+    grader = (
+        Path(__file__).parents[1]
+        / "src"
+        / "paperbench_harbor"
+        / "common"
+        / "templates"
+        / "grader_pwb.py.j2"
+    ).read_text(encoding="utf-8")
+    assert "hal_verification_dir=gt_root" in grader
 
     dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
     assert '"task_id": "pwbw-0003"' in dataset_manifest
