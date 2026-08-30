@@ -91,7 +91,14 @@ def serve(host: str, port: int) -> None:
                     candidates = agent._discover_candidates(
                         task, outline, payload.get("cutoff_date", "")
                     )
-                    self._write_json({"candidates": [item.model_dump() for item in candidates]})
+                    self._write_json(
+                        {
+                            "candidates": [
+                                item.model_dump() if hasattr(item, "model_dump") else item
+                                for item in candidates
+                            ]
+                        }
+                    )
                     print("sidecar request endpoint=/v1/discover result=ok", flush=True)
                     return
 
