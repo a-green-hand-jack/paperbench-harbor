@@ -84,7 +84,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert not any(name.startswith("original_paper_gt_citations") for name in names)
 
     dockerfile = (task_dir / "environment" / "Dockerfile").read_text(encoding="utf-8")
-    assert "COPY paper_orchestra_search/ /workspace/paper_orchestra_search/" in dockerfile
+    assert "COPY paper_orchestra/ /workspace/paper_orchestra/" in dockerfile
     assert "COPY paper_orchestra_sidecar.py /workspace/paper_orchestra_sidecar.py" in dockerfile
     sources = re.findall(r"^COPY\s+(\S+?)/?\s+/", dockerfile, flags=re.MULTILINE)
     environment = task_dir / "environment"
