@@ -176,13 +176,25 @@ that the official judge-backed metrics match upstream runs.
 The reproducible audit (Section "Reproducible task-fidelity audit") is run
 against the fixed upstream revisions and the published Harbor dataset revision
 (`Jack-Jieke-Wu/Paper-Writing-Exam` @ `v0.2.0`,
-`5fe375dbd440409f0180e10dee213b1685c8f40d`). Results:
+`5fe375dbd440409f0180e10dee213b1685c8f40d`). Results (2026-08-30, Ubuntu box):
 
-- Per-task reports and the dataset-level summary are written to
-  `reports/pwb/` and `reports/pwbw/` when the audit is run (they are generated
-  artifacts, not committed).
-- The audit asserts all 251 tasks preserve writer-visible and verifier-only
-  content against upstream, and that repeated conversion is deterministic.
+| Dataset | Tasks | Passed | Writer files checked | Verifier entries checked | Determinism |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `paperwrite-bench-short` | 51 | 51 | 10,919 | 458 | tree+manifest identical |
+| `paperwritingbench-sparse-plotoff` | 200 | 200 | 2,039 | 1,600 | tree+manifest identical |
+
+- Every writer-visible file matched its declared upstream source by SHA-256;
+  all remaining writer files were declared generated/vendor artifacts.
+- Every verifier-only private copy matched its upstream source byte-for-byte
+  and none of that content appeared in the writer environment.
+- Task contract checks (`allow_internet = true`, separate verifier
+  environment, submission entry points) passed for all 251 tasks.
+- Repeated conversion of each full fixed dataset produced identical task trees,
+  manifests, and hashes.
+
+Per-task reports and the dataset-level `summary.json` are written to
+`reports/pwb/` and `reports/pwbw/` when the audit is run (they are generated
+artifacts, not committed).
 
 The numbers in this file were previously manual conclusions; the audit now
 provides the machine-checked equivalent.
