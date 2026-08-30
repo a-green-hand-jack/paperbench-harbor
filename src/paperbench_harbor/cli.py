@@ -24,14 +24,18 @@ app = typer.Typer(
 def paperwritingbench_command(
     source: Annotated[Path, typer.Option(exists=True, file_okay=False, resolve_path=True)],
     output_dir: Annotated[Path, typer.Option(resolve_path=True)],
+    upstream_revision: Annotated[str, typer.Option(help="Pinned upstream PaperWritingBench revision; required")],
     protocol: Annotated[str, typer.Option()] = "sparse-plotoff",
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
 ) -> None:
     """Convert PaperWritingBench samples into Harbor tasks."""
+    if not upstream_revision.strip():
+        raise typer.BadParameter("--upstream-revision must be a non-empty revision")
     config = PaperWritingBenchConversionConfig(
         source=source,
         output_dir=output_dir,
+        upstream_revision=upstream_revision.strip(),
         protocol=protocol,
         limit=limit,
         overwrite=overwrite,
@@ -44,14 +48,18 @@ def paperwritingbench_command(
 def paperwrite_bench_command(
     source: Annotated[Path, typer.Option(exists=True, file_okay=False, resolve_path=True)],
     output_dir: Annotated[Path, typer.Option(resolve_path=True)],
+    upstream_revision: Annotated[str, typer.Option(help="Pinned upstream PaperWrite-Bench revision; required")],
     overview: Annotated[str, typer.Option()] = "short",
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
 ) -> None:
     """Convert PaperWrite-Bench samples into Harbor tasks."""
+    if not upstream_revision.strip():
+        raise typer.BadParameter("--upstream-revision must be a non-empty revision")
     config = PaperWriteBenchConversionConfig(
         source=source,
         output_dir=output_dir,
+        upstream_revision=upstream_revision.strip(),
         overview=overview,
         limit=limit,
         overwrite=overwrite,

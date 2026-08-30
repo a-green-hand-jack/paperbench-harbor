@@ -24,16 +24,35 @@ def write_source_manifest(
     public_files: list[Path],
     private_files: list[Path],
     extra: dict[str, Any] | None = None,
+    root: Path | None = None,
 ) -> None:
-    """Write a verifier-only provenance manifest for one generated task."""
+    """Write a verifier-only provenance manifest for one generated task.
+
+    File hashes are keyed by paths relative to `root` (the task directory when
+    provided, otherwise inferred from the manifest location
+    `<task>/tests/private/source_manifest.json`). This keeps the manifest
+    deterministic and portable across machines: the same fixed input must
+    produce the same manifest regardless of the absolute output directory.
+    """
+
+    if root is None:
+        # Fall back to the task directory inferred from the manifest location
+        # <task>/tests/private/source_manifest.json.
+        root = destination.parent.parent.parent
+
+    def relative(path: Path) -> str:
+        try:
+            return path.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            return str(path)
 
     payload: dict[str, Any] = {
         "benchmark": benchmark,
         "upstream_id": upstream_id,
         "protocol": protocol,
         "upstream_revision": upstream_revision,
-        "public_file_hashes": {str(path): sha256_file(path) for path in public_files},
-        "private_file_hashes": {str(path): sha256_file(path) for path in private_files},
+        "public_file_hashes": {relative(path): sha256_file(path) for path in public_files},
+        "private_file_hashes": {relative(path): sha256_file(path) for path in private_files},
     }
     if extra:
         payload["extra"] = extra

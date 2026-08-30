@@ -57,7 +57,9 @@ Verifier-only materials:
 - the non-selected overview variant;
 - evaluator outputs and reproduction judgments.
 
-The writer has no network access in this dataset.
+The writer network policy follows the current task template and README:
+`allow_internet = true`. The verifier recompilation and smoke tests remain
+isolated from the network.
 
 ## Task contract
 
