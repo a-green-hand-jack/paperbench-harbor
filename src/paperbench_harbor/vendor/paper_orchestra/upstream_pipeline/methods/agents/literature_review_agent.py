@@ -461,8 +461,16 @@ class HybridLiteratureAgent:
             {DiscoveryResult.model_json_schema()}
             """
 
+        # Gemini 3 preview is available through the Gemini API, while the
+        # Vertex deployment used by Harbor currently exposes Gemini 2.5 Flash.
+        discovery_model = os.getenv(
+            "PAPER_ORCHESTRA_DISCOVERY_MODEL",
+            "gemini-2.5-flash"
+            if os.getenv("VERTEX_AI_PROJECT") and os.getenv("VERTEX_AI_LOCATION")
+            else "gemini-3-flash-preview",
+        )
         response_dict = call_gemini_with_contents(
-            model_name="gemini-3-flash-preview",
+            model_name=discovery_model,
             contents=[prompt],
             generation_configs={
                 "tools": [self.google_search_tool],
