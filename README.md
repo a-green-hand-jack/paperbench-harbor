@@ -131,6 +131,129 @@ with the upstream writer surface. Official evaluator wiring has been
 completed, but upstream-versus-Harbor score parity has not yet been
 established.
 
+## Run Harbor tasks on Ubuntu
+
+Harbor runs on the Ubuntu box. The generated datasets are stored at:
+
+```text
+/home/user/dev/paperbench-harbor/datasets/paperwrite-bench-short
+/home/user/dev/paperbench-harbor/datasets/paperwritingbench-sparse-plotoff
+```
+
+Keep runtime credentials in the private project file
+`/home/user/dev/paperbench-harbor/.env` with mode `0600`. The file is not
+committed. The recommended Codex path uses an OpenAI-compatible API key, not
+ChatGPT OAuth:
+
+```bash
+ssh ubuntu-box
+cd /home/user/dev/paperbench-harbor
+codex --version
+```
+
+Run one task with the native Harbor Codex agent:
+
+```bash
+harbor run \
+  --env-file /home/user/dev/paperbench-harbor/.env \
+  --path /home/user/dev/paperbench-harbor/datasets/paperwritingbench-sparse-plotoff/pwbw-0001 \
+  --agent codex \
+  --model openai/gpt-5.6-sol \
+  --agent-kwarg version=0.146.0 \
+  --agent-kwarg reasoning_effort=high \
+  --agent-kwarg web_search=live \
+  --agent-env 'OPENAI_API_KEY=${OPENAI_API_KEY}' \
+  --agent-env 'OPENAI_BASE_URL=${OPENAI_BASE_URL}' \
+  --yes --n-concurrent 1 \
+  --job-name codex-pwbw-0001
+```
+
+For a judge-backed run, pass credentials explicitly to the separate verifier
+container. Codex OAuth `auth.json` cannot be used as the judge credential:
+
+```bash
+harbor run \
+  --env-file /home/user/dev/paperbench-harbor/.env \
+  --path /home/user/dev/paperbench-harbor/datasets/paperwritingbench-sparse-plotoff/pwbw-0001 \
+  --agent codex --model openai/gpt-5.6-sol \
+  --agent-kwarg version=0.146.0 \
+  --agent-env 'OPENAI_API_KEY=${OPENAI_API_KEY}' \
+  --agent-env 'OPENAI_BASE_URL=${OPENAI_BASE_URL}' \
+  --verifier-env 'JUDGE_API_KEY=${JUDGE_API_KEY}' \
+  --verifier-env 'OPENAI_API_KEY=${OPENAI_API_KEY}' \
+  --verifier-env 'OPENAI_API_BASE=${OPENAI_API_BASE}' \
+  --verifier-env 'JUDGE_MODEL=${JUDGE_MODEL}' \
+  --yes --n-concurrent 1 \
+  --job-name codex-pwbw-0001-judge
+```
+
+For long runs, use `nohup` so the SSH session can close safely:
+
+```bash
+nohup harbor run --env-file /home/user/dev/paperbench-harbor/.env \
+  --config ~/paperbench-10-api-job.json \
+  > ~/paperbench-10-api-key-parallel.log 2>&1 < /dev/null &
+```
+
+The config can contain multiple local datasets and task filters. For example,
+the validated 10-task run used five tasks from each dataset and
+`n_concurrent_trials: 10`:
+
+```json
+{
+  "job_name": "paperbench-10-api-key-parallel",
+  "jobs_dir": "/home/user/harbor-apex-smoke/jobs",
+  "n_concurrent_trials": 10,
+  "agents": [
+    {
+      "name": "codex",
+      "model_name": "openai/gpt-5.6-sol",
+      "n_concurrent": 10,
+      "kwargs": {"version": "0.146.0", "reasoning_effort": "high", "web_search": "live"},
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "OPENAI_BASE_URL": "${OPENAI_BASE_URL}"
+      }
+    }
+  ],
+  "verifier": {
+    "env": {
+      "JUDGE_API_KEY": "${JUDGE_API_KEY}",
+      "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+      "OPENAI_API_BASE": "${OPENAI_API_BASE}",
+      "JUDGE_MODEL": "${JUDGE_MODEL}",
+      "SEMANTIC_SCHOLAR_API_KEY": "${SEMANTIC_SCHOLAR_API_KEY}"
+    }
+  },
+  "datasets": [
+    {
+      "path": "/home/user/dev/paperbench-harbor/datasets/paperwrite-bench-short",
+      "task_names": ["pwb-0001", "pwb-0002", "pwb-0003", "pwb-0004", "pwb-0005"]
+    },
+    {
+      "path": "/home/user/dev/paperbench-harbor/datasets/paperwritingbench-sparse-plotoff",
+      "task_names": ["pwbw-0001", "pwbw-0002", "pwbw-0003", "pwbw-0004", "pwbw-0005"]
+    }
+  ]
+}
+```
+
+Monitor a background job with its `result.json`:
+
+```bash
+python3 -c '
+import json
+p="$HOME/harbor-apex-smoke/jobs/paperbench-10-api-key-parallel/result.json"
+print(json.load(open(p))["stats"])
+'
+```
+
+Trial artifacts are stored below
+`/home/user/harbor-apex-smoke/jobs/<job-name>/<trial-id>/artifacts/`. A
+successful paper normally contains `workspace/submission/main.tex`,
+`references.bib`, figures, and a compiled PDF. Harbor's binary reward is
+independent from the optional official evaluator artifacts.
+
 ## Local setup
 
 ```bash

@@ -14,6 +14,7 @@ datasets/*
 upstream-data/
 runs/
 results/
+artifacts/
 
 # Secrets and local configuration
 .env
