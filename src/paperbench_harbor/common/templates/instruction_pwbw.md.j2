@@ -21,9 +21,11 @@ Write a complete scientific paper based on the raw research materials in
 
 ## Requirements
 
-1. Read `/workspace/materials/conference_template/template.tex` and fill it
-   in to produce a complete, coherent, and scientifically accurate paper
-   following `guidelines.md`.
+1. Read `/workspace/materials/conference_template/template.tex` and the
+   supporting style/guideline files as read-only inputs. Use them to produce a
+   complete, coherent, and scientifically accurate paper following
+   `guidelines.md`, and write the completed document to
+   `/workspace/submission/main.tex`.
 2. Report results accurately based on `/workspace/materials/experimental_log.md`.
 3. Use the provided figures where they support the paper, with captions
    based on `figures/info.json`.
@@ -50,12 +52,26 @@ Write your final artifacts to:
 /workspace/submission/
 ├── main.tex
 ├── references.bib
+├── sections/     (optional: files imported by main.tex)
 ├── figures/    (only if your paper uses figures)
+├── styles/      (optional: non-standard source dependencies)
 └── final.pdf
 ```
 
-`main.tex` is authoritative. The verifier recompiles it in a separate sandbox
-without network access and without shell escape; a submitted PDF does not
-replace a successful recompilation.
+You may use any workspace layout for planning and drafting, including
+directories such as `/workspace/writing/`. For final submission,
+`/workspace/submission/` must be self-contained. `main.tex` is the
+authoritative compilation entry point, not necessarily the only LaTeX source
+file; it may use braced `\input{...}` or `\include{...}` commands to
+reference files inside `/workspace/submission/`, using paths relative to the
+submission root. Before finishing, copy every source dependency
+required by `main.tex` into `/workspace/submission/`. Do not rely on absolute
+paths, parent-directory paths, or files under `/workspace/materials/` during
+final compilation. Compile from `/workspace/submission/` and leave
+`final.pdf` there.
+
+The verifier recompiles `main.tex` in a separate sandbox without network access
+and without shell escape; a submitted PDF does not replace a successful
+recompilation.
 
 You have 3600 seconds (1 hour) to complete this task.

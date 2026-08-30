@@ -177,6 +177,10 @@ def test_rendered_instruction_declares_submission_workflow(tmp_path: Path) -> No
     assert "Update that file only when the task requires it" not in instruction
     assert "update it to produce" not in instruction
     assert "then edit it to incorporate" not in instruction
+    assert "main.tex` is the authoritative compilation entry point, not necessarily the only LaTeX source file" in instruction
+    assert "braced `\\input{...}` or `\\include{...}` commands to reference files inside `/workspace/submission/`, using paths relative to the submission root" in instruction
+    assert "every source dependency required by `main.tex` into `/workspace/submission/`" in instruction
+    assert "Do not rely on absolute paths, parent-directory paths, or files under `/workspace/materials/`" in instruction
 
 
 def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:

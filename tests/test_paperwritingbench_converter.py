@@ -49,6 +49,14 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     task_dir = tmp_path / "out" / "pwbw-0001"
     assert (task_dir / "task.toml").is_file()
     assert (task_dir / "instruction.md").is_file()
+    instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
+    assert "supporting style/guideline files as read-only inputs" in instruction
+    assert "write the completed document to\n   `/workspace/submission/main.tex`" in instruction
+    assert "fill it" not in instruction
+    assert "main.tex` is the\nauthoritative compilation entry point, not necessarily the only LaTeX source\nfile" in instruction
+    assert "braced `\\input{...}` or `\\include{...}` commands to\nreference files inside `/workspace/submission/`, using paths relative to the\nsubmission root" in instruction
+    assert "every source dependency\nrequired by `main.tex` into `/workspace/submission/`" in instruction
+    assert "Do not rely on absolute\npaths, parent-directory paths, or files under `/workspace/materials/`" in instruction
     materials = task_dir / "environment" / "materials"
     assert (materials / "idea_sparse.md").is_file()
     assert (materials / "experimental_log.md").is_file()
