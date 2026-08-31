@@ -34,7 +34,7 @@ BRIEF_PATH = f"{WORKSPACE}/paper-run-brief.md"
 
 # Exec budget for the single `paper-run start` invocation.  A full 13-stage
 # autonomous paper-writing run can exceed two hours behind a slower gateway,
-# so this matches the task template's [agent] timeout_sec (4h by default).
+# so Harbor runs select this budget with ``--agent-timeout 14400``.
 START_TIMEOUT_SEC = 14400
 STAGE_TIMEOUT_MULTIPLIER = 2
 
@@ -475,14 +475,17 @@ def export_commands(
     project_dir: str = PROJECT_DIR,
     submission_dir: str = SUBMISSION_DIR,
     logs_dir: str = "/logs/agent",
+    materials_dir: str = MATERIALS_DIR,
 ) -> list[str]:
     """Copy the harness paper/ tree into the submission contract.
 
     ``main.tex`` is authoritative.  The whole ``paper/`` tree is copied so
-    ``\\input``/``\\include`` dependencies, style files and figures resolve,
-    and ``refs.bib`` is also published as ``references.bib`` to satisfy the
-    shared contract.  Publication PDFs and paper-run state are mirrored under
-    ``{logs_dir}/paper-run/`` as trial artifacts.
+    ``\\input``/``\\include`` dependencies, style files and figures resolve.
+    PaperWrite-Bench supplies a read-only ``/workspace/materials/references.bib``;
+    when it exists, preserve it as both bibliography names so paper-run's
+    ``\\bibliography{refs}`` output and Harbor's ``references.bib`` contract
+    resolve to the same file. PaperWritingBench has no root materials
+    bibliography, so its literature-review output remains authoritative.
     """
     paper_dir = f"{project_dir}/paper"
     artifact_dir = f"{logs_dir}/paper-run"
@@ -490,7 +493,12 @@ def export_commands(
         f"rm -rf {_q(submission_dir)} && mkdir -p {_q(submission_dir)}",
         (
             f"cp -r {_q(paper_dir)}/. {_q(submission_dir)}/ && "
-            f"cp {_q(paper_dir)}/refs.bib {_q(submission_dir)}/references.bib"
+            f"if [ -f {_q(f'{materials_dir}/references.bib')} ]; then "
+            f"cp {_q(f'{materials_dir}/references.bib')} "
+            f"{_q(submission_dir)}/references.bib && "
+            f"cp {_q(f'{materials_dir}/references.bib')} "
+            f"{_q(submission_dir)}/refs.bib; else "
+            f"cp {_q(paper_dir)}/refs.bib {_q(submission_dir)}/references.bib; fi"
         ),
         (
             f"mkdir -p {_q(artifact_dir)} && "
