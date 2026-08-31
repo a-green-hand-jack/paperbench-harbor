@@ -172,6 +172,154 @@ asymmetry — a value absent from the prose is not by itself unfaithful; a value
 that *violates a bound the prose states* is, whichever figure it came from. The
 correction removed the false positives and left both real findings standing.
 
+## One-command entry point
+
+**Status (2026-08-31): step 1 of 2. Shipped and not yet end-to-end — read the
+"What is not wired yet" subsection before using this.**
+
+The three stages above are capabilities, not a workflow. Growing the corpus still
+meant a human running four programs in order and hand-carrying candidate ids
+between them. `.opencode/agent/papersmith-lifesci.md` is the entry point that
+removes the hand-carrying: a `mode: primary` custom opencode agent, invoked as
+
+```
+opencode run --agent papersmith-lifesci "give me 10 more life-sciences papers about genomics with public code"
+```
+
+from the repository root on the build host. The deliverable is an opencode agent
+rather than a Python CLI because the entry point has to accept a free-form
+request, and a fixed `argparse` surface cannot take "about genomics with public
+code" as an argument. The free text steers the parameters; the procedure itself
+is fixed and runs identically every time.
+
+### The seven steps
+
+| # | Step | Program |
+|---|---|---|
+| 1 | Parse the request for a target count, topical steering, and any explicit arXiv IDs | the agent itself |
+| 2 | Screen for candidates | `scripts/screen_lifesci_paperrecon_candidates.py` |
+| 3 | Verify every claim against live sources, then promote | `scripts/promote_lifesci_paperrecon_candidates.py --promote --limit N` |
+| 4 | Build — construction plus reconstructability review | `scripts/build_lifesci_paperrecon_source.py --concurrency 3` |
+| 5 | Harbor-wrap the corpus | `paperbench-harbor lifesci-paperrecon --overwrite` |
+| 6 | Audit task fidelity | `scripts/audit_fidelity.py lifesci-paperrecon` |
+| 7 | Report candidates → promoted → built → blocked → task count → audit result | the agent itself |
+
+Only steps 1 and 7 are the agent's own judgment, and both are about reading a
+sentence and relaying output. Every step that decides anything is a program.
+
+### Why promotion is a separate deterministic program
+
+"One command starts the whole thing" appears to contradict the invariant stage 1
+rests on. Screening's output is *a proposal, not a decision* precisely because
+`validate.py`'s `provenance-mismatch` check works by comparing what the
+construction agent found against what a human approved — and it stops meaning
+anything the moment the approved list is itself machine-generated. A pipeline
+that auto-promotes has closed that loop.
+
+The resolution is not to trust the screening agent more, and not to let the
+orchestrating agent write the approved list. It is to put an **independent,
+deterministic verification stage between screening and promotion**:
+
+- `promote_lifesci_paperrecon_candidates.py` re-derives every claim in
+  `candidates.json` from the live arXiv and GitHub APIs. There is no model call
+  anywhere in the file. What the screening agent said is treated as an assertion
+  to be checked, never as a fact to be copied.
+- A candidate whose *claimed* field disagrees with the live source is **rejected
+  outright, even if the claim would have been policy-compliant had it been
+  true**. This is deliberately stricter than "policy-compliant", and the extra
+  strictness is the entire point: the failure mode being defended against is not
+  "an inadmissible paper slipped through", it is "the agent copied the answer key
+  instead of checking" — which is exactly what `provenance-mismatch` catches one
+  stage later, at the cost of a full construction run. Two real screening
+  candidates this session reported a primary category from the model's prior
+  rather than from the API, which is what motivated building this at all.
+- The default invocation is a **dry-run report**. Writing requires an explicit
+  `--promote`, and `--limit N` caps one invocation.
+- Promotion writes **data, not code**: accepted candidates are appended to
+  `src/paperbench_harbor/construction/lifesci_paperrecon/approved_scaleup.jsonl`,
+  one `PaperSpec`-shaped JSON object per line. It never text-surgeries
+  `papers.py`, whose hand-curated tuple stays a hand-edited Python artifact.
+- Idempotency is keyed on `arxiv_id`, never `paper_id`. The `paper_id` is
+  assigned at promotion time and would differ between two runs over the same
+  candidate, so a `paper_id` comparison would duplicate every entry on the second
+  run. New ids continue past the highest `paper_N` in both the tuple and the
+  JSONL, so two promotion runs cannot collide.
+- The orchestrating agent has **no `edit` and no `write` access at all**, and its
+  `bash` permission is deny-by-default with an allowlist of the five specific
+  program invocations this pipeline needs plus `cat`/`ls`/`git rev-parse HEAD`.
+  It also never runs anything with `--auto`: the scripts it calls start their own
+  `--auto` sessions inside their own scratch workspaces, and the orchestrator
+  sits one level above that. So the agent's role is strictly "call these known
+  programs with sensible arguments and relay what they printed", enforced
+  structurally rather than by instruction.
+
+One implementation note worth recording, because it is not what the plan assumed:
+**the arXiv Atom API does not expose a license.** An `id_list` query returns
+`arxiv:primary_category` and the version (in the entry's `<id>`), and the string
+"license" appears nowhere in the response — verified against the live API,
+2026-08-31. The license is only on the abstract *page*, in a
+`<div class="abs-license">` anchor whose `href` is the canonical Creative Commons
+URL. So promotion reads two arXiv endpoints, and derives the license name
+structurally from that URL's path (`/licenses/by-sa/4.0/` → `CC BY-SA 4.0`)
+rather than through a lookup table, which makes it spell every variant the same
+way `ACCEPTED_LICENSES` does with nothing to keep in sync. A missing license
+block is a hard failure, not a pass: if arXiv changes the page layout, the script
+must say it verified nothing.
+
+### What this is not
+
+**This is not the paper-writing-agent evaluator, and the agent's prose forbids it
+from talking as though it were.** The pipeline stops at "produced a correctly
+built Harbor task". The oracle=1.0/NOP=0.0 smoke check and the fidelity audit are
+task-*design* correctness checks (the two-layer distinction in
+`docs/lifesci-paperrecon.md`): they establish that a task is well-formed and that
+its verifier discriminates, and they say nothing about how well any agent writes.
+The Layer-2 LLM judge is Phase 3, still deferred, and no part of this entry point
+touches or implies it. The agent reports counts, pass/fail and failure reasons —
+never a score, never "quality", never how a writing agent would fare.
+
+Publishing is also out of scope: it stays the separate, explicitly human-triggered
+Hugging Face workflow in `docs/dataset-versioning.md`. Nothing here auto-publishes.
+
+A second domain's entry point will be a second file,
+`.opencode/agent/papersmith-<domain>.md`, with the same seven-step shape pointed
+at that domain's scripts — not a multi-domain dispatcher built before a second
+domain exists, the same YAGNI stance as the plugin split.
+
+### What is not wired yet
+
+Two additive touches intersect files that the in-flight Phase 4 scale-up run was
+actively editing, so they were deliberately deferred to **Phase 8 step 2**, to be
+built on that run's real outcome rather than on a snapshot from before it started:
+
+1. **`papers.py` does not read `approved_scaleup.jsonl`.** The planned additive
+   loader — `APPROVED_PAPERS` becomes the hand-curated tuple plus whatever the
+   JSONL contains — is not written. `APPROVED_PAPERS` is still exactly the three
+   hand-curated pilots.
+2. **`screen_lifesci_paperrecon_candidates.py` has no `--extra-guidance` flag.**
+   The screening *library* (`core/screen.py`) and the lifesci *policy*
+   (`lifesci_paperrecon/screening.py`) both exist, but the CLI wrapper script
+   itself also arrives with the Phase 4 work, so step 2 of the procedure cannot
+   run from this commit alone. Topical steering from the request therefore has
+   nowhere to go yet, and the agent is instructed to say so explicitly rather
+   than silently dropping it.
+
+**The honest consequence: the one-command agent as shipped today is not yet fully
+end-to-end automatic.** Promotion writes `approved_scaleup.jsonl` and nothing
+reads it back, so a freshly promoted `paper_4` is not in `APPROVED_BY_ID` and
+`build_lifesci_paperrecon_source.py --papers paper_4` rejects it as an unknown
+id. Steps 1-3 work; step 4 onward needs the loader. The agent's prose flags this
+inline and tells it to stop and report rather than work around it — in
+particular, not to rebuild the three existing pilots and present that as the
+request's result.
+
+This is the current state of a two-step sequence, not a design flaw being papered
+over: the verify-before-promote machinery is the part that had to be right, and it
+is testable and tested without the loader. The live end-to-end smoke test
+(`opencode run --agent papersmith-lifesci "<a request for exactly 1 new paper>"`,
+producing exactly one new validated Harbor task with no manual step) is step 2's
+verification, and is explicitly not claimed here.
+
 ## Why in-process plugins, and not a forked pipeline
 
 Two pieces of prior art decided this, in opposite directions.
@@ -220,6 +368,12 @@ src/paperbench_harbor/construction/
     papers.py                 APPROVED_PAPERS — the approved selection
     screening.py              LIFESCI_SCREENING_POLICY, seeds and exclusions
     plugin.py                 LIFESCI_PLUGIN
+    approved_scaleup.jsonl    promoted candidates, one PaperSpec-shaped record
+                              per line — data, written only by the promotion
+                              script, and not yet read back (Phase 8 step 2)
+
+.opencode/agent/
+  papersmith-lifesci.md       the one-command entry point
 ```
 
 `scripts/build_lifesci_paperrecon_source.py` is now a thin CLI wrapper:
@@ -317,6 +471,12 @@ until the gate has passed it.
 - `tests/test_construction_core_screen.py` — prompt building from a second,
   deliberately non-biological `ScreeningPolicy`, `candidates.json` shape and
   policy validation, and the honestly-empty lifesci seed list.
+- `tests/test_promote_lifesci_paperrecon_candidates.py` — the verify-before-promote
+  stage, against arXiv and GitHub payloads copied from real responses so the
+  parsers are exercised rather than bypassed: a claim matching the live source is
+  accepted, a mismatch on any one of license, category or code license is rejected
+  with that field named, a dry run leaves the approved file untouched, `--limit`
+  caps eligible promotions, and a second run over the same candidates is a no-op.
 
 ## Related documents
 

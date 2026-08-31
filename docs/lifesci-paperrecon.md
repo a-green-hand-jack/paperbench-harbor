@@ -179,7 +179,12 @@ project-original. Dataset directory:
   coordinator must decide which cross-listed/non-q-bio-primary papers to
   accept or decline, and that decision has not been made). 5
   genuinely failed after exhausting retries (unrelated to the two generic bugs
-  fixed in this phase). See “Phase 4 execution results” below.
+  fixed in this phase). See “Phase 4 execution results” below. The
+  one-command entry point that drives screen → verify → promote → build →
+  wrap → audit from a single free-form request is
+  `.opencode/agent/papersmith-lifesci.md`; see
+  `docs/papersmith-architecture.md` ("One-command entry point"), including
+  what is not yet wired.
 - **Phase 5 (Hugging Face publish)**: not started.
 
 ### Open follow-ups
