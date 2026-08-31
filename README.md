@@ -180,9 +180,13 @@ harbor run \
   --agent-kwarg variant=high \
   --agent-env 'OPENAI_API_KEY=${OPENAI_API_KEY}' \
   --agent-env 'OPENAI_BASE_URL=${OPENAI_BASE_URL}' \
-  --yes --n-concurrent 1 \
+  --yes --no-delete --n-concurrent 1 \
   --job-name paperrun-pwb-0002
 ```
+
+During debugging, keep `--no-delete` so the task container and its
+`paper-run` project remain available after a failure. Remove it for unattended
+batch runs where retaining containers is not needed.
 
 The wrapper, inside the task container:
 
