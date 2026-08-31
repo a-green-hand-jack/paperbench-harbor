@@ -164,7 +164,8 @@ paperbench_harbor.agents.paper_run:PaperRun
 
 Pinned versions (see `src/paperbench_harbor/agents/paper_run_core.py`):
 
-- `paper-run` commit `ccf7ddd51a6eef052677d0e3e6a696169be7e58b` (v0.1.0)
+- `paper-run` v0.2.0 via its official versioned installer (release tag commit
+  `f952802a85c367be689c51c0cef14568b990cde8` at integration time)
 - OpenCode `1.18.25` (matches the pinned lockfile)
 - Node `20` via nvm
 
@@ -185,8 +186,9 @@ harbor run \
 
 The wrapper, inside the task container:
 
-1. Installs Node, the pinned OpenCode runtime, and the pinned `paper-run`
-   (clone + `npm ci` + build + `npm link`).
+1. Installs Node and the pinned OpenCode runtime, then installs the pinned
+   `paper-run` release with its checksum-verified official installer at
+   `https://raw.githubusercontent.com/a-green-hand-jack/paper-run/v0.2.0/install.sh`.
 2. Renders the task instruction into a valid harness `BRIEF.md` (validated by
    `agent-writing-harness` v0.3.0 `paper-brief.py`).
 3. Writes a user-level OpenCode config pointing provider `openai` at
@@ -198,7 +200,8 @@ The wrapper, inside the task container:
    so the material assessment can see them and `paper-run start`'s
    clean-tree check passes.
 6. Runs exactly one
-   `paper-run start --headless --mode autonomous --model <model> --variant <variant>`.
+   `paper-run start --headless --mode autonomous --model <model>` with
+   `--variant <variant> --stage-timeout-multiplier 2`.
 7. Exports `paper/main.tex`, `paper/refs.bib` (as `references.bib`) and the
    rest of the `paper/` tree into `/workspace/submission`, and mirrors
    `.paper-run/`, `run.log` and publication PDFs under `/logs/agent/paper-run/`
@@ -208,19 +211,19 @@ Two paper-run behaviours are handled by the wrapper:
 
 - **Headless permissions.** `paper-run` auto-approves no bash command, so a
   narrow set of read-only rules (`ls *`, `cat *`, `git status*`, `pdfinfo *`,
-  `make *`, `pdflatex *`, ...) is patched into paper-run's adapter
-  `opencode.json` template before `init`; everything else stays `ask`
-  (fail-fast) in headless mode.  The list is deliberately generous for the
-  commands an autonomous writer legitimately uses inside the isolated
+  `make *`, `pdflatex *`, ...) is added to the initialized project's
+  `opencode.json` and committed with the materials checkpoint; everything else
+  stays `ask` (fail-fast) in headless mode. The list is deliberately generous
+  for the commands an autonomous writer legitimately uses inside the isolated
   container (inspection, git read, python, local file ops, publication build).
 - **Material assessment.** It only considers files inside the writing repo, so
   public materials are copied into `<repo>/materials/` before `start`.
 - **Locked contracts.** `PAPER.md ## What must not change silently` is a hard
   fail-closed section; the wrapper's brief explicitly tells the writer not to
   edit it, and to record lock candidates under `## Unresolved`.
-- **Per-stage budgets.** paper-run hardcodes per-stage `timeoutMs` (10-45 min);
-  the wrapper patches `src/pipeline/stages.ts` to multiply every stage budget
-  (2x) before building, so slower gateways can finish one autonomous run.
+- **Per-stage budgets.** The wrapper uses paper-run v0.2.0's supported
+  `--stage-timeout-multiplier 2` option, so slower gateways can finish one
+  autonomous run without modifying paper-run source.
 - **Aggregate budget.** The full 13-stage run can exceed two hours, so the task
   template's `[agent] timeout_sec` and the wrapper's single `start` exec budget
   default to 4h.

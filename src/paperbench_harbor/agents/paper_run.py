@@ -10,10 +10,11 @@ Run a task with the custom import path::
         --agent-kwarg variant=high
 
 The agent installs Node, the pinned OpenCode runtime, and the pinned
-``paper-run`` into the task container, initializes a local writing repository
-from the task's public materials, runs the autonomous headless pipeline exactly
-once, and exports the resulting ``paper/`` tree into the shared submission
-contract (``/workspace/submission/{main.tex,references.bib,figures/}``).
+``paper-run`` release into the task container, initializes a local writing
+repository from the task's public materials, runs the autonomous headless
+pipeline exactly once, and exports the resulting ``paper/`` tree into the
+shared submission contract
+(``/workspace/submission/{main.tex,references.bib,figures/}``).
 
 Credentials are never baked into files or logs.  Provider credentials
 (``OPENAI_API_KEY``, and optionally ``OPENAI_BASE_URL`` for a custom
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import ClassVar
 
 from harbor.agents.installed.base import BaseInstalledAgent, CliFlag
 from harbor.environments.base import BaseEnvironment
@@ -40,7 +42,7 @@ class PaperRun(BaseInstalledAgent):
     SUPPORTS_ATIF: bool = False
     SUPPORTS_RESUME: bool = False
 
-    CLI_FLAGS = [
+    CLI_FLAGS: ClassVar[list[CliFlag]] = [
         CliFlag("variant", cli="--variant", type="str"),
     ]
 
@@ -75,13 +77,6 @@ class PaperRun(BaseInstalledAgent):
             await self.exec_as_agent(environment, command=command, timeout_sec=900)
         for command in core.paper_run_install_commands():
             await self.exec_as_agent(environment, command=command, timeout_sec=1800)
-        # Layer narrow read-only bash allows into the adapter template so the
-        # project opencode.json ships with them (committed by paper-run init).
-        await self.exec_as_agent(
-            environment,
-            command=core.patch_opencode_template_command(),
-            timeout_sec=60,
-        )
         await self.exec_as_agent(environment, command=core.version_check_command())
 
     # -- run --------------------------------------------------------------
@@ -127,6 +122,14 @@ class PaperRun(BaseInstalledAgent):
             timeout_sec=1200,
         )
 
+        # Add the writer's narrowly scoped headless bash permissions to the
+        # generated project config. The materials checkpoint below commits it.
+        await self.exec_as_agent(
+            environment,
+            command=core.patch_opencode_project_command(),
+            timeout_sec=60,
+        )
+
         # Stage the public benchmark materials into the repo so the material
         # assessment can see them, and commit with a manual checkpoint.
         await self.exec_as_agent(
@@ -135,9 +138,8 @@ class PaperRun(BaseInstalledAgent):
             timeout_sec=300,
         )
 
-        # Exactly one autonomous headless pipeline start. A full 13-stage
-        # paper-writing run can take over two hours, so the exec budget is
-        # opened to match the task's [agent] timeout_sec (4h by default).
+        # Exactly one autonomous headless pipeline start. The stage multiplier
+        # is a supported paper-run option, not a source patch workaround.
         await self.exec_as_agent(
             environment,
             command=core.start_command(self._model, self._variant),
@@ -172,7 +174,4 @@ class PaperRun(BaseInstalledAgent):
             data = {"raw": status_output.strip()}
         metadata = dict(getattr(context, "metadata", {}) or {})
         metadata["paper_run"] = data
-        try:
-            context.metadata = metadata
-        except Exception:  # pragma: no cover - depends on Harbor internals
-            pass
+        context.metadata = metadata

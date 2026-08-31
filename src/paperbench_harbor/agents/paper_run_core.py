@@ -14,10 +14,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-# Pinned paper-run revision (issue #16).  Do not float this.
-PAPER_RUN_COMMIT = "ccf7ddd51a6eef052677d0e3e6a696169be7e58b"
-PAPER_RUN_REPO = "https://github.com/a-green-hand-jack/paper-run"
-PAPER_RUN_VERSION = "0.1.0"
+# Pinned paper-run release (issues #22 and #23).  Do not float this.
+PAPER_RUN_VERSION = "0.2.0"
+PAPER_RUN_INSTALL_URL = (
+    f"https://raw.githubusercontent.com/a-green-hand-jack/paper-run/"
+    f"v{PAPER_RUN_VERSION}/install.sh"
+)
 # Compatible OpenCode runtime verified against the pinned lockfile.
 OPENCODE_VERSION = "1.18.25"
 NODE_MAJOR = "20"
@@ -29,12 +31,12 @@ MATERIALS_DIR = f"{WORKSPACE}/materials"
 SUBMISSION_DIR = f"{WORKSPACE}/submission"
 PROJECT_DIR = f"{WORKSPACE}/paper-run-project"
 BRIEF_PATH = f"{WORKSPACE}/paper-run-brief.md"
-PAPER_RUN_SOURCE = "/opt/paper-run"
 
 # Exec budget for the single `paper-run start` invocation.  A full 13-stage
 # autonomous paper-writing run can exceed two hours behind a slower gateway,
 # so this matches the task template's [agent] timeout_sec (4h by default).
 START_TIMEOUT_SEC = 14400
+STAGE_TIMEOUT_MULTIPLIER = 2
 
 # Required brief sections enforced by the harness validator
 # (agent-writing-harness v0.3.0 .agents/tools/paper-brief.py).
@@ -253,9 +255,11 @@ def write_brief_command(brief_content: str, brief_path: str = BRIEF_PATH) -> str
 def node_install_commands() -> list[str]:
     """Install Node >= 20 via nvm (no sudo needed, user-local)."""
     return [
-        f'export NVM_DIR="$HOME/.nvm"; '
-        f"curl -fsSL {NVM_URL} | bash && . \"$NVM_DIR/nvm.sh\" && "
-        f"nvm install {NODE_MAJOR} && nvm alias default {NODE_MAJOR}",
+        (
+            f'export NVM_DIR="$HOME/.nvm"; '
+            f"curl -fsSL {NVM_URL} | bash && . \"$NVM_DIR/nvm.sh\" && "
+            f"nvm install {NODE_MAJOR} && nvm alias default {NODE_MAJOR}"
+        ),
     ]
 
 
@@ -267,17 +271,11 @@ def opencode_install_commands() -> list[str]:
 
 
 def paper_run_install_commands() -> list[str]:
-    """Clone the pinned paper-run, widen stage budgets, build, and link it."""
+    """Install the pinned paper-run release with its official installer."""
     return [
-        "rm -rf {dest} && git clone --quiet {repo} {dest} && "
-        "git -C {dest} checkout --quiet {commit} && {timeout}".format(
-            dest=_q(PAPER_RUN_SOURCE),
-            repo=_q(PAPER_RUN_REPO),
-            commit=PAPER_RUN_COMMIT,
-            timeout=patch_stage_timeouts_command(),
-        ),
         _nvm(
-            f"cd {_q(PAPER_RUN_SOURCE)} && npm ci && npm run build && npm link"
+            f"curl -fsSL {_q(PAPER_RUN_INSTALL_URL)} | sh && "
+            f"test \"$(paper-run --version)\" = {_q(PAPER_RUN_VERSION)}"
         ),
     ]
 
@@ -300,10 +298,10 @@ def opencode_user_config_command(base_url: str | None, model: str | None) -> str
     Narrow bash permission rules are intentionally NOT set here: OpenCode
     merges config layers and "last matching rule wins", so the writing repo's
     project ``opencode.json`` (with its ``bash: {"*": "ask"}`` catch-all,
-    installed after this layer) would override them.  Project rules are patched
-    into the paper-run adapter template instead (see
-    :func:`patch_opencode_template_command`), so they end up inside the repo
-    and are committed by ``paper-run init``.
+    installed after this layer) would override them. Project rules are patched
+    into the initialized repository instead (see
+    :func:`patch_opencode_project_command`) and committed with the materials
+    checkpoint.
     """
     config: dict[str, object] = {}
     if model and "/" in model:
@@ -384,17 +382,18 @@ NARROW_BASH_ALLOW: dict[str, str] = {
 }
 
 
-def patch_opencode_template_command() -> str:
-    """Merge narrow bash allows into paper-run's adapter opencode.json template.
+def patch_opencode_project_command(project_dir: str = PROJECT_DIR) -> str:
+    """Merge narrow bash allows into the initialized project config.
 
-    Runs before ``paper-run init`` so the writing repo's project config ships
-    with the rules already present; init commits them as part of its normal
-    checkpoint, keeping ``paper-run start``'s clean-tree check satisfied.
+    The official release installer does not expose its package directory as a
+    stable integration surface. Patching the generated config after
+    ``paper-run init`` keeps the package immutable; the next manual checkpoint
+    commits this change together with the public materials.
     """
-    template = f"{PAPER_RUN_SOURCE}/templates/opencode/opencode.json"
+    config_path = f"{project_dir}/opencode.json"
     script = (
         "import json, pathlib\n"
-        f"p = pathlib.Path({_q(template)})\n"
+        f"p = pathlib.Path({json.dumps(config_path)})\n"
         "cfg = json.loads(p.read_text())\n"
         "bash = cfg.setdefault('permission', {}).setdefault('bash', {})\n"
         "bash.setdefault('*', 'ask')\n"
@@ -402,31 +401,6 @@ def patch_opencode_template_command() -> str:
         + "p.write_text(json.dumps(cfg, indent=2) + '\\n')\n"
     )
     marker = "PAPERRUN_PATCH_EOF"
-    return f"python3 - <<'{marker}'\n{script}{marker}\n"
-
-
-def patch_stage_timeouts_command(factor: int = 2) -> str:
-    """Widen paper-run's per-stage turn budgets before the pipeline starts.
-
-    paper-run hardcodes a per-stage ``timeoutMs`` (material assessment 10m,
-    citation integration 20m, canonical drafting 45m, ...).  Behind a slower
-    gateway (e.g. Apex + variant high) some stages exceed theirs mid-run and
-    the whole pipeline stops with a silent exit 2.  Multiplying each budget
-    (2x by default) lets one autonomous headless invocation run to completion.
-    """
-    stages_src = f"{PAPER_RUN_SOURCE}/src/pipeline/stages.ts"
-    script = (
-        "import pathlib, re\n"
-        f"p = pathlib.Path({_q(stages_src)})\n"
-        "text = p.read_text()\n"
-        "def widen(m):\n"
-        f"    return f'timeoutMs: {{int(m.group(1)) * {factor}}} * MINUTES'\n"
-        "text, n = re.subn(r'timeoutMs: (\\d+) \\* MINUTES', widen, text)\n"
-        "if n == 0: raise SystemExit('no timeoutMs patterns found')\n"
-        "p.write_text(text)\n"
-        "print('patched', n, 'stage timeoutMs')\n"
-    )
-    marker = "PAPERRUN_TIMEOUT_EOF"
     return f"python3 - <<'{marker}'\n{script}{marker}\n"
 
 
@@ -453,6 +427,7 @@ def start_command(
     model: str | None,
     variant: str | None,
     project_dir: str = PROJECT_DIR,
+    stage_timeout_multiplier: int = STAGE_TIMEOUT_MULTIPLIER,
 ) -> str:
     """Start the autonomous headless pipeline exactly once."""
     parts = ["paper-run", "start", "--headless", "--mode", "autonomous"]
@@ -460,6 +435,7 @@ def start_command(
         parts += ["--model", _q(model)]
     if variant:
         parts += ["--variant", _q(variant)]
+    parts += ["--stage-timeout-multiplier", str(stage_timeout_multiplier)]
     cmd = " ".join(parts)
     return f"cd {_q(project_dir)} && " + _nvm(cmd)
 
