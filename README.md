@@ -180,7 +180,7 @@ harbor run \
   --agent-kwarg variant=medium \
   --agent-env 'OPENAI_API_KEY=${OPENAI_API_KEY}' \
   --agent-env 'OPENAI_BASE_URL=${OPENAI_BASE_URL}' \
-  --agent-timeout 14400 \
+  --agent-timeout-multiplier 4 \
   --yes --no-delete --n-concurrent 1 \
   --job-name paperrun-pwb-0002
 ```
@@ -232,10 +232,10 @@ Two paper-run behaviours are handled by the wrapper:
   autonomous run without modifying paper-run source.
 - **Aggregate budget.** The full 13-stage run can exceed two hours. Keep the
   shared benchmark's original 1h task budget for other agents and pass
-  `--agent-timeout 14400` when selecting paper-run.
+  `--agent-timeout-multiplier 4` when selecting paper-run.
 
 The wrapper's single `paper-run start` execution budget is 4h. Harbor must be
-given the matching `--agent-timeout 14400` override shown above.
+given the matching `--agent-timeout-multiplier 4` override shown above.
 
 ## Run Harbor tasks on Ubuntu
 
