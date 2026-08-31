@@ -24,13 +24,34 @@ biology-specific field.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpec
 
 __all__ = ["ACCEPTED_LICENSES", "APPROVED_BY_ID", "APPROVED_PAPERS", "PaperSpec"]
 
+#: Where `scripts/promote_lifesci_paperrecon_candidates.py` appends promoted
+#: candidates (Phase 8 step 2). Colocated with this module rather than a path
+#: literal restated in two places, so the two files cannot drift apart.
+APPROVED_SCALEUP_PATH = Path(__file__).resolve().parent / "approved_scaleup.jsonl"
+
+_SCALEUP_FIELDS: tuple[str, ...] = (
+    "paper_id",
+    "arxiv_id",
+    "paper_type",
+    "code_repo",
+    "expected_license",
+    "expected_version",
+    "expected_category",
+    "note",
+)
+
 #: Papers a human has approved for construction. `core.screen` proposes
-#: candidates for this list; only a human ever adds to it.
-APPROVED_PAPERS: tuple[PaperSpec, ...] = (
+#: candidates for this list; only a human ever adds to it. This tuple holds
+#: the hand-curated papers only — promotions from `approved_scaleup.jsonl`
+#: are merged in below, in :data:`APPROVED_PAPERS`.
+_HAND_CURATED_PAPERS: tuple[PaperSpec, ...] = (
     PaperSpec(
         paper_id="paper_1",
         arxiv_id="2606.27607",
@@ -418,6 +439,45 @@ APPROVED_PAPERS: tuple[PaperSpec, ...] = (
         expected_category="stat.ME",
         note="LEVEL-IIA — design-based inference framework for anticipatory EEG. (Cross-listed q-bio.NC.)",
     ),
+)
+
+
+def _load_scaleup_promotions(path: Path) -> tuple[PaperSpec, ...]:
+    """Read `approved_scaleup.jsonl`, if it exists, into `PaperSpec`s.
+
+    A missing file is the ordinary case — nothing has ever been promoted here,
+    or this checkout predates Phase 8 step 2 — and yields the empty tuple, so
+    `APPROVED_PAPERS` is byte-for-byte the hand-curated tuple when it is absent:
+    this loader is additive, never a behavior change for a checkout that never
+    ran promotion. A present but malformed file raises rather than silently
+    dropping a promoted paper, for the same "don't trust, verify" reason
+    `provenance.json` parsing does elsewhere in this package.
+    """
+
+    if not path.is_file():
+        return ()
+    specs: list[PaperSpec] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{path.name}:{number} is not valid JSON: {error}") from error
+        if not isinstance(record, dict):
+            raise TypeError(f"{path.name}:{number} is not a JSON object")
+        missing = [field for field in _SCALEUP_FIELDS if field not in record]
+        if missing:
+            raise ValueError(f"{path.name}:{number} is missing {missing}")
+        specs.append(PaperSpec(**{field: record[field] for field in _SCALEUP_FIELDS}))
+    return tuple(specs)
+
+
+#: The hand-curated tuple plus whatever promotion has appended to
+#: `approved_scaleup.jsonl`. Every existing caller keeps reading this name;
+#: none of them need to know a second source exists.
+APPROVED_PAPERS: tuple[PaperSpec, ...] = _HAND_CURATED_PAPERS + _load_scaleup_promotions(
+    APPROVED_SCALEUP_PATH
 )
 
 APPROVED_BY_ID = {spec.paper_id: spec for spec in APPROVED_PAPERS}

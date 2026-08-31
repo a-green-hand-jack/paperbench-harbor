@@ -145,6 +145,24 @@ def test_excluded_ids_appear_in_the_prompt() -> None:
     assert "2606.27607" in prompt and "2503.19375" in prompt
 
 
+def test_extra_guidance_is_absent_by_default() -> None:
+    prompt = build_screening_prompt(
+        GEOLOGY_POLICY, target_count=10, output_path=Path("/scratch/candidates.json")
+    )
+    assert "topical steering" not in prompt
+
+
+def test_extra_guidance_appears_and_is_scoped_to_not_relaxing_invariants() -> None:
+    prompt = build_screening_prompt(
+        GEOLOGY_POLICY,
+        target_count=10,
+        extra_guidance="prefer papers about volcanic ash dating",
+        output_path=Path("/scratch/candidates.json"),
+    )
+    assert "prefer papers about volcanic ash dating" in prompt
+    assert "never relaxes any invariant" in prompt
+
+
 # --------------------------------------------------------------------------- #
 # candidates.json parsing
 # --------------------------------------------------------------------------- #

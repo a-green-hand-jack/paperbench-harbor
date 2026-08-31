@@ -115,6 +115,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--extra-guidance",
+        default="",
+        help=(
+            "Free-text topical steering for this run only (e.g. 'prefer genomics/"
+            "protein work with public code'). Narrows which qualifying papers are "
+            "preferred; never relaxes what qualifies. Not persisted anywhere."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -141,6 +150,7 @@ def main() -> int:
                 seed_candidates=LIFESCI_SEED_CANDIDATES,
                 target_count=args.target_count,
                 exclude_ids=exclude_ids,
+                extra_guidance=args.extra_guidance,
                 output_path=build_root / "screening-lifesci" / "candidates.json",
             )
         )
@@ -152,6 +162,7 @@ def main() -> int:
         f"screening lifesci: target {args.target_count}, "
         f"excluding {len(exclude_ids)} already-built id(s), "
         f"{len(LIFESCI_SEED_CANDIDATES)} seed(s), model {args.model}"
+        + (f", guidance: {args.extra_guidance!r}" if args.extra_guidance else "")
     )
 
     try:
@@ -161,6 +172,7 @@ def main() -> int:
             seed_candidates=LIFESCI_SEED_CANDIDATES,
             target_count=args.target_count,
             exclude_ids=exclude_ids,
+            extra_guidance=args.extra_guidance,
             model=args.model,
             log_dir=log_dir,
             timeout=args.timeout,
@@ -175,6 +187,7 @@ def main() -> int:
         "policy": LIFESCI_SCREENING_POLICY.name,
         "model": args.model,
         "target_count": args.target_count,
+        "extra_guidance": args.extra_guidance,
         "excluded_arxiv_ids": list(exclude_ids),
         "summary": summary,
         "candidates": [entry.as_dict() for entry in candidates],

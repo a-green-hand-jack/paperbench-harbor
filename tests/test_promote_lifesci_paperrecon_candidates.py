@@ -479,7 +479,8 @@ def test_promote_is_idempotent_on_arxiv_id(
 def test_new_paper_ids_continue_past_the_hand_curated_tuple(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`papers.py` holds paper_1..paper_3, so promotion starts at paper_4."""
+    """`papers.py` holds paper_1..paper_38 (post Phase 4 scale-up), so
+    promotion starts at paper_39."""
 
     monkeypatch.setattr(promote_module, "_http_get", _live())
     approved = tmp_path / "approved_scaleup.jsonl"
@@ -498,7 +499,7 @@ def test_new_paper_ids_continue_past_the_hand_curated_tuple(
         ]
     )
 
-    assert [record["paper_id"] for record in _lines(approved)] == ["paper_4", "paper_5"]
+    assert [record["paper_id"] for record in _lines(approved)] == ["paper_39", "paper_40"]
 
 
 def test_a_second_run_does_not_reissue_an_id_the_first_used(
@@ -526,14 +527,14 @@ def test_a_second_run_does_not_reissue_an_id_the_first_used(
         ]
     )
 
-    assert [record["paper_id"] for record in _lines(approved)] == ["paper_4", "paper_5"]
+    assert [record["paper_id"] for record in _lines(approved)] == ["paper_39", "paper_40"]
 
 
 def test_next_paper_index_reads_both_sources() -> None:
-    assert next_paper_index([]) == 4
-    assert next_paper_index([{"paper_id": "paper_9"}]) == 10
+    assert next_paper_index([]) == 39
+    assert next_paper_index([{"paper_id": "paper_44"}]) == 45
     # A malformed id is ignored rather than crashing the numbering.
-    assert next_paper_index([{"paper_id": "not-a-paper"}]) == 4
+    assert next_paper_index([{"paper_id": "not-a-paper"}]) == 39
 
 
 def test_limit_caps_how_many_are_promoted(

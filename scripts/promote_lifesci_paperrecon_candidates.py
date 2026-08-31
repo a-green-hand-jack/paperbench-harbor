@@ -53,17 +53,14 @@ from paperbench_harbor.construction.core.screen import (
     parse_candidates,
 )
 from paperbench_harbor.construction.core.spec import PaperSpec
-from paperbench_harbor.construction.lifesci_paperrecon import papers as papers_module
-from paperbench_harbor.construction.lifesci_paperrecon.papers import APPROVED_PAPERS
+from paperbench_harbor.construction.lifesci_paperrecon.papers import (
+    APPROVED_PAPERS,
+    APPROVED_SCALEUP_PATH,
+)
 from paperbench_harbor.construction.lifesci_paperrecon.screening import (
     LIFESCI_EXCLUDE_IDS,
     LIFESCI_SCREENING_POLICY,
 )
-
-#: Derived from the papers module's own location rather than restated as a path
-#: literal, so this script and the loader `papers.py` gains in Phase 8 step 2
-#: cannot drift apart.
-APPROVED_SCALEUP_PATH = Path(papers_module.__file__).resolve().parent / "approved_scaleup.jsonl"
 
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ARXIV_ABS_URL = "https://arxiv.org/abs"
@@ -588,10 +585,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if written:
         _log(f"appended {len(written)} record(s) -> {args.approved_file}")
-        _log(
-            "note: nothing reads approved_scaleup.jsonl back into APPROVED_PAPERS yet "
-            "(Phase 8 step 2)."
-        )
+        if args.approved_file.resolve() == APPROVED_SCALEUP_PATH.resolve():
+            _log(
+                "papers.py's loader reads this file automatically — "
+                "APPROVED_PAPERS now includes these records."
+            )
+        else:
+            _log(
+                "note: this is not the default approved-scaleup path, so "
+                "papers.py's loader will not pick it up automatically."
+            )
 
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)

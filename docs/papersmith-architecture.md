@@ -174,8 +174,11 @@ correction removed the false positives and left both real findings standing.
 
 ## One-command entry point
 
-**Status (2026-08-31): step 1 of 2. Shipped and not yet end-to-end — read the
-"What is not wired yet" subsection before using this.**
+**Status (2026-08-31): step 2 of 2 shipped.** Both additive touches deferred
+during step 1 — the `approved_scaleup.jsonl` loader in `papers.py` and
+`--extra-guidance` on the screening CLI — landed once the Phase 4 scale-up run
+that was actively editing those same files settled and merged. See "What was
+wired in step 2" below for what changed and how it was verified.
 
 The three stages above are capabilities, not a workflow. Growing the corpus still
 meant a human running four programs in order and hand-carrying candidate ids
@@ -286,39 +289,44 @@ A second domain's entry point will be a second file,
 at that domain's scripts — not a multi-domain dispatcher built before a second
 domain exists, the same YAGNI stance as the plugin split.
 
-### What is not wired yet
+### What was wired in step 2
 
-Two additive touches intersect files that the in-flight Phase 4 scale-up run was
-actively editing, so they were deliberately deferred to **Phase 8 step 2**, to be
-built on that run's real outcome rather than on a snapshot from before it started:
+Both touches deferred in step 1 intersected files the in-flight Phase 4
+scale-up run was actively editing (`papers.py`, `screen_lifesci_paperrecon_candidates.py`).
+Once that run merged (`APPROVED_PAPERS` grew from 3 hand-curated pilots to 38),
+both landed on top of it:
 
-1. **`papers.py` does not read `approved_scaleup.jsonl`.** The planned additive
-   loader — `APPROVED_PAPERS` becomes the hand-curated tuple plus whatever the
-   JSONL contains — is not written. `APPROVED_PAPERS` is still exactly the three
-   hand-curated pilots.
-2. **`screen_lifesci_paperrecon_candidates.py` has no `--extra-guidance` flag.**
-   The screening *library* (`core/screen.py`) and the lifesci *policy*
-   (`lifesci_paperrecon/screening.py`) both exist, but the CLI wrapper script
-   itself also arrives with the Phase 4 work, so step 2 of the procedure cannot
-   run from this commit alone. Topical steering from the request therefore has
-   nowhere to go yet, and the agent is instructed to say so explicitly rather
-   than silently dropping it.
+1. **`papers.py` now reads `approved_scaleup.jsonl`.** `_load_scaleup_promotions()`
+   parses the file (one `PaperSpec`-shaped JSON object per line) if it exists, and
+   `APPROVED_PAPERS` becomes the hand-curated tuple plus whatever it contains.
+   A missing file — the ordinary case for a checkout that has never run
+   promotion — yields the empty tuple, so this is byte-for-byte a no-op change
+   for every existing caller: confirmed by re-running the full suite immediately
+   after landing the loader, before touching anything else, and by a dedicated
+   test (`tests/test_lifesci_paperrecon_papers_loader.py`) that asserts
+   `APPROVED_PAPERS` equals the hand-curated tuple when the file is absent. A
+   malformed line (bad JSON, a JSON array instead of an object, a missing
+   field) raises by name rather than silently dropping a promoted paper — the
+   same "don't trust, verify" discipline `provenance.json` parsing uses
+   elsewhere in this package.
+2. **`screen_lifesci_paperrecon_candidates.py` now has `--extra-guidance`.**
+   `build_screening_prompt()` and `run_screening()` both gained a keyword-only
+   `extra_guidance: str = ""` parameter, rendered as its own prompt section
+   ("This run's topical steering") appended alongside `prior_findings` rather
+   than woven into the invariants — it can narrow which *qualifying* papers get
+   proposed, and the prompt says explicitly that it never relaxes what
+   qualifies. Verified with a dry-run render (`--dry-run` prints the rendered
+   prompt without spending a model call) confirming the steering text and the
+   non-relaxation sentence both appear.
 
-**The honest consequence: the one-command agent as shipped today is not yet fully
-end-to-end automatic.** Promotion writes `approved_scaleup.jsonl` and nothing
-reads it back, so a freshly promoted `paper_4` is not in `APPROVED_BY_ID` and
-`build_lifesci_paperrecon_source.py --papers paper_4` rejects it as an unknown
-id. Steps 1-3 work; step 4 onward needs the loader. The agent's prose flags this
-inline and tells it to stop and report rather than work around it — in
-particular, not to rebuild the three existing pilots and present that as the
-request's result.
+Steps 1-4 of the seven-step procedure now form an unbroken chain: a paper
+promoted in step 3 is immediately visible to step 4's `--papers` argument via
+`APPROVED_BY_ID`, with no manual edit in between. The live end-to-end smoke
+test (`opencode run --agent papersmith-lifesci "<a request for exactly 1 new
+paper>"`, producing one new validated Harbor task with no manual step) is
+still a separate verification step and is not claimed by the unit-level
+evidence above — see the open item below.
 
-This is the current state of a two-step sequence, not a design flaw being papered
-over: the verify-before-promote machinery is the part that had to be right, and it
-is testable and tested without the loader. The live end-to-end smoke test
-(`opencode run --agent papersmith-lifesci "<a request for exactly 1 new paper>"`,
-producing exactly one new validated Harbor task with no manual step) is step 2's
-verification, and is explicitly not claimed here.
 
 ## Why in-process plugins, and not a forked pipeline
 
@@ -370,7 +378,8 @@ src/paperbench_harbor/construction/
     plugin.py                 LIFESCI_PLUGIN
     approved_scaleup.jsonl    promoted candidates, one PaperSpec-shaped record
                               per line — data, written only by the promotion
-                              script, and not yet read back (Phase 8 step 2)
+                              script, read back into APPROVED_PAPERS by
+                              papers.py's additive loader
 
 .opencode/agent/
   papersmith-lifesci.md       the one-command entry point

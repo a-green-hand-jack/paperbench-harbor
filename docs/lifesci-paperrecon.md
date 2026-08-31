@@ -182,9 +182,10 @@ project-original. Dataset directory:
   fixed in this phase). See “Phase 4 execution results” below. The
   one-command entry point that drives screen → verify → promote → build →
   wrap → audit from a single free-form request is
-  `.opencode/agent/papersmith-lifesci.md`; see
-  `docs/papersmith-architecture.md` ("One-command entry point"), including
-  what is not yet wired.
+  `.opencode/agent/papersmith-lifesci.md`; both of its steps are now wired
+  end-to-end (unit-verified; the live end-to-end smoke test is still a
+  separate open item) — see `docs/papersmith-architecture.md`
+  ("One-command entry point").
 - **Phase 5 (Hugging Face publish)**: not started.
 
 ### Open follow-ups
