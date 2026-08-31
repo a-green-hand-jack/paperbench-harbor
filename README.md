@@ -152,6 +152,83 @@ with the upstream writer surface. Official evaluator wiring has been
 completed, but upstream-versus-Harbor score parity has not yet been
 established.
 
+## paper-run agent
+
+`paper-run` (an OpenCode-native autonomous manuscript-production harness) is
+integrated as a first-class Harbor installed agent. It is registered by import
+path, so no Harbor source change is needed:
+
+```text
+paperbench_harbor.agents.paper_run:PaperRun
+```
+
+Pinned versions (see `src/paperbench_harbor/agents/paper_run_core.py`):
+
+- `paper-run` commit `ccf7ddd51a6eef052677d0e3e6a696169be7e58b` (v0.1.0)
+- OpenCode `1.18.25` (matches the pinned lockfile)
+- Node `20` via nvm
+
+Run one task:
+
+```bash
+harbor run \
+  --env-file /home/user/dev/paperbench-harbor/.env \
+  --path /home/user/dev/paperbench-harbor/datasets/paperwrite-bench-short/pwb-0002 \
+  --agent paperbench_harbor.agents.paper_run:PaperRun \
+  --model openai/gpt-5.6-sol \
+  --agent-kwarg variant=high \
+  --agent-env 'OPENAI_API_KEY=${OPENAI_API_KEY}' \
+  --agent-env 'OPENAI_BASE_URL=${OPENAI_BASE_URL}' \
+  --yes --n-concurrent 1 \
+  --job-name paperrun-pwb-0002
+```
+
+The wrapper, inside the task container:
+
+1. Installs Node, the pinned OpenCode runtime, and the pinned `paper-run`
+   (clone + `npm ci` + build + `npm link`).
+2. Renders the task instruction into a valid harness `BRIEF.md` (validated by
+   `agent-writing-harness` v0.3.0 `paper-brief.py`).
+3. Writes a user-level OpenCode config pointing provider `openai` at
+   `OPENAI_BASE_URL` (credentials are only read from the environment, never
+   baked into files).
+4. Runs `paper-run init --local --mode autonomous --model <model>`.
+5. Stages the public benchmark materials into
+   `<repo>/materials/` and commits them with a manual `paper-run checkpoint`,
+   so the material assessment can see them and `paper-run start`'s
+   clean-tree check passes.
+6. Runs exactly one
+   `paper-run start --headless --mode autonomous --model <model> --variant <variant>`.
+7. Exports `paper/main.tex`, `paper/refs.bib` (as `references.bib`) and the
+   rest of the `paper/` tree into `/workspace/submission`, and mirrors
+   `.paper-run/`, `run.log` and publication PDFs under `/logs/agent/paper-run/`
+   as trial artifacts.
+
+Two paper-run behaviours are handled by the wrapper:
+
+- **Headless permissions.** `paper-run` auto-approves no bash command, so a
+  narrow set of read-only rules (`ls *`, `cat *`, `git status*`, `pdfinfo *`,
+  `make *`, `pdflatex *`, ...) is patched into paper-run's adapter
+  `opencode.json` template before `init`; everything else stays `ask`
+  (fail-fast) in headless mode.  The list is deliberately generous for the
+  commands an autonomous writer legitimately uses inside the isolated
+  container (inspection, git read, python, local file ops, publication build).
+- **Material assessment.** It only considers files inside the writing repo, so
+  public materials are copied into `<repo>/materials/` before `start`.
+- **Locked contracts.** `PAPER.md ## What must not change silently` is a hard
+  fail-closed section; the wrapper's brief explicitly tells the writer not to
+  edit it, and to record lock candidates under `## Unresolved`.
+- **Per-stage budgets.** paper-run hardcodes per-stage `timeoutMs` (10-45 min);
+  the wrapper patches `src/pipeline/stages.ts` to multiply every stage budget
+  (2x) before building, so slower gateways can finish one autonomous run.
+- **Aggregate budget.** The full 13-stage run can exceed two hours, so the task
+  template's `[agent] timeout_sec` and the wrapper's single `start` exec budget
+  default to 4h.
+
+Time budget: the task template sets `[agent] timeout_sec = 14400` (4h) and the
+wrapper's single `start` exec budget matches. Writer-facing instructions state
+the same 4-hour budget.
+
 ## Run Harbor tasks on Ubuntu
 
 Harbor runs on the Ubuntu box. The generated datasets are stored at:
