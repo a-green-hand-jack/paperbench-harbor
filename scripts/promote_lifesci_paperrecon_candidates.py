@@ -36,6 +36,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,6 +51,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from paperbench_harbor.construction.core.screen import (
     Candidate,
     ScreeningError,
+    ScreeningPolicy,
     parse_candidates,
 )
 from paperbench_harbor.construction.core.spec import PaperSpec
@@ -518,6 +520,52 @@ def promote(
     return outcomes, written, summary
 
 
+def read_candidates(
+    path: Path, *, policy: ScreeningPolicy, exclude_ids: tuple[str, ...]
+) -> list[Candidate]:
+    """Read a proposal file, accepting either shape screening can produce.
+
+    `core.screen.run_screening()` writes and reads back a bare JSON array — that
+    contract is validated by `tests/test_construction_core_screen.py` and must
+    not change. But `scripts/screen_lifesci_paperrecon_candidates.py --output`
+    writes a human-readable *report* around the same candidates: an object with
+    `generated_at`, `summary`, and a `candidates` array among its keys. A human
+    (or the one-command agent) naturally hands this script whichever file
+    screening actually wrote, and both are the real, current output of a real
+    screening path — so this reads the file once, and if it is an object with a
+    `candidates` list, re-serializes just that list to a temp file before
+    handing it to `parse_candidates`, rather than asking `parse_candidates`
+    itself to accept two shapes and weakening what it guarantees for its other
+    caller.
+    """
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ScreeningError(f"{path.name} is not valid JSON: {error}") from error
+    except OSError as error:
+        raise ScreeningError(f"cannot read {path}: {error}") from error
+
+    if isinstance(raw, list):
+        return parse_candidates(path, policy=policy, exclude_ids=exclude_ids)
+
+    if isinstance(raw, dict) and isinstance(raw.get("candidates"), list):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".json", delete=False, encoding="utf-8"
+        ) as handle:
+            json.dump(raw["candidates"], handle)
+            temp_path = Path(handle.name)
+        try:
+            return parse_candidates(temp_path, policy=policy, exclude_ids=exclude_ids)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    raise ScreeningError(
+        f"{path.name} is neither a JSON array of candidates nor an object with a "
+        "'candidates' array"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -558,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--limit must be >= 1")
 
     try:
-        candidates = parse_candidates(
+        candidates = read_candidates(
             args.candidates,
             policy=LIFESCI_SCREENING_POLICY,
             exclude_ids=LIFESCI_EXCLUDE_IDS,

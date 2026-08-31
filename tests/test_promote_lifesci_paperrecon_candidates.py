@@ -144,6 +144,90 @@ def _lines(path: Path) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# reading a proposal: the bare-array shape and the CLI's report-object shape
+# --------------------------------------------------------------------------- #
+
+
+def _write_report(directory: Path, records: list[dict]) -> Path:
+    """The shape `scripts/screen_lifesci_paperrecon_candidates.py --output`
+    actually writes: a report object, not a bare array — the shape the live
+    end-to-end smoke test discovered `read_candidates` needed to accept."""
+
+    path = directory / "candidates-lifesci.json"
+    path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-08-31T00:00:00+00:00",
+                "policy": "lifesci",
+                "model": "openai/gpt-5.6-terra",
+                "target_count": len(records),
+                "extra_guidance": "",
+                "excluded_arxiv_ids": [],
+                "summary": {"count": len(records)},
+                "candidates": records,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_a_bare_array_file_is_read_directly(tmp_path: Path) -> None:
+    path = _write_candidates(tmp_path, [_candidate()])
+    candidates = promote_module.read_candidates(
+        path,
+        policy=promote_module.LIFESCI_SCREENING_POLICY,
+        exclude_ids=(),
+    )
+    assert [entry.arxiv_id for entry in candidates] == ["2504.11111"]
+
+
+def test_a_report_object_with_a_candidates_key_is_also_read(tmp_path: Path) -> None:
+    """This is the shape the real screening CLI writes to --output."""
+
+    path = _write_report(tmp_path, [_candidate(), _candidate(arxiv_id="2504.22222")])
+    candidates = promote_module.read_candidates(
+        path,
+        policy=promote_module.LIFESCI_SCREENING_POLICY,
+        exclude_ids=(),
+    )
+    assert [entry.arxiv_id for entry in candidates] == ["2504.11111", "2504.22222"]
+
+
+def test_a_report_object_without_a_candidates_key_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "candidates.json"
+    path.write_text(json.dumps({"generated_at": "now"}), encoding="utf-8")
+    with pytest.raises(promote_module.ScreeningError, match="candidates"):
+        promote_module.read_candidates(
+            path, policy=promote_module.LIFESCI_SCREENING_POLICY, exclude_ids=()
+        )
+
+
+def test_main_accepts_the_real_cli_report_shape_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression pin for the exact bug the live smoke test caught: promotion
+    must accept whatever `screen_lifesci_paperrecon_candidates.py --output`
+    actually writes, not just a bare array."""
+
+    monkeypatch.setattr(promote_module, "_http_get", _live())
+    approved = tmp_path / "approved_scaleup.jsonl"
+
+    exit_code = main(
+        [
+            "--candidates",
+            str(_write_report(tmp_path, [_candidate()])),
+            "--approved-file",
+            str(approved),
+            "--promote",
+        ]
+    )
+
+    assert exit_code == 0
+    assert [record["arxiv_id"] for record in _lines(approved)] == ["2504.11111"]
+
+
+# --------------------------------------------------------------------------- #
 # the license names arXiv actually links to
 # --------------------------------------------------------------------------- #
 
