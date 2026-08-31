@@ -1,9 +1,15 @@
-"""Driving one `opencode` CLI session per paper.
+"""Driving one `opencode` CLI session.
+
+Construction was the first caller and named the function `run_construction`;
+screening and reconstructability review are the second and third, and neither
+constructs anything, so the function is :func:`run_agent_session`. Nothing about
+it was ever construction-specific — `paper_id` is a log label, and
+`continue_session=False` was already the single-shot case.
 
 The interesting decisions here are about containment, not about the agent.
 `--auto` auto-approves every tool call, which the CLI itself labels dangerous:
 the agent gets unsupervised shell and file-write access for the length of the
-run. Two rules follow, and :func:`run_construction` enforces both rather than
+run. Two rules follow, and :func:`run_agent_session` enforces both rather than
 documenting them:
 
 * the working directory is an isolated scratch tree that is **not inside any
@@ -88,7 +94,7 @@ def prepare_scratch(scratch_root: Path, paper_id: str, *, fresh: bool = False) -
     return workspace
 
 
-def run_construction(
+def run_agent_session(
     *,
     paper_id: str,
     prompt: str,
@@ -100,7 +106,7 @@ def run_construction(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     dry_run: bool = False,
 ) -> AgentRun:
-    """Invoke `opencode run` for one construction turn and record it.
+    """Invoke `opencode run` for one agent turn and record it.
 
     The prompt is passed as an argument rather than piped so that the exact
     command is reproducible from the log: a human re-running the build should

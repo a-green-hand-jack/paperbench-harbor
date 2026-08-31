@@ -40,10 +40,11 @@ from paperbench_harbor.construction.core.opencode_agent import (
     check_opencode_available,
 )
 from paperbench_harbor.construction.core.pipeline import build_corpus
+from paperbench_harbor.construction.core.review import default_reviewer_model
 from paperbench_harbor.construction.core.spec import PaperSpec
 from paperbench_harbor.construction.lifesci_paperrecon.papers import (
-    PILOT_BY_ID,
-    PILOT_PAPERS,
+    APPROVED_BY_ID,
+    APPROVED_PAPERS,
 )
 from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
@@ -68,8 +69,26 @@ def main() -> int:
     )
     parser.add_argument("--build-root", type=Path, default=None, help="Scratch for compile checks.")
     parser.add_argument("--log-dir", type=Path, default=None, help="Agent transcripts.")
-    parser.add_argument("--papers", nargs="*", default=None, help="Paper ids (default: all pilot papers).")
+    parser.add_argument("--papers", nargs="*", default=None, help="Paper ids (default: all approved papers).")
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--reviewer-model",
+        default=None,
+        help=(
+            "Model for the stage-3 reconstructability review. Must not be the "
+            "construction model: a model grading its own output ratifies its own "
+            "misreadings. Falls back to $REVIEWER_MODEL, then "
+            f"{default_reviewer_model()!r}."
+        ),
+    )
+    parser.add_argument(
+        "--skip-review",
+        action="store_true",
+        help=(
+            "Skip stage 3. For cheap structural iteration only: a paper admitted "
+            "with this flag was never checked for semantic faithfulness."
+        ),
+    )
     parser.add_argument(
         "--max-turns",
         type=int,
@@ -101,12 +120,12 @@ def main() -> int:
 
     specs: list[PaperSpec]
     if args.papers:
-        unknown = [name for name in args.papers if name not in PILOT_BY_ID]
+        unknown = [name for name in args.papers if name not in APPROVED_BY_ID]
         if unknown:
             parser.error(f"unknown paper id(s): {', '.join(unknown)}")
-        specs = [PILOT_BY_ID[name] for name in args.papers]
+        specs = [APPROVED_BY_ID[name] for name in args.papers]
     else:
-        specs = list(PILOT_PAPERS)
+        specs = list(APPROVED_PAPERS)
 
     scratch_root = args.scratch_root.resolve()
     corpus_root = args.corpus_root.resolve()
@@ -130,12 +149,17 @@ def main() -> int:
         fresh=args.fresh,
         dry_run=args.dry_run,
         validate_only=args.validate_only,
+        skip_review=args.skip_review,
+        reviewer_model=args.reviewer_model,
         log=_log,
     )
 
     summary = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "model": args.model,
+        "reviewer_model": (
+            None if args.skip_review else (args.reviewer_model or default_reviewer_model())
+        ),
         "corpus_root": str(corpus_root),
         "scratch_root": str(scratch_root),
         "papers": outcomes,

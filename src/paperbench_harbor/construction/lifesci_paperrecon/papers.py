@@ -1,8 +1,11 @@
-"""The LifeSci-PaperRecon pilot paper set.
+"""The LifeSci-PaperRecon approved paper set.
 
 These three papers were selected by hand (approved plan, "Phase 0 results") to
 give the pilot mixed paper-type coverage rather than three samples of the same
-shape. That mix is a deliberate human decision, so the build **never
+shape. The name is `APPROVED_PAPERS` rather than `PILOT_PAPERS` because the
+pilot is over: as the corpus scales, this is the human-approved list that
+`core.screen` proposes candidates *for* and never writes to, and that the
+construction gate's `provenance-mismatch` check treats as authoritative. That mix is a deliberate human decision, so the build **never
 substitutes a paper**: if re-verification finds that a paper no longer
 qualifies — the license changed, the submission is PDF-only, the linked
 repository is gone — the build stops and reports, and a human re-decides.
@@ -23,9 +26,11 @@ from __future__ import annotations
 
 from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpec
 
-__all__ = ["ACCEPTED_LICENSES", "PILOT_BY_ID", "PILOT_PAPERS", "PaperSpec"]
+__all__ = ["ACCEPTED_LICENSES", "APPROVED_BY_ID", "APPROVED_PAPERS", "PaperSpec"]
 
-PILOT_PAPERS: tuple[PaperSpec, ...] = (
+#: Papers a human has approved for construction. `core.screen` proposes
+#: candidates for this list; only a human ever adds to it.
+APPROVED_PAPERS: tuple[PaperSpec, ...] = (
     PaperSpec(
         paper_id="paper_1",
         arxiv_id="2606.27607",
@@ -64,4 +69,4 @@ PILOT_PAPERS: tuple[PaperSpec, ...] = (
     ),
 )
 
-PILOT_BY_ID = {spec.paper_id: spec for spec in PILOT_PAPERS}
+APPROVED_BY_ID = {spec.paper_id: spec for spec in APPROVED_PAPERS}

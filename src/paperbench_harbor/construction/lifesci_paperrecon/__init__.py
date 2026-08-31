@@ -41,15 +41,15 @@ from paperbench_harbor.construction.core.validate import (
     validate_paper,
 )
 from paperbench_harbor.construction.lifesci_paperrecon.papers import (
-    PILOT_BY_ID,
-    PILOT_PAPERS,
+    APPROVED_BY_ID,
+    APPROVED_PAPERS,
 )
 from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
 __all__ = [
+    "APPROVED_BY_ID",
+    "APPROVED_PAPERS",
     "LIFESCI_PLUGIN",
-    "PILOT_BY_ID",
-    "PILOT_PAPERS",
     "PaperSpec",
     "ValidationIssue",
     "ValidationReport",

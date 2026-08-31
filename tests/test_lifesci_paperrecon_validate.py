@@ -19,10 +19,10 @@ import pytest
 
 from paperbench_harbor.construction.core.spec import PaperSpec
 from paperbench_harbor.construction.core.validate import validate_paper
-from paperbench_harbor.construction.lifesci_paperrecon.papers import PILOT_BY_ID
+from paperbench_harbor.construction.lifesci_paperrecon.papers import APPROVED_BY_ID
 from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
-SPEC = PILOT_BY_ID["paper_1"]
+SPEC = APPROVED_BY_ID["paper_1"]
 
 _MAIN_TEX = r"""
 \documentclass{article}

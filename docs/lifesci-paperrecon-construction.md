@@ -208,7 +208,7 @@ running anything, which is the cheapest way to review a prompt change.
 
 `--auto` auto-approves every tool permission — the CLI itself calls it
 dangerous — so the agent has unsupervised shell and file-write access for the
-length of the run. `prepare_scratch()` and `run_construction()` both walk the
+length of the run. `prepare_scratch()` and `run_agent_session()` both walk the
 path's ancestors and **refuse to start** if the workspace is inside a git
 working tree. Nothing enters the repository until the gate has passed it.
 

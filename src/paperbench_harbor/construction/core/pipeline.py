@@ -26,9 +26,14 @@ state. ``concurrency=1`` stays the default: the ceiling that matters is the
 model gateway's rate limit, which is a property of the deployment, not of this
 code.
 
-An eventual reconstructability review (a second model reading the overview back
-against the paper) belongs in this loop, between a passing validation and
-admission to the corpus — deliberately not implemented here.
+The reconstructability review (:mod:`.review`) is the third rule, added once
+the structural gate had proved it could not see semantic problems: a paper that
+passes :func:`~.validate.validate_paper` is handed to a *different* model to be
+read back against its own overview, and a failing verdict is recorded on the
+same :class:`~.validate.ValidationReport` as any other contract violation. That
+is the whole integration — no second report type, no second retry loop. The
+existing feedback path carries the reviewer's concerns into the next turn
+because ``report.agent_feedback()`` renders every issue it is given.
 """
 
 from __future__ import annotations
@@ -45,11 +50,17 @@ from paperbench_harbor.construction.core.opencode_agent import (
     DEFAULT_TIMEOUT_SECONDS,
     AgentRun,
     prepare_scratch,
-    run_construction,
+    run_agent_session,
     tail_log,
 )
 from paperbench_harbor.construction.core.plugin import DomainPlugin
 from paperbench_harbor.construction.core.prompt import build_prompt, build_retry_prompt
+from paperbench_harbor.construction.core.review import (
+    ReviewVerdict,
+    default_reviewer_model,
+    run_review,
+    write_review_record,
+)
 from paperbench_harbor.construction.core.spec import PaperSpec
 from paperbench_harbor.construction.core.validate import ValidationReport, validate_paper
 
@@ -98,13 +109,25 @@ def build_paper(
     fresh: bool = False,
     dry_run: bool = False,
     validate_only: bool = False,
+    skip_review: bool = False,
+    reviewer_model: str | None = None,
     log: Logger = _default_log,
 ) -> dict:
-    """Run the agent/validate loop for one paper and return its outcome record."""
+    """Run the agent/validate/review loop for one paper and return its outcome.
+
+    `skip_review` turns off stage 3 for cheap structural iteration. Note what it
+    does *not* interact with: the plan called for review to run only when
+    compilation is also being checked, but `run_compile` is not a parameter of
+    this loop — :func:`~.validate.validate_paper` is always called with its
+    default `run_compile=True`, and `validate_only` skips the *agent*, not the
+    compile. So the guard reduces to `skip_review` alone, which is the flag that
+    actually controls the cost.
+    """
 
     workspace = prepare_scratch(scratch_root, spec.paper_id, fresh=fresh)
     runs: list[AgentRun] = []
     report: ValidationReport | None = None
+    verdict: ReviewVerdict | None = None
 
     for turn in range(1, max_turns + 1):
         if not validate_only:
@@ -114,7 +137,7 @@ def build_paper(
                 assert report is not None
                 prompt = build_retry_prompt(spec, report, str(workspace), plugin)
             log(f"  turn {turn}: opencode run ({model})")
-            run = run_construction(
+            run = run_agent_session(
                 paper_id=spec.paper_id,
                 prompt=prompt,
                 workspace=workspace,
@@ -153,6 +176,28 @@ def build_paper(
         report = validate_paper(
             workspace, spec, plugin, build_root=build_root / spec.paper_id
         )
+        # Stage 3 runs only on a structurally sound sample: asking a model
+        # whether an overview is faithful is pointless when the gate already
+        # knows a required file is missing, and it would burn a reviewer call
+        # per turn to say so.
+        if report.ok and not skip_review:
+            log(f"  turn {turn}: reconstructability review "
+                f"({reviewer_model or default_reviewer_model()})")
+            verdict = run_review(
+                spec,
+                plugin,
+                workspace,
+                build_root=build_root,
+                model=reviewer_model,
+                log_dir=log_dir,
+                dry_run=dry_run,
+            )
+            if not verdict.ok:
+                report.fail(
+                    "reconstructability-review",
+                    verdict.reasoning,
+                    remedy=verdict.remedy(),
+                )
         log("  " + report.summary().replace("\n", "\n  "))
         if report.ok:
             break
@@ -171,12 +216,19 @@ def build_paper(
         ],
         "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
     }
+    if verdict is not None:
+        outcome["review"] = verdict.as_dict()
 
     if report.ok:
         destination = corpus_root / spec.paper_id
         if destination.exists():
             shutil.rmtree(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        # Written into the workspace before the copy rather than into the
+        # corpus after it, so the audit trail travels with the paper by the
+        # same mechanism as everything else it carries.
+        if verdict is not None:
+            write_review_record(workspace, verdict)
         # `.git` would carry the code repo's full history into every Harbor
         # task's build context; the checked-out tree plus a recorded commit is
         # what provenance needs.
@@ -208,6 +260,8 @@ def build_corpus(
     fresh: bool = False,
     dry_run: bool = False,
     validate_only: bool = False,
+    skip_review: bool = False,
+    reviewer_model: str | None = None,
     log: Logger = _default_log,
 ) -> list[dict]:
     """Build every spec, up to `concurrency` papers at a time.
@@ -244,6 +298,8 @@ def build_corpus(
                 fresh=fresh,
                 dry_run=dry_run,
                 validate_only=validate_only,
+                skip_review=skip_review,
+                reviewer_model=reviewer_model,
                 log=paper_log,
             )
         except Exception as error:  # noqa: BLE001 - one paper must not sink the run
