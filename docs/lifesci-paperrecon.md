@@ -170,27 +170,40 @@ project-original. Dataset directory:
   project, but the actual judge model/prompts are out of this project's
   hands to design — they'll arrive as a black-box "paper review agent" to
   wire in.
-- **Phase 4 (scale to ~30–50)**: not started. The pilot has passed, so this is
-  now unblocked; see the Phase 0 screening caveat under "Phase 1 pilot
-  results" before trusting the 27-candidate list.
+- **Phase 4 (scale to ~30–50)**: **partially complete (22/30–50 target).**
+  35 new candidates were screened, promoted, and fed through the full
+  PaperSmith pipeline (screen → construct → review). Of 38 total approved
+  papers (3 pilots + 35 scale-up), 22 are now in the corpus. 11 were blocked
+  by category mismatches (10 primary-outside-`q-bio.*` plus 1 q-bio
+  subcategory mismatch; this is a **still-open scope question** — the
+  coordinator must decide which cross-listed/non-q-bio-primary papers to
+  accept or decline, and that decision has not been made). 5
+  genuinely failed after exhausting retries (unrelated to the two generic bugs
+  fixed in this phase). See “Phase 4 execution results” below.
 - **Phase 5 (Hugging Face publish)**: not started.
 
 ### Open follow-ups
 
-- **Decide what to do about pilot papers 2 and 3** (see "Phase 1 pilot
-  results" above). This is a human re-selection decision and the build will
-  not proceed past it on its own.
-- Re-verify the 3 pilot papers' exact license strings, arXiv source
-  availability, and code-repo accessibility at implementation time (Phase 0
-  findings came from an automated survey, not yet independently
-  double-checked against the live arXiv pages). *Partly done: all three
-  papers' own arXiv licenses were re-confirmed live on 2026-08-30 and are
-  correct; it was the code repositories that failed.*
+- **Cross-listed-paper scope decision (Phase 4, explicitly pending human
+  decision).** 11 of the 35 scale-up candidates were blocked by the
+  provenance-mismatch check: 10 have a primary arXiv category outside
+  `q-bio.*` (`cs.LG` × 7 — papers 5, 9, 12, 14, 22, 27, 36 — plus `cs.CE`
+  (16), `cs.CV` (37), `stat.ME` (25)), and 1 (`paper_4`) is a
+  q-bio-subcategory mismatch (`q-bio.QM` primary where `q-bio.BM` was
+  originally recorded). They carry q-bio cross-lists and are legitimate
+  life-sciences work, but the decision of which cross-listed /
+  non-q-bio-primary papers to accept versus decline is a **human scope
+  decision that has not been made**, and `papers.py` has been left recording
+  the true primary categories pending it. Note the pipeline itself already
+  handles cross-listed papers correctly when the category is recorded
+  accurately: three non-q-bio-primary papers built successfully
+  (`paper_21` `stat.AP`, `paper_26` `cs.AI`, `paper_38` `stat.ME`).
 - When the external paper-review agent is ready, define its exact input
-  contract against this document's Layer 2 table (does it need the raw GT
+  contract against this document’s Layer 2 table (does it need the raw GT
   paper directly, a pre-extracted rubric, or nothing at all — this
   determines what verifier-only material needs to be prepared and
   byte-preserved for it ahead of time).
+
 
 ## Phase 1 pilot results (2026-08-31)
 
@@ -243,3 +256,80 @@ disqualifying, so the re-screen does not need a licensed repo as a hard
 filter — but it should still read and carry each candidate's `license` field
 into the table, so the pool's licensing mix is a deliberate choice rather than
 an unexamined one.
+
+## Phase 4 execution results (2026-08-31)
+
+### Scale-up: 22 of 38 approved papers built
+
+A batch of 35 new candidate papers was screened via `core/screen.py` +
+`lifesci_paperrecon/screening.py`, promoted into `papers.py`’s
+`APPROVED_PAPERS` (now 38 entries), and built via
+`scripts/build_lifesci_paperrecon_source.py --concurrency 3`.
+
+| Outcome | Count | Papers |
+|---|---|---|
+| Built (corpus) | 22 | paper_1–3 (pilots), paper_6, 8, 11, 15, 17–21, 23–24, 26, 28–30, 32–33, 35, 38 |
+| Blocked (category mismatch) | 11 | paper_4, 5, 9, 12, 14, 16, 22, 25, 27, 36, 37 |
+| Failed (exhausted retries) | 5 | paper_7, 10, 13, 31, 34 |
+
+Harbor-wrapped: **22 tasks** in `datasets/lifesci-paperrecon-short/` (`lspr-0001`
+through `lspr-0022`). Fidelity/leakage audit: **22/22 passed,
+determinism_ok: true**. Oracle reward 1.0 and NOP reward 0.0 confirmed on the
+two retried papers (`lspr-0007`/paper_15, `lspr-0012`/paper_21).
+
+### Category/license mix of the built corpus
+
+All 22 papers carry `CC BY 4.0` except `lspr-0003` (paper_3, `CC BY-SA 4.0`).
+Primary categories: `q-bio.QM` (7), `q-bio.BM` (5), `q-bio.GN` (5),
+`q-bio.PE` (1), `q-bio.CB` (1), `stat.AP` (1), `cs.AI` (1), `stat.ME` (1).
+Paper types: computational (15), experimental (7).
+
+### Two generic bugs found and fixed
+
+1. **Missing bundled LaTeX style files.** Papers using ICML 2026 or COLM 2026
+   style files failed to compile under the no-network sandbox because those
+   styles are not in `texlive-full`. Fixed by adding
+   `packaging/conference-styles/{icml2026.sty,icml2026.bst,colm2026_conference.sty,colm2026_conference.bst}`.
+
+2. **`shutil.copytree()` crashing on dead symlinks.** Third-party code
+   checkouts can contain symlinks with targets outside the tree (an author’s
+   own machine). Fixed by adding `symlinks=True` to every `copytree` call
+   that handles a paper’s `code/` directory: `core/latex.py`
+   (`compile_restricted`), `core/pipeline.py` (corpus admission),
+   `adapters/paperwrite_bench/converter.py` (`_copy_public_materials` and
+   the two `ground_truth_sources` copies).
+
+### Paper_15 and paper_21 retries
+
+Both papers were affected by the two bugs above and required a fresh
+construction retry after the fixes landed.
+
+- **paper_15** (ProtDiS, arXiv 2605.23960v1): originally failed on all 3
+  turns due to missing `icml2026.sty`. After the style-file fix, it compiled
+  clean but the reconstructability review caught SCOP task-level mislabeling
+  in `research_overview_long.md` (invented “SCOP-clan” level, swapped
+  fold/class labels). Passed on turn 2 after the agent corrected the labels.
+
+- **paper_21** (fetal growth representation, arXiv 2608.07590v1): originally
+  errored on `shutil.copytree` due to dead symlinks in its code checkout.
+  After the symlinks fix, it compiled clean but had two issues: (a) a
+  provenance-mismatch (`q-bio.QM` recorded instead of the true primary
+  `stat.AP`), resolved by the agent on turn 1; (b) an arithmetic error in the
+  overview (AGA count 729 instead of 731), caught by the reconstructability
+  review and fixed on turn 2.
+
+### What’s blocked (not this phase’s job to resolve)
+
+The 11 category-blocked papers and the cross-listed-paper scope question
+remain explicitly open and unresolved, pending a human decision from the
+coordinator. See “Open follow-ups” above.
+
+### Genuinely failed papers (not retried)
+
+| Paper | Failure mode |
+|---|---|
+| paper_7 | `template.tex` compile failure (unrelated to style files) |
+| paper_10 | Template leaks citations; unresolved citation key “numbers” |
+| paper_13 | Agent produced no output (all required files missing) |
+| paper_31 | Reconstructability review: content accuracy issues |
+| paper_34 | Reconstructability review: content accuracy issues |

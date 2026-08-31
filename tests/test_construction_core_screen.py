@@ -37,6 +37,7 @@ from paperbench_harbor.construction.core.screen import (
     run_screening,
 )
 from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES
+from paperbench_harbor.construction.lifesci_paperrecon.papers import APPROVED_PAPERS
 from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 from paperbench_harbor.construction.lifesci_paperrecon.screening import (
     LIFESCI_EXCLUDE_IDS,
@@ -350,7 +351,10 @@ def test_the_lifesci_seed_list_is_honestly_empty() -> None:
 
 
 def test_the_built_pilots_are_excluded_from_the_next_pass() -> None:
-    assert set(LIFESCI_EXCLUDE_IDS) == {"2606.27607", "2503.19375", "2601.02265"}
+    # The 3 pilot papers must always be in the exclusion list.
+    assert {"2606.27607", "2503.19375", "2601.02265"}.issubset(set(LIFESCI_EXCLUDE_IDS))
+    # LIFESCI_EXCLUDE_IDS is derived from APPROVED_PAPERS, so it grows with the corpus.
+    assert len(LIFESCI_EXCLUDE_IDS) == len(APPROVED_PAPERS)
 
 
 def test_the_policy_agrees_with_the_domain_plugin_on_paper_types() -> None:

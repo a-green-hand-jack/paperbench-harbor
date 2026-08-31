@@ -249,7 +249,18 @@ whole failed construction run to discover.
    the `license` field rather than guessing from the presence of a file:
    `license: null` means you record `"none declared"`, which is a valid and
    expected answer.
-5. **Exclude these arXiv IDs.** Samples have already been built from them:
+5. **`expected_category` must be the submission's *primary* category**, the one
+   arXiv cites it as (the `[cs.LG]` in the "Cite as:" line), read off the live
+   abstract page or the API's `<arxiv:primary_category>` element. A cross-list
+   is not the primary category. This matters because the construction gate
+   compares your recorded category against the approved spec for exact
+   equality, so a cross-list recorded here does not merely look untidy — it
+   stops that paper's build outright, after the fetch and the compile have
+   already been paid for. Where the domain's criteria accept a cross-listed
+   paper, record the true primary here and name the qualifying cross-list in
+   `rationale`; never substitute the cross-list for the primary to make a paper
+   look more in-scope than it is actually filed.
+6. **Exclude these arXiv IDs.** Samples have already been built from them:
 {exclude_block}
 {prior}
 {seed_block}
@@ -280,6 +291,8 @@ exactly these keys and string values (except where noted):
   not go in the file at all.
 - `code_license` — verbatim from the GitHub API's `license` field, or
   `"none declared"`. Never blank, never guessed.
+- `expected_category` — the submission's primary category, verbatim, per
+  invariant 5. Not a cross-list.
 - `paper_type` — one of {types}. This is a guess a human will confirm; say in
   `rationale` if you were unsure.
 - `expected_version` — the version you actually verified, e.g. `v1`.

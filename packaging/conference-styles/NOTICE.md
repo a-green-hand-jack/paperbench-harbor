@@ -39,6 +39,23 @@ their conferences and are bundled solely for paper formatting.
   ships it alongside its LaTeX source. Bundled because, unlike
   `elsarticle-num.bst`, it is not part of `texlive-full` and the task image has
   no network access at compile time.
+- `icml2026.sty` / `icml2026.bst` — official ICML 2026 LaTeX style and
+  bibliography style. Obtained unmodified from the arXiv e-print bundle of
+  arXiv:2605.23960, which ships them alongside its LaTeX source (the same
+  distribution as the official ICML 2026 author kit). Not part of
+  `texlive-full`; bundled for the same no-network-at-compile-time reason as
+  `icml2026.sty`'s sibling files above. Copyright the ICML organizers and the
+  style's listed contributors (Hanze Dong, Alberto Bietti, Felix Berkenkamp,
+  Johan Larsson, and earlier ICML/NeurIPS style maintainers per the file's own
+  changelog header); no explicit license statement, distributed by ICML for
+  preparing ICML 2026 submissions, consistent with `icml2025.sty` above.
+- `colm2026_conference.sty` / `colm2026_conference.bst` — official COLM 2026
+  LaTeX style and bibliography style, adapted (per the file's own header) by
+  Yoav Artzi and Sasha Rush from Hugo Larochelle's ICLR adaptation of the
+  original NIPS style macros. Obtained unmodified from the arXiv e-print
+  bundle of arXiv:2608.02796, which ships them alongside its LaTeX source.
+  Not part of `texlive-full`; bundled for the same no-network-at-compile-time
+  reason as the other conference styles above.
 
 The benchmark papers themselves, their LaTeX sources, figures, tables, and
 code remain the intellectual property of their respective authors and are

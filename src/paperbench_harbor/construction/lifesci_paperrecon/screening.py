@@ -54,8 +54,16 @@ papers in, all of these:
 
 Use the arXiv API (`http://export.arxiv.org/api/query`) rather than scraping the
 listing pages — it paginates properly and returns the categories, versions and
-abstracts you need to filter on. Cross-listed papers whose primary category is
-outside `q-bio.*` are fine as long as the science is life-sciences.""",
+abstracts you need to filter on, and its `<arxiv:primary_category>` element is
+the authority on which of a paper's categories is the primary one.
+
+A paper cross-listed into `q-bio.*` from elsewhere is acceptable life-sciences
+work and you should propose it. Record its **primary** category as
+`expected_category` and name the qualifying `q-bio.*` cross-list in `rationale`.
+Much biology-adjacent machine-learning work is filed primary `cs.LG` with only a
+q-bio cross-list, so this case is common rather than exotic — and writing the
+cross-list into `expected_category` instead of the primary is the single most
+expensive mistake available here.""",
     selection_criteria="""\
 The paper must be a life-sciences research paper reporting its own study —
 computational, experimental, or a review of a defined literature. Prefer recent
@@ -84,5 +92,13 @@ From the Phase 0 pass, worth not rediscovering at full cost:
 - Phase 0 checked only that a linked repository *existed*, never its license.
   Under current policy an unlicensed repository is acceptable, so a paper Phase 0
   would have kept is still keepable — but the `license` field must now be read
-  and recorded for every candidate, which Phase 0 did not do.""",
+  and recorded for every candidate, which Phase 0 did not do.
+- **Phase 4's pass got `expected_category` wrong on 15 of its 35 candidates**,
+  and every one of them cost a blocked build to discover. Thirteen were filed
+  primary outside `q-bio.*` — `cs.LG` seven times, plus `cs.CE`, `cs.AI`,
+  `cs.CV`, `stat.AP` and `stat.ME` — carrying only a q-bio cross-list; the other
+  two were filed under a different `q-bio.*` subcategory than the one recorded.
+  Read the primary off `<arxiv:primary_category>` or the "Cite as:" line for
+  every candidate. Never infer it from the listing page you found the paper on,
+  which is exactly what produces this error.""",
 )

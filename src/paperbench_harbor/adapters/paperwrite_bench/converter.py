@@ -167,7 +167,15 @@ def _copy_public_materials(resources: Path, environment_dir: Path, overview: str
         source = resources / dirname
         if source.is_dir() and any(source.iterdir()):
             destination = materials_dir / dirname
-            shutil.copytree(source, destination, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            # `symlinks=True`: `code/` is a verbatim third-party checkout and
+            # may contain symlinks whose targets are dead outside the tree
+            # (e.g. an author's own machine) — copy the link, not its target.
+            shutil.copytree(
+                source,
+                destination,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(".git", "__pycache__"),
+            )
             copied.extend(path for path in destination.rglob("*") if path.is_file())
 
     return copied
@@ -379,10 +387,10 @@ def _convert_paper(
         shutil.copy2(ground_truth, tests_private / "ground_truth.tex")
         private_files.append(tests_private / "ground_truth.tex")
         ground_truth_tree = tests_private / "ground_truth_sources"
-        shutil.copytree(original, ground_truth_tree)
+        shutil.copytree(original, ground_truth_tree, symlinks=True)
         # Keep GT source dependencies and evaluation resources beside main.tex
         # so hallucination verification receives the same coherent root.
-        shutil.copytree(resources, ground_truth_tree, dirs_exist_ok=True)
+        shutil.copytree(resources, ground_truth_tree, symlinks=True, dirs_exist_ok=True)
         private_files.extend(path for path in ground_truth_tree.rglob("*") if path.is_file())
     for filename in ("figure_summary.txt", "table_summary.txt"):
         source = resources / filename

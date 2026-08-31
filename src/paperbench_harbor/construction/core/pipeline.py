@@ -231,10 +231,14 @@ def build_paper(
             write_review_record(workspace, verdict)
         # `.git` would carry the code repo's full history into every Harbor
         # task's build context; the checked-out tree plus a recorded commit is
-        # what provenance needs.
+        # what provenance needs. `symlinks=True`: a `resources/code/` checkout
+        # can contain symlinks with dead targets outside the tree (an author's
+        # own machine, an external drive) — copy the link, not its target, or
+        # this raises `shutil.Error` on an otherwise-successful build.
         shutil.copytree(
             workspace,
             destination,
+            symlinks=True,
             ignore=shutil.ignore_patterns(".git", "__pycache__", ".opencode"),
         )
         outcome["corpus_dir"] = str(destination)

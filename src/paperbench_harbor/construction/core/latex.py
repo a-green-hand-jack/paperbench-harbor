@@ -109,7 +109,14 @@ def compile_restricted(
 
     if build_dir.exists():
         shutil.rmtree(build_dir)
-    shutil.copytree(source_root, build_dir, ignore=shutil.ignore_patterns(".git"))
+    # `symlinks=True`: a checked-out `resources/code/` third-party repo can
+    # contain symlinks pointing outside itself (e.g. to the original author's
+    # own machine), which are never dereferenced at LaTeX-compile time and
+    # would otherwise crash a dead-target copy with `shutil.Error` — copy the
+    # link itself, not its target.
+    shutil.copytree(
+        source_root, build_dir, symlinks=True, ignore=shutil.ignore_patterns(".git")
+    )
 
     texmf = build_dir / "texmf"
     stage_bundled_styles([build_dir / tex_name], texmf)
