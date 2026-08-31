@@ -104,9 +104,17 @@ Extract three things, and state what you extracted before running anything:
 
 ```
 uv run scripts/screen_lifesci_paperrecon_candidates.py \
+    --build-root /home/user/lifesci-paperrecon-scratch/_screening \
     --target-count <N> \
+    --output .cache/lifesci-paperrecon/candidates-lifesci.json \
     --extra-guidance "<the topical steering you extracted in step 1, or omit if none>"
 ```
+
+`--build-root` must be an isolated scratch directory outside any git working
+tree (the screening agent runs with `--auto`); reuse the path above every time
+rather than inventing a new one per request. `--output` is required to actually
+get a `candidates.json` you can hand to step 3 -- without it the proposal is
+only printed, not written to a path you can pass on.
 
 This writes a `candidates.json` proposal. Report the path it wrote and how many
 candidates it contains. `--extra-guidance` narrows which *qualifying* papers
