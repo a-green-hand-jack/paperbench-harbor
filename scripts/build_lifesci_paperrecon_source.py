@@ -12,6 +12,12 @@ never passes is reported, never patched into shape here. That split is the
 whole point of the design — see
 `src/paperbench_harbor/construction/lifesci_paperrecon/__init__.py`.
 
+The loop itself is domain-agnostic and lives in
+`paperbench_harbor.construction.core.pipeline`; this script is the
+life-sciences entry point into it, supplying the approved pilot papers and
+`LIFESCI_PLUGIN`. A future domain's build script is this file with two imports
+changed — see `docs/papersmith-architecture.md`.
+
 Requires: the `opencode` CLI with a configured provider, and a `pdflatex` /
 `bibtex` matching the Harbor verifier's TeX Live. Both live on the build host,
 not necessarily on a developer's laptop.
@@ -21,169 +27,29 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
-from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from paperbench_harbor.construction.lifesci_paperrecon.opencode_agent import (
+from paperbench_harbor.construction.core.opencode_agent import (
     DEFAULT_MODEL,
     DEFAULT_TIMEOUT_SECONDS,
-    AgentRun,
     check_opencode_available,
-    prepare_scratch,
-    run_construction,
-    tail_log,
 )
+from paperbench_harbor.construction.core.pipeline import build_corpus
+from paperbench_harbor.construction.core.spec import PaperSpec
 from paperbench_harbor.construction.lifesci_paperrecon.papers import (
     PILOT_BY_ID,
     PILOT_PAPERS,
-    PaperSpec,
 )
-from paperbench_harbor.construction.lifesci_paperrecon.prompt import (
-    build_prompt,
-    build_retry_prompt,
-)
-from paperbench_harbor.construction.lifesci_paperrecon.validate import (
-    ValidationReport,
-    validate_paper,
-)
+from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
 
 def _log(message: str) -> None:
     print(message, flush=True)
-
-
-def _blocked_reason(workspace: Path) -> str:
-    """Read the agent's own stop-condition report, if it wrote one.
-
-    The prompt tells the agent to refuse rather than substitute when a paper no
-    longer qualifies. That refusal has to surface as a distinct outcome, not as
-    a generic validation failure, because the two need different human
-    responses: one is a re-selection decision, the other is a retry.
-    """
-
-    provenance = workspace / "original" / "provenance.json"
-    if not provenance.is_file():
-        return ""
-    try:
-        record = json.loads(provenance.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return ""
-    if isinstance(record, dict):
-        return str(record.get("blocked", "")).strip()
-    return ""
-
-
-def build_paper(
-    spec: PaperSpec,
-    *,
-    scratch_root: Path,
-    corpus_root: Path,
-    build_root: Path,
-    log_dir: Path,
-    model: str,
-    max_turns: int,
-    timeout: int,
-    fresh: bool,
-    dry_run: bool,
-    validate_only: bool,
-) -> dict:
-    """Run the agent/validate loop for one paper and return its outcome record."""
-
-    workspace = prepare_scratch(scratch_root, spec.paper_id, fresh=fresh)
-    runs: list[AgentRun] = []
-    report: ValidationReport | None = None
-
-    for turn in range(1, max_turns + 1):
-        if not validate_only:
-            if turn == 1:
-                prompt = build_prompt(spec, str(workspace))
-            else:
-                assert report is not None
-                prompt = build_retry_prompt(spec, report, str(workspace))
-            _log(f"  turn {turn}: opencode run ({model})")
-            run = run_construction(
-                paper_id=spec.paper_id,
-                prompt=prompt,
-                workspace=workspace,
-                log_dir=log_dir,
-                model=model,
-                turn=turn,
-                continue_session=turn > 1,
-                timeout=timeout,
-                dry_run=dry_run,
-            )
-            runs.append(run)
-            if not run.ok:
-                _log(f"  turn {turn}: agent exited {run.returncode} (timed_out={run.timed_out})")
-                _log("  --- agent log tail ---")
-                _log(tail_log(run))
-            if dry_run:
-                return {
-                    "paper_id": spec.paper_id,
-                    "status": "dry-run",
-                    "workspace": str(workspace),
-                    "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
-                }
-
-        blocked = _blocked_reason(workspace)
-        if blocked:
-            _log(f"  BLOCKED: {blocked}")
-            return {
-                "paper_id": spec.paper_id,
-                "status": "blocked",
-                "reason": blocked,
-                "workspace": str(workspace),
-                "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
-            }
-
-        _log(f"  turn {turn}: validating")
-        report = validate_paper(
-            workspace, spec, build_root=build_root / spec.paper_id
-        )
-        _log("  " + report.summary().replace("\n", "\n  "))
-        if report.ok:
-            break
-        if validate_only:
-            break
-
-    assert report is not None
-    outcome = {
-        "paper_id": spec.paper_id,
-        "status": "ok" if report.ok else "failed",
-        "workspace": str(workspace),
-        "turns": len(runs),
-        "issues": [asdict(issue) for issue in report.issues],
-        "compiles": [
-            {"tex_name": result.tex_name, "ok": result.ok} for result in report.compiles
-        ],
-        "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
-    }
-
-    if report.ok:
-        destination = corpus_root / spec.paper_id
-        if destination.exists():
-            shutil.rmtree(destination)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        # `.git` would carry the code repo's full history into every Harbor
-        # task's build context; the checked-out tree plus a recorded commit is
-        # what provenance needs.
-        shutil.copytree(
-            workspace,
-            destination,
-            ignore=shutil.ignore_patterns(".git", "__pycache__", ".opencode"),
-        )
-        outcome["corpus_dir"] = str(destination)
-        _log(f"  admitted -> {destination}")
-    else:
-        _log("  NOT admitted to the corpus")
-
-    return outcome
 
 
 def main() -> int:
@@ -211,6 +77,15 @@ def main() -> int:
         help="Agent turns per paper, including retries driven by the validation gate.",
     )
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="Per-turn seconds.")
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help=(
+            "Papers to build at once, each in its own scratch workspace and agent "
+            "session. Default 1; the real ceiling is the model gateway's rate limit."
+        ),
+    )
     parser.add_argument("--fresh", action="store_true", help="Discard existing scratch workspaces first.")
     parser.add_argument("--dry-run", action="store_true", help="Print the commands without running the agent.")
     parser.add_argument(
@@ -220,6 +95,9 @@ def main() -> int:
     )
     parser.add_argument("--report", type=Path, default=None, help="Write the run summary here as JSON.")
     args = parser.parse_args()
+
+    if args.concurrency < 1:
+        parser.error("--concurrency must be >= 1")
 
     specs: list[PaperSpec]
     if args.papers:
@@ -238,24 +116,22 @@ def main() -> int:
     if not args.dry_run and not args.validate_only:
         check_opencode_available(args.model)
 
-    outcomes: list[dict] = []
-    for spec in specs:
-        _log(f"{spec.paper_id}: arXiv {spec.arxiv_id}{spec.expected_version} ({spec.paper_type})")
-        outcomes.append(
-            build_paper(
-                spec,
-                scratch_root=scratch_root,
-                corpus_root=corpus_root,
-                build_root=build_root,
-                log_dir=log_dir,
-                model=args.model,
-                max_turns=args.max_turns,
-                timeout=args.timeout,
-                fresh=args.fresh,
-                dry_run=args.dry_run,
-                validate_only=args.validate_only,
-            )
-        )
+    outcomes = build_corpus(
+        specs,
+        LIFESCI_PLUGIN,
+        scratch_root=scratch_root,
+        corpus_root=corpus_root,
+        build_root=build_root,
+        log_dir=log_dir,
+        concurrency=args.concurrency,
+        model=args.model,
+        max_turns=args.max_turns,
+        timeout=args.timeout,
+        fresh=args.fresh,
+        dry_run=args.dry_run,
+        validate_only=args.validate_only,
+        log=_log,
+    )
 
     summary = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),

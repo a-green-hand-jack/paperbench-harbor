@@ -17,16 +17,24 @@ Two consequences shape everything below:
   approved selection as *expectations to check against the live source*, and
   says explicitly that a mismatch means stop, never substitute. The validation
   gate enforces the same thing from the outside.
+
+A third consequence came with the core/plugin split: **the invariants stay
+here, the flavour comes from the plugin.** The compile sequence, the output
+tree, the leakage rule, the `config.yaml`/`provenance.json` field specs, the
+bibliography and code rules and the oracle's rewrite behaviour are the same
+whatever discipline the paper belongs to, and a domain must not be able to
+soften them. What a domain does supply is prose the agent reads: how it
+introduces its own benchmark, its overview skeleton and what that overview must
+contain, what its figures look like, and any stop-condition carve-outs. Those
+arrive through :class:`~.plugin.DomainPlugin` and are spliced in below.
 """
 
 from __future__ import annotations
 
 from paperbench_harbor.adapters.paperwrite_bench.converter import OVERVIEW_FILENAMES
-from paperbench_harbor.construction.lifesci_paperrecon.papers import (
-    ACCEPTED_LICENSES,
-    PaperSpec,
-)
-from paperbench_harbor.construction.lifesci_paperrecon.validate import ValidationReport
+from paperbench_harbor.construction.core.plugin import DomainPlugin
+from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpec
+from paperbench_harbor.construction.core.validate import ValidationReport
 
 #: Flags reproduced verbatim from `common/templates/test_state.py.j2`. The
 #: agent is given the literal command line rather than a description of it so
@@ -39,17 +47,20 @@ pdflatex -interaction=nonstopmode -halt-on-error -no-shell-escape main.tex
 pdflatex -interaction=nonstopmode -halt-on-error -no-shell-escape main.tex"""
 
 
-def build_prompt(spec: PaperSpec, output_dir: str) -> str:
+def build_prompt(spec: PaperSpec, output_dir: str, plugin: DomainPlugin) -> str:
     """The full construction task for one paper."""
 
     short = OVERVIEW_FILENAMES["short"]
     long = OVERVIEW_FILENAMES["long"]
     licenses = ", ".join(f"`{name}`" for name in ACCEPTED_LICENSES)
+    # Rendered with its own surrounding blank lines so an empty fragment leaves
+    # the numbered list joined to the paragraph that follows it, unchanged.
+    stop_condition_notes = (
+        f"\n{plugin.stop_condition_examples}\n" if plugin.stop_condition_examples else ""
+    )
 
     return f"""\
-You are building one sample of **LifeSci-PaperRecon**, a benchmark that asks a
-writing agent to reconstruct a life-sciences research paper from a research
-overview plus the study's own figures, tables, bibliography and code. Your job
+{plugin.benchmark_intro} Your job
 is to turn one published arXiv paper into that sample. You are not writing a
 paper; you are preparing source material.
 
@@ -83,13 +94,7 @@ explaining what you found, build nothing else, and end your run.
 2. The submission has no LaTeX source — an e-print bundle that is a PDF only.
 3. The code repository is gone, private, or cannot be checked out.
 4. The arXiv ID, version or category does not match the expectations above.
-
-The code repository's *license* is **not** a stop condition. Record whatever
-you find in `provenance.json`'s `code_license` — including `"none declared"`
-when the repository has no license file and the GitHub API reports
-`license: null` — and carry on building. Report it accurately; do not guess a
-license, and do not infer one from the paper's own license.
-
+{stop_condition_notes}
 Do **not** substitute a different paper, a different version, or a different
 repository. The selection was a human decision; a blocked paper goes back to a
 human, it does not get replaced by you.
@@ -192,20 +197,10 @@ with no network access. Verify this yourself before you finish.
 
 ## `resources/{short}` and `resources/{long}`
 
-Markdown, written by you from the paper, using this skeleton — the benchmark
-is life-sciences, so it is deliberately not the ML-shaped
-motivation/method/contributions one:
+Markdown, written by you from the paper, using this skeleton{plugin.overview_skeleton_rationale}:
 
 ```
-# Title
-
-<the paper's actual title>
-
-## Research Question or Hypothesis
-## Approach
-## Key Findings
-## Biological Significance
-## Takeaway
+{plugin.overview_skeleton()}
 ```
 
 `Title` is a literal heading with the paper's real title underneath it, not a
@@ -215,14 +210,10 @@ literal too, spelled as shown.
 
 This is the **only** description of the study the writing agent receives, so
 it must be sufficient to reconstruct the paper's scientific content — and it
-must not be the paper. Write the science, not the sentences: state what was
-asked, what was done, what came out (with the actual quantitative results,
-effect sizes, model parameters and organism/dataset identifiers a reader would
-need), and why it matters biologically. Do not include LaTeX. Do not name
+must not be the paper. {plugin.overview_content_guidance} Do not include LaTeX. Do not name
 section headings from the paper. Do not include citations.
 
-Aim for roughly 1,500-4,000 characters for the short variant and 6,000-15,000
-for the long one; the long variant must carry strictly more detail, not the
+Aim for {plugin.overview_length_targets}; the long variant must carry strictly more detail, not the
 same content restated.
 
 ## `resources/references.bib`
@@ -248,16 +239,14 @@ Every figure asset the paper includes, in a format `pdflatex` accepts (`.pdf`,
 One caption per asset, keyed by filename, e.g.:
 
 ```
-figures/fig2a.png: Dose-response curves for ... The x-axis is ...
+{plugin.caption_example}
 ```
 
 Write these by **looking at the images** and reading how the paper uses them,
 not by copying the LaTeX caption verbatim — the writing agent has to be able to
 decide where each asset belongs and what it shows. Describe what is actually
 plotted or depicted: axes and units, conditions compared, what the panel
-demonstrates. This is a life-sciences corpus, so expect micrographs, gels,
-phylogenetic trees, pathway diagrams and dose-response curves rather than
-training curves and architecture diagrams.
+demonstrates. {plugin.imagery_guidance}
 
 Every file in `figures/` must be mentioned by name in `figure_summary.txt`, and
 likewise for tables. If the paper has no separate table assets, say so
@@ -353,14 +342,25 @@ succeed. Do not report success on a paper you have not compiled.
 """
 
 
-def build_retry_prompt(spec: PaperSpec, report: ValidationReport, output_dir: str) -> str:
+def build_retry_prompt(
+    spec: PaperSpec,
+    report: ValidationReport,
+    output_dir: str,
+    plugin: DomainPlugin,
+) -> str:
     """A follow-up turn driven by the validation gate's own findings.
 
     Feeding the machine-checked failure back is the designed response to a
     rejected build. Hand-patching the output instead would reintroduce exactly
     the per-paper rule library this design exists to avoid.
+
+    `plugin` is accepted for symmetry with :func:`build_prompt` and because the
+    retry turn is where domain-specific remediation guidance would go if a
+    domain ever needs it; the findings themselves are already domain-aware,
+    since the report was produced by that domain's own validation run.
     """
 
+    del plugin  # the report already carries everything domain-specific
     return f"""\
 The sample you built for arXiv {spec.arxiv_id}{spec.expected_version} at
 `{output_dir}` was rejected by the benchmark's automated contract check. The

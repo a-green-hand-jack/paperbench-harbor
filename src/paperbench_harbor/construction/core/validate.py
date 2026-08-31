@@ -11,8 +11,8 @@ discover later:
 1. **Layout** — the files the Harbor converter reads are present, and the ones
    that would leak the answer are not.
 2. **Provenance** — what the agent recorded matches what a human approved in
-   :mod:`.papers`. A silently substituted paper is worse than a failed build,
-   so a mismatch is a hard failure and never a warning.
+   the domain's paper set. A silently substituted paper is worse than a failed
+   build, so a mismatch is a hard failure and never a warning.
 3. **Solvability** — the oracle scores `1.0`. This is checked by *reproducing
    the oracle*: the real `normalize.py` template is rendered and run against a
    real `materials/` tree built by the converter's own copy helper, and the
@@ -22,6 +22,11 @@ discover later:
 A failing report is written to be read by the construction agent
 (:meth:`ValidationReport.agent_feedback`), because the designed response to a
 failure is another opencode turn, not a hand-written patch.
+
+Only three checks consult the domain at all — the paper-type taxonomy and its
+writing instructions, and the overview skeleton and its length bounds — and all
+three read them off the :class:`~.plugin.DomainPlugin` they are handed. Nothing
+in this module knows what discipline it is validating.
 """
 
 from __future__ import annotations
@@ -37,7 +42,6 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from paperbench_harbor.adapters.lifesci_paperrecon.harbor import AGENTS_MD_DIR
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     FORBIDDEN_PUBLIC_NAMES,
     OVERVIEW_FILENAMES,
@@ -45,15 +49,12 @@ from paperbench_harbor.adapters.paperwrite_bench.converter import (
     _read_config,
 )
 from paperbench_harbor.common.audit import LeakageError, audit_forbidden_names
-from paperbench_harbor.construction.lifesci_paperrecon.latex import (
+from paperbench_harbor.construction.core.latex import (
     CompileResult,
     compile_restricted,
 )
-from paperbench_harbor.construction.lifesci_paperrecon.papers import (
-    ACCEPTED_LICENSES,
-    PAPER_TYPES,
-    PaperSpec,
-)
+from paperbench_harbor.construction.core.plugin import DomainPlugin
+from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpec
 
 _TEMPLATES_DIR = (
     Path(__file__).resolve().parents[2] / "common" / "templates"
@@ -105,26 +106,6 @@ REQUIRED_PROVENANCE_FIELDS = (
     # forcing it into provenance, where the Phase 5 dataset card reads it.
     "code_license",
 )
-
-#: The biology-adapted overview skeleton (approved plan, Phase 1 step 4),
-#: replacing PaperWrite-Bench's Motivation/Proposed Method/Contributions shape.
-#: Each entry is a set of acceptable spellings for one required heading.
-REQUIRED_OVERVIEW_HEADINGS: tuple[tuple[str, ...], ...] = (
-    ("title",),
-    ("research question", "hypothesis"),
-    ("approach", "experimental approach", "computational approach"),
-    ("key findings", "findings"),
-    ("biological significance", "significance"),
-    ("takeaway",),
-)
-
-#: Sanity bounds, not style rules. The floor catches an agent that emitted a
-#: heading skeleton with no content; the ceiling catches one that pasted the
-#: paper in, which would hand the writing agent the answer.
-OVERVIEW_BOUNDS = {
-    OVERVIEW_FILENAMES["short"]: (700, 7000),
-    OVERVIEW_FILENAMES["long"]: (2500, 30000),
-}
 
 _SOURCE_COMMAND_RE = re.compile(r"\\(?:input|include)\s*\{([^}]+)\}")
 _CITE_RE = re.compile(
@@ -326,16 +307,16 @@ def _check_layout(report: ValidationReport) -> None:
             )
 
 
-def _check_config(report: ValidationReport, spec: PaperSpec) -> None:
+def _check_config(report: ValidationReport, spec: PaperSpec, plugin: DomainPlugin) -> None:
     config_path = report.paper_dir / "original" / "config.yaml"
     if not config_path.is_file():
         return
     metadata = _read_config(config_path)
 
-    if metadata.paper_type not in PAPER_TYPES:
+    if metadata.paper_type not in plugin.paper_types:
         report.fail(
             "config-type",
-            f"config.yaml type={metadata.paper_type!r} is not one of {PAPER_TYPES}",
+            f"config.yaml type={metadata.paper_type!r} is not one of {plugin.paper_types}",
             f"Write `type: {spec.paper_type}`.",
         )
     elif metadata.paper_type != spec.paper_type:
@@ -347,10 +328,10 @@ def _check_config(report: ValidationReport, spec: PaperSpec) -> None:
             "selection decision and is not the agent's to change.",
         )
     else:
-        # The converter silently falls back to AGENTS_computational.md for an
-        # unknown type, which would hand a wet-lab paper the wrong writing
-        # instructions without any error.
-        agents_md = AGENTS_MD_DIR / f"AGENTS_{metadata.paper_type}.md"
+        # The converter silently falls back to a default AGENTS_*.md for an
+        # unknown type, which would hand a paper the wrong writing instructions
+        # without any error.
+        agents_md = plugin.agents_md_dir / f"AGENTS_{metadata.paper_type}.md"
         if not agents_md.is_file():
             report.fail(
                 "config-type",
@@ -520,10 +501,10 @@ def _body_size(text: str) -> int:
     return len(re.sub(r"\s+", " ", body).strip())
 
 
-def _check_overviews(report: ValidationReport) -> None:
+def _check_overviews(report: ValidationReport, plugin: DomainPlugin) -> None:
     resources = report.paper_dir / "resources"
     lengths: dict[str, int] = {}
-    for filename, (floor, ceiling) in OVERVIEW_BOUNDS.items():
+    for filename, (floor, ceiling) in plugin.overview_bounds.items():
         path = resources / filename
         if not path.is_file():
             continue
@@ -541,7 +522,7 @@ def _check_overviews(report: ValidationReport) -> None:
         lowered = text.lower()
         missing = [
             " / ".join(variants)
-            for variants in REQUIRED_OVERVIEW_HEADINGS
+            for variants in plugin.overview_headings
             if not any(variant in lowered for variant in variants)
         ]
         if missing:
@@ -549,9 +530,7 @@ def _check_overviews(report: ValidationReport) -> None:
                 "overview-skeleton",
                 f"resources/{filename} is missing required sections: "
                 + "; ".join(missing),
-                "Use the biology overview skeleton: Title, Research Question or "
-                "Hypothesis, Approach, Key Findings, Biological Significance, "
-                "Takeaway.",
+                plugin.overview_skeleton_remedy(),
             )
         if "\\begin{document}" in text or _SECTION_RE.search(text):
             report.fail(
@@ -718,11 +697,15 @@ def _check_compiles(report: ValidationReport, build_root: Path) -> None:
 def validate_paper(
     paper_dir: Path,
     spec: PaperSpec,
+    plugin: DomainPlugin,
     *,
     build_root: Path,
     run_compile: bool = True,
 ) -> ValidationReport:
     """Check one constructed paper against everything downstream assumes.
+
+    `plugin` supplies the domain's paper-type taxonomy, overview skeleton and
+    length bounds; everything else checked here is the same for every domain.
 
     `run_compile=False` exists for fast structural iteration only. It is never
     a way to admit a paper: :attr:`ValidationReport.compile_skipped_reason`
@@ -735,10 +718,10 @@ def validate_paper(
         return report
 
     _check_layout(report)
-    _check_config(report, spec)
+    _check_config(report, spec, plugin)
     _check_provenance(report, spec)
     _check_template(report)
-    _check_overviews(report)
+    _check_overviews(report, plugin)
     _check_summaries(report)
     _check_citations(report)
 

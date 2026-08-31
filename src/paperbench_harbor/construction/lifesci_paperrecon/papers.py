@@ -9,50 +9,21 @@ repository is gone — the build stops and reports, and a human re-decides.
 
 Every field below is an *expectation* the construction agent must re-verify
 against the live arXiv abstract page, not a trusted fact. The validation gate
-(:mod:`.validate`) cross-checks the agent's recorded `provenance.json` against
-these expectations and fails the paper on any mismatch.
+(:mod:`paperbench_harbor.construction.core.validate`) cross-checks the agent's
+recorded `provenance.json` against these expectations and fails the paper on any
+mismatch.
+
+:class:`PaperSpec` and :data:`ACCEPTED_LICENSES` are re-exported from
+:mod:`paperbench_harbor.construction.core.spec`, where they moved when
+PaperSmith was split into a core and per-domain plugins; neither ever carried a
+biology-specific field.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpec
 
-#: Licenses that permit redistributing derived material (approved plan,
-#: Phase 0 filter). Anything else disqualifies a paper.
-ACCEPTED_LICENSES = (
-    "CC BY 4.0",
-    "CC BY-NC 4.0",
-    "CC BY-SA 4.0",
-    "CC0 1.0",
-)
-
-#: The biology-adapted replacement for PaperWrite-Bench's method/benchmark/both
-#: taxonomy. Must match an `AGENTS_<type>.md` in the LifeSci-PaperRecon adapter.
-PAPER_TYPES = ("computational", "experimental", "review")
-
-
-@dataclass(frozen=True)
-class PaperSpec:
-    """One pilot paper and the selection criteria it is expected to satisfy."""
-
-    paper_id: str
-    arxiv_id: str
-    #: `computational` / `experimental` / `review`.
-    paper_type: str
-    code_repo: str
-    expected_license: str = ""
-    expected_version: str = ""
-    expected_category: str = ""
-    note: str = ""
-
-    @property
-    def arxiv_abs_url(self) -> str:
-        return f"https://arxiv.org/abs/{self.arxiv_id}{self.expected_version}"
-
-    @property
-    def arxiv_eprint_url(self) -> str:
-        return f"https://arxiv.org/e-print/{self.arxiv_id}{self.expected_version}"
-
+__all__ = ["ACCEPTED_LICENSES", "PILOT_BY_ID", "PILOT_PAPERS", "PaperSpec"]
 
 PILOT_PAPERS: tuple[PaperSpec, ...] = (
     PaperSpec(

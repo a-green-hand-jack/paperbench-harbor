@@ -143,6 +143,9 @@ project-original. Dataset directory:
   whether the result is admitted. Full recipe, rationale and how to re-run:
   `docs/lifesci-paperrecon-construction.md`. **All 3 pilot papers built,
   validated, wrapped and smoke-checked** — see "Phase 1 pilot results" below.
+  The pipeline has since been split into a domain-agnostic core
+  (`construction/core/`) plus a `LIFESCI_PLUGIN`, with zero behaviour change
+  for biology and no second domain yet: `docs/papersmith-architecture.md`.
 - **Phase 2 (Harbor wrap, converter parameterization)**: done.
   `paperwrite_bench/converter.py`'s previously-hardcoded benchmark
   name/tags/category/agents-md/grader settings are now parameters, with

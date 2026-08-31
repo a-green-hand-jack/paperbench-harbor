@@ -17,8 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from paperbench_harbor.construction.lifesci_paperrecon.papers import PILOT_BY_ID, PaperSpec
-from paperbench_harbor.construction.lifesci_paperrecon.validate import validate_paper
+from paperbench_harbor.construction.core.spec import PaperSpec
+from paperbench_harbor.construction.core.validate import validate_paper
+from paperbench_harbor.construction.lifesci_paperrecon.papers import PILOT_BY_ID
+from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
 SPEC = PILOT_BY_ID["paper_1"]
 
@@ -123,7 +125,9 @@ def paper(tmp_path: Path) -> Path:
 
 
 def _validate(paper: Path, spec: PaperSpec = SPEC):
-    return validate_paper(paper, spec, build_root=paper.parent / "build", run_compile=False)
+    return validate_paper(
+        paper, spec, LIFESCI_PLUGIN, build_root=paper.parent / "build", run_compile=False
+    )
 
 
 def _codes(paper: Path) -> set[str]:

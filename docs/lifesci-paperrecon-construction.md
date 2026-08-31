@@ -48,14 +48,22 @@ a patch to the gate.
 
 ## Module layout
 
+Since the GeneralPaperSmith/DomainPaperSmith split, the machinery below is
+domain-agnostic and lives under `construction/core/`, parameterized by a
+`DomainPlugin`; only the paper set and the plugin are biology-specific. See
+`docs/papersmith-architecture.md` for the contract.
+
 | Path | Responsibility |
 |---|---|
 | `src/paperbench_harbor/construction/lifesci_paperrecon/papers.py` | The approved pilot set. Every field is an *expectation to re-verify*, never a trusted fact. |
-| `.../prompt.py` | The construction specification handed to the agent, and the retry prompt built from a failed validation report. |
-| `.../opencode_agent.py` | Invokes `opencode run`, and refuses to do so anywhere inside a git working tree. |
-| `.../latex.py` | Recompilation under the verifier's exact restricted flags. |
-| `.../validate.py` | The deterministic gate. Layout, provenance, leakage, citations, and an oracle-equivalent compile. |
-| `scripts/build_lifesci_paperrecon_source.py` | The per-paper agent/validate/retry loop and the corpus admission step. |
+| `.../lifesci_paperrecon/plugin.py` | `LIFESCI_PLUGIN`: the biology paper-type taxonomy, overview skeleton and bounds, and the prompt fragments that make the spec a life-sciences one. |
+| `src/paperbench_harbor/construction/core/prompt.py` | The construction specification handed to the agent, and the retry prompt built from a failed validation report. |
+| `.../core/opencode_agent.py` | Invokes `opencode run`, and refuses to do so anywhere inside a git working tree. |
+| `.../core/latex.py` | Recompilation under the verifier's exact restricted flags. |
+| `.../core/validate.py` | The deterministic gate. Layout, provenance, leakage, citations, and an oracle-equivalent compile. |
+| `.../core/spec.py` | `PaperSpec` and the redistribution-permissive license policy. |
+| `.../core/pipeline.py` | The per-paper agent/validate/retry loop, the corpus admission step, and the `--concurrency` worker pool. |
+| `scripts/build_lifesci_paperrecon_source.py` | Thin CLI wrapper: pilot papers + `LIFESCI_PLUGIN` into `build_corpus()`. |
 | `src/paperbench_harbor/adapters/lifesci_paperrecon/harbor.py` | Phase 2 identity metadata for the shared converter. No second Harbor converter exists. |
 | `src/paperbench_harbor/adapters/lifesci_paperrecon/agents_md/` | Biology writing instructions (`AGENTS_computational.md`, `_experimental.md`, `_review.md`) handed to the *writing* agent at benchmark time. |
 
