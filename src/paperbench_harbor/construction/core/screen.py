@@ -156,6 +156,7 @@ def build_screening_prompt(
     seed_candidates: tuple[SeedCandidate, ...] = (),
     target_count: int,
     exclude_ids: tuple[str, ...] = (),
+    extra_guidance: str = "",
     output_path: Path,
 ) -> str:
     """The screening task for one domain.
@@ -165,6 +166,14 @@ def build_screening_prompt(
     pays for confirmation rather than for a fresh survey. An empty seed list is
     a normal case, not an error: it means nothing machine-readable survived from
     the previous pass, and the agent should search from scratch.
+
+    `extra_guidance` carries one caller's topical steering for one run (e.g. "prefer
+    genomics/protein work") — it is not part of the domain's own
+    :class:`ScreeningPolicy`, which describes what the domain finds acceptable at
+    all, not what one particular request happened to ask for. Appended to the
+    same fragment as `policy.prior_findings` rather than woven into the
+    invariants: it can narrow which qualifying papers get proposed, never
+    relax what qualifies.
     """
 
     licenses = "\n".join(f"   - `{name}`" for name in ACCEPTED_LICENSES)
@@ -208,6 +217,16 @@ so there is nothing to re-verify and you are searching from scratch. Find
     prior = (
         f"\n## What the last pass learned\n\n{policy.prior_findings}\n"
         if policy.prior_findings
+        else ""
+    )
+
+    guidance = (
+        f"\n## This run's topical steering\n\n"
+        f"{extra_guidance}\n\n"
+        f"This narrows which *qualifying* papers to prefer. It never relaxes any "
+        f"invariant above — a paper that fails one of them is still excluded, no "
+        f"matter how well it matches this steering.\n"
+        if extra_guidance
         else ""
     )
 
@@ -262,7 +281,7 @@ whole failed construction run to discover.
    look more in-scope than it is actually filed.
 6. **Exclude these arXiv IDs.** Samples have already been built from them:
 {exclude_block}
-{prior}
+{prior}{guidance}
 {seed_block}
 
 # Output
@@ -387,6 +406,7 @@ def run_screening(
     seed_candidates: tuple[SeedCandidate, ...] = (),
     target_count: int,
     exclude_ids: tuple[str, ...] = (),
+    extra_guidance: str = "",
     model: str = DEFAULT_SCREENING_MODEL,
     log_dir: Path,
     timeout: int = DEFAULT_SCREENING_TIMEOUT_SECONDS,
@@ -397,6 +417,10 @@ def run_screening(
     The agent works in its own scratch directory under `build_root`, like every
     other `--auto` session in this package: it has network access and bash
     because it needs to fetch and inspect, and it has nothing else in reach.
+
+    `extra_guidance` is one caller's topical steering for this run only (see
+    :func:`build_screening_prompt`); it is not persisted anywhere and does not
+    change what the domain's `ScreeningPolicy` considers acceptable.
 
     Unlike :func:`~.review.run_review`, failures raise. A review failure is a
     verdict about a paper and the loop knows what to do with it; a screening
@@ -417,6 +441,7 @@ def run_screening(
         seed_candidates=seed_candidates,
         target_count=target_count,
         exclude_ids=exclude_ids,
+        extra_guidance=extra_guidance,
         output_path=output_path,
     )
 

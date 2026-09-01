@@ -43,3 +43,10 @@ trial-exports/
 
 # oh-my-claudecode runtime state
 .omc/
+
+# opencode runtime bootstrap artifacts (not source).
+# `.opencode/agent/*.md` stays tracked — the agent definitions are source.
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/.gitignore

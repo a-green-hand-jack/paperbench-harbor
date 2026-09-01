@@ -33,9 +33,17 @@ The first public release contains two protocols:
 |---|---:|---|
 | `paperwrite-bench-short` | 51 | PaperWrite-Bench `short` |
 | `paperwritingbench-sparse-plotoff` | 200 | PaperWritingBench `sparse-plotoff` |
+| `lifesci-paperrecon-short` | 22 | LifeSci-PaperRecon `short` |
 
 Do not combine protocol names when reporting results. Sparse/dense inputs,
 plot settings, and overview variants are separate benchmark conditions.
+The current release is tagged `v0.3.1` at immutable revision
+`bfe2471c41f416d877e74bfa73cf0f29165c7567` and contains 273 tasks. It adds the
+22-task LifeSci-PaperRecon configuration while preserving the two existing
+configs. For reproducible runs, use that tag or the recorded immutable revision
+instead of the Hub default branch. The previous `v0.3.0` and `v0.2.0` releases
+remain available.
+Dataset release details are recorded in `docs/dataset-versioning.md`.
 
 ## Public benchmark release
 
