@@ -15,7 +15,8 @@ Below are the instructions to help you with the LaTeX paper writing process for 
 * **Style Files:** You must use `iclr2025_conference.sty` and `iclr2025_conference.bst`.
 
 ## Anonymity (Crucial)
-* ICLR is double-blind. **Do not** include real author names or affiliations in the submission version, use "Ambitious AI Researcher" instead.
+* ICLR is double-blind. **Do not** include author names, affiliations, addresses,
+  or email in the submission version; use `Anonymous Authors`.
 * Use the third person when citing your own prior work (e.g., "Earlier work by Smalle (2024)..." instead of "In our earlier work...").
 * You may post your paper on arXiv, but do not explicitly refer to the arXiv version in the paper to maintain anonymity.
 
@@ -106,5 +107,6 @@ These should appear at the end of the main text, before references.
 * **Line Numbers:** Do not refer to line numbers in your text (the style file adds them automatically for review).
 * **Appendix:** You may include an appendix at the very end of the main PDF (after references). Use `\appendix` to start this section.
 * **Figures Directory:** For consistent compilation, all figures will reside in the `figures` directory. Always include the `figures/` prefix in your `\includegraphics` command (e.g., `figures/figure_1.pdf`).
-* **Author Information:** Always use the following author information placeholder in your writeup:
-    * Ambitious AI Researcher, AI Research Institute, 123 AI Avenue, ML City, researcher@institute.ai
+* **Author Information:** This task is in review mode. Use `Anonymous Authors`
+  with no affiliation, address, or email. A camera-ready author block is outside
+  this task contract.

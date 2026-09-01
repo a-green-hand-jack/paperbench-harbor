@@ -25,6 +25,7 @@ def write_source_manifest(
     private_files: list[Path],
     extra: dict[str, Any] | None = None,
     root: Path | None = None,
+    material_provenance: dict[Path, tuple[str, Path]] | None = None,
 ) -> None:
     """Write a verifier-only provenance manifest for one generated task.
 
@@ -54,6 +55,17 @@ def write_source_manifest(
         "public_file_hashes": {relative(path): sha256_file(path) for path in public_files},
         "private_file_hashes": {relative(path): sha256_file(path) for path in private_files},
     }
+    if material_provenance:
+        payload["material_provenance"] = {
+            relative(destination_path): {
+                "origin": origin,
+                "source_path": source_path.as_posix(),
+                "source_sha256": sha256_file(source_path),
+            }
+            for destination_path, (origin, source_path) in sorted(
+                material_provenance.items(), key=lambda item: relative(item[0])
+            )
+        }
     if extra:
         payload["extra"] = extra
 

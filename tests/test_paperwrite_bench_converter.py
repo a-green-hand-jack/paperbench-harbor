@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,9 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
 
         manifest = task_dir / "tests" / "private" / "source_manifest.json"
         assert f'"upstream_id": "{paper_id}"' in manifest.read_text(encoding="utf-8")
+        instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
+        assert "single-column paper" in instruction
+        assert (task_dir / "environment" / "materials" / "upstream_data_warnings.md").is_file()
 
     dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
     assert '"task_id": "pwb-0003"' in dataset_manifest
@@ -136,6 +140,20 @@ def test_limit_selects_first_papers(tmp_path: Path) -> None:
     assert (tmp_path / "out" / "pwb-0001").is_dir()
     assert (tmp_path / "out" / "pwb-0002").is_dir()
     assert not (tmp_path / "out" / "pwb-0003").exists()
+
+
+def test_missing_figures_are_not_required(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    shutil.rmtree(resources / "figures")
+    (resources / "figure_summary.txt").unlink()
+    output = tmp_path / "out"
+    assert convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=output, overview="short", limit=1)
+    ) == 1
+    task_dir = output / "pwb-0001"
+    for path in (task_dir / "instruction.md", task_dir / "environment" / "materials" / "AGENTS.md"):
+        assert "/workspace/materials/figures/" not in path.read_text(encoding="utf-8")
 
 
 def test_unsupported_overview_raises(tmp_path: Path) -> None:

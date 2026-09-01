@@ -137,6 +137,18 @@ def _copy_transform(
     return FileTransform(kind=KIND_COPY, target=target, source=source)
 
 
+def _copy_or_generated_transform(
+    upstream_root: Path, source: str, task_dir: Path, target: str, note: str
+) -> FileTransform:
+    """Preserve byte checks unless a documented conversion safeguard changed content."""
+
+    source_path = upstream_root / source
+    target_path = task_dir / target
+    if target_path.is_file() and sha256(source_path) != sha256(target_path):
+        return FileTransform(kind=KIND_GENERATED, target=target, note=note)
+    return _copy_transform(upstream_root, source, task_dir, target)
+
+
 def _directory_copy_transforms(
     upstream_root: Path, source_dir: str, task_dir: Path, target_dir: str
 ) -> list[FileTransform]:
@@ -191,7 +203,18 @@ def pwb_writer_transforms(
         source = f"{prefix}/resources/{filename}"
         target = f"environment/materials/{filename}"
         if (resources / filename).is_file():
-            transforms.append(_copy_transform(upstream_root, source, task_dir, target))
+            if filename == "template.tex":
+                transforms.append(
+                    _copy_or_generated_transform(
+                        upstream_root,
+                        source,
+                        task_dir,
+                        target,
+                        "conversion safeguard removed an unavailable template dependency",
+                    )
+                )
+            else:
+                transforms.append(_copy_transform(upstream_root, source, task_dir, target))
     for dirname in _PWB_PUBLIC_RESOURCE_DIRS:
         transforms.extend(
             _directory_copy_transforms(
@@ -208,6 +231,14 @@ def pwb_writer_transforms(
             note="rendered from adapters/paperwrite_bench/agents_md/AGENTS_<type>.md",
         )
     )
+    if (task_dir / "environment/materials/upstream_data_warnings.md").is_file():
+        transforms.append(
+            FileTransform(
+                kind=KIND_GENERATED,
+                target="environment/materials/upstream_data_warnings.md",
+                note="conversion warning for malformed or contradictory upstream material",
+            )
+        )
     return transforms
 
 
@@ -412,11 +443,12 @@ def pwbw_writer_transforms(
     for filename in _PWBW_PUBLIC_FILES:
         if (raw / filename).is_file():
             transforms.append(
-                _copy_transform(
+                _copy_or_generated_transform(
                     upstream_root,
                     f"{prefix}/raw_materials/{filename}",
                     task_dir,
                     f"environment/materials/{filename}",
+                    "conversion normalized a structural Markdown defect without changing result values",
                 )
             )
     transforms.extend(
@@ -430,6 +462,14 @@ def pwbw_writer_transforms(
     # Conference template files are bundled from this repo's packaging tree
     # (vendor), not from upstream paper data; classify_generated_vendor() covers
     # every file under environment/materials/conference_template/.
+    if (task_dir / "environment/materials/upstream_data_warnings.md").is_file():
+        transforms.append(
+            FileTransform(
+                kind=KIND_GENERATED,
+                target="environment/materials/upstream_data_warnings.md",
+                note="conversion warning for a known upstream material limitation",
+            )
+        )
     return transforms
 
 

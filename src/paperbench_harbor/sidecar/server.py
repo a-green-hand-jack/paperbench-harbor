@@ -7,6 +7,8 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 def _upstream_root() -> str:
@@ -44,6 +46,59 @@ def _new_literature_agent(hybrid_agent):
     )
 
 
+def _research_cutoff() -> str:
+    return os.environ.get("PAPER_ORCHESTRA_RESEARCH_CUTOFF", "2024-10-01")
+
+
+def _has_gemini_credentials() -> bool:
+    return bool(
+        os.environ.get("GEMINI_API_KEY")
+        or (
+            os.environ.get("VERTEX_AI_PROJECT")
+            and os.environ.get("VERTEX_AI_LOCATION")
+        )
+    )
+
+
+def _is_before_cutoff(record: dict[str, object], cutoff: str) -> bool:
+    date = str(record.get("publicationDate") or "")
+    if date:
+        return date < cutoff
+    year = record.get("year")
+    return not isinstance(year, int) or year < int(cutoff[:4])
+
+
+def _semantic_scholar_discover(query: str, cutoff: str) -> list[dict[str, object]]:
+    """Credential-free discovery path for task environments without Gemini."""
+
+    url = "https://api.semanticscholar.org/graph/v1/paper/search?" + urlencode(
+        {
+            "query": query,
+            "limit": 10,
+            "fields": "title,authors,venue,year,abstract,publicationDate",
+        }
+    )
+    headers = {"Accept": "application/json"}
+    if api_key := os.environ.get("SEMANTIC_SCHOLAR_API_KEY"):
+        headers["X-API-KEY"] = api_key
+    with urlopen(Request(url, headers=headers), timeout=10) as response:  # nosec B310 - fixed HTTPS host
+        payload = json.loads(response.read().decode("utf-8"))
+    candidates = []
+    for item in payload.get("data", []):
+        if item.get("title") and _is_before_cutoff(item, cutoff):
+            candidates.append(
+                {
+                    "title": item["title"],
+                    "authors": item.get("authors", []),
+                    "venue": item.get("venue"),
+                    "year": item.get("year"),
+                    "abstract": item.get("abstract"),
+                    "source": "semantic-scholar-fallback",
+                }
+            )
+    return candidates
+
+
 def serve(host: str, port: int) -> None:
     """Serve the upstream PaperOrchestra search contract."""
 
@@ -71,39 +126,45 @@ def serve(host: str, port: int) -> None:
             try:
                 payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
                 if self.path == "/v1/discover":
-                    from google.genai import types
+                    cutoff = _research_cutoff()
+                    if _has_gemini_credentials():
+                        from google.genai import types
 
-                    agent = _new_literature_agent(hybrid_agent)
-                    agent.google_search_tool = types.Tool(google_search=types.GoogleSearch())
-                    task = {
-                        "section": payload.get("section", "Literature Review"),
-                        "focus": payload["query"],
-                        "context": payload.get("context", ""),
-                        "search_type": payload.get("search_type", "exploration"),
-                    }
-                    outline = {
-                        "intro_related_work_plan": {
-                            "introduction_strategy": {
-                                "problem_gap_hypothesis": payload.get("context", "")
+                        agent = _new_literature_agent(hybrid_agent)
+                        agent.google_search_tool = types.Tool(google_search=types.GoogleSearch())
+                        task = {
+                            "section": payload.get("section", "Literature Review"),
+                            "focus": payload["query"],
+                            "context": payload.get("context", ""),
+                            "search_type": payload.get("search_type", "exploration"),
+                        }
+                        outline = {
+                            "intro_related_work_plan": {
+                                "introduction_strategy": {
+                                    "problem_gap_hypothesis": payload.get("context", "")
+                                }
                             }
                         }
-                    }
-                    candidates = agent._discover_candidates(
-                        task, outline, payload.get("cutoff_date", "")
-                    )
+                        candidates = [
+                            item.model_dump() if hasattr(item, "model_dump") else item
+                            for item in agent._discover_candidates(task, outline, cutoff)
+                        ]
+                        mode = "gemini"
+                    else:
+                        candidates = _semantic_scholar_discover(payload["query"], cutoff)
+                        mode = "semantic-scholar-fallback"
                     self._write_json(
                         {
-                            "candidates": [
-                                item.model_dump() if hasattr(item, "model_dump") else item
-                                for item in candidates
-                            ]
+                            "candidates": candidates,
+                            "cutoff_date": cutoff,
+                            "mode": mode,
                         }
                     )
-                    print("sidecar request endpoint=/v1/discover result=ok", flush=True)
+                    print(f"sidecar request endpoint=/v1/discover result=ok mode={mode}", flush=True)
                     return
 
                 result = s2_title_search(
-                    payload["title"], payload.get("year_hint"), payload.get("cutoff_date")
+                    payload["title"], payload.get("year_hint"), _research_cutoff()[:7]
                 )
                 self._write_json({"result": result})
                 print("sidecar request endpoint=/v1/enrich-title result=ok", flush=True)
