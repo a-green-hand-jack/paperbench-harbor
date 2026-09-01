@@ -1,0 +1,13 @@
+{
+  "benchmark_hf_repo": "Jack-Jieke-Wu/Paper-Writing-Exam",
+  "benchmark_hf_revision": "bfe2471c41f416d877e74bfa73cf0f29165c7567",
+  "benchmark_hf_sha": "bfe2471c41f416d877e74bfa73cf0f29165c7567",
+  "benchmark_hf_tag": "v0.3.1",
+  "contents_status": "sanitized-trial-data",
+  "initialized_at": "2026-09-01T00:00:00Z",
+  "sanitization_version": "1.2",
+  "schema_version": "1.0",
+  "source_issue": "https://github.com/a-green-hand-jack/paperbench-harbor/issues/19",
+  "source_repository": "https://github.com/a-green-hand-jack/paperbench-harbor",
+  "trajectory_format": "Harbor ATIF"
+}

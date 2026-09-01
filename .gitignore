@@ -10,13 +10,13 @@ build/
 *.egg-info/
 
 # Generated benchmark data
-datasets/*
-!datasets/.gitkeep
+datasets/
 upstream-data/
 runs/
 results/
 jobs/
 artifacts/
+trial-exports/
 
 # Secrets and local configuration
 .env

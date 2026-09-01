@@ -37,16 +37,27 @@ revision; it does not rewrite or delete the old one.
 ## Current Dataset
 
 [`Jack-Jieke-Wu/Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam)
-currently contains the corrected 251-task
-release at tag `v0.2.0` and revision
-`5fe375dbd440409f0180e10dee213b1685c8f40d`. It was generated from Harbor merge
-commit `738db763c80c2e06f844bff5c5c2269aa0e6cdd6`. The earlier revision
+contains the 251-task public release. The Hub refs must be treated literally:
+as of 2026-09-01, tag `v0.3.1` points to
+`bfe2471c41f416d877e74bfa73cf0f29165c7567`, while the earlier tag `v0.2.0` points
+to `b13998a4b895ad7f07ee0fc38c98fb3dcb4c300e`; the default `main` branch
+points to `5fe375dbd440409f0180e10dee213b1685c8f40d`. Use the tag or commit
+SHA explicitly in experiments. The earlier revision
 `b3672c640689d377dd17ccc2960d215c8d64dd7f` remains available for historical
 comparison but predates the issue #6 follow-up fixes.
 
-On the Ubuntu Harbor host, the corresponding generated task trees are:
+Generated task trees are local build outputs. Download them from the immutable
+HF revision for evaluation, or pass an external directory to the converter's
+`--output-dir`; do not commit them to this repository.
 
-```text
-/home/user/dev/paperbench-harbor/datasets/paperwrite-bench-short
-/home/user/dev/paperbench-harbor/datasets/paperwritingbench-sparse-plotoff
-```
+Agent trial archives are maintained separately in the public
+`Jack-Jieke-Wu/Paper-Writing-Exam-Trials` dataset and are linked to this public
+release through the immutable revision, task ID, and task checksum.
+
+## Documentation-Only Hub Updates
+
+Updating the Dataset Card advances the Hub `main` commit without changing any
+task bytes. The Dataset Card added on 2026-09-01 is commit
+`f9260ee7599b87b7482b5872de61f14c43cef892`; it does not constitute a new task
+release. Experiment records must continue to identify the immutable task
+revision they actually downloaded.

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Paper-Writing Exam Trial Event",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "trial_id",
+    "trajectory_path",
+    "sequence",
+    "step_id",
+    "source",
+    "event"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "trial_id": {"type": "string", "minLength": 1},
+    "trajectory_path": {"type": "string", "minLength": 1},
+    "sequence": {"type": "integer", "minimum": 0},
+    "step_id": {"type": "integer", "minimum": 1},
+    "timestamp": {"type": ["string", "null"]},
+    "source": {"enum": ["system", "user", "agent"]},
+    "event": {"type": "object"}
+  }
+}
