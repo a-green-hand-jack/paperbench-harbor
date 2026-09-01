@@ -37,7 +37,8 @@ evaluated task container.
 
 ## Automatic host-side publishing
 
-Install the integration against the verified Harbor baseline:
+Install the integration against Harbor `v0.22.0` (commit
+`4407eb5227a2ff4f0d3f16b2eb48849382fdf276`):
 
 ```bash
 python3 -m pip install -e '.[harbor]'
@@ -48,23 +49,40 @@ uses `JobResult.trial_results`, so Harbor retries are already resolved and
 intermediate retry directories are not published:
 
 ```bash
-harbor run \
+BENCHMARK_REVISION=bfe2471c41f416d877e74bfa73cf0f29165c7567
+BENCHMARK_DIR=/path/to/Paper-Writing-Exam
+hf download Jack-Jieke-Wu/Paper-Writing-Exam \
+  --repo-type dataset --revision "$BENCHMARK_REVISION" \
+  --include 'paperwrite-bench-short/pwb-0001/**' --local-dir "$BENCHMARK_DIR"
+TASK_DIR="$BENCHMARK_DIR/paperwrite-bench-short/pwb-0001"
+JOB_ROOT=/path/to/harbor-jobs
+TRIAL_DATASET_DIR=/path/to/Paper-Writing-Exam-Trials
+AGENT_CONFIG_HASH=$(printf '%s\n' \
+  'agent=codex' 'model=openai/gpt-5.6-terra' 'reasoning_effort=medium' \
+  | sha256sum | cut -d' ' -f1)
+
+uv run --extra harbor harbor run \
   --jobs-dir "$JOB_ROOT" \
-  --path /path/to/Paper-Writing-Exam/paperwrite-bench-short/pwb-0001 \
+  --path "$TASK_DIR" \
   --agent codex \
-  --model openai/gpt-5.6-sol \
+  --model openai/gpt-5.6-terra \
+  --ak reasoning_effort=medium \
   --plugin paperbench-trial-export \
   --pk output_dir="$TRIAL_DATASET_DIR" \
-  --pk benchmark_hf_revision="$BENCHMARK_HF_REVISION" \
-  --pk harbor_repo_commit="$HARBOR_REPO_COMMIT" \
-  --pk integration_commit="$INTEGRATION_COMMIT" \
+  --pk benchmark_hf_revision="$BENCHMARK_REVISION" \
+  --pk harbor_repo_commit=4407eb5227a2ff4f0d3f16b2eb48849382fdf276 \
+  --pk integration_commit="$(git rev-parse HEAD)" \
   --pk agent_config_hash="$AGENT_CONFIG_HASH" \
   --pk private_manifest="$TASK_DIR/tests/private/source_manifest.json" \
+  --pk upload=true \
+  --pk dataset_repo=Jack-Jieke-Wu/Paper-Writing-Exam-Trials \
+  --pk revision=main \
   --yes --n-concurrent 1
 ```
 
-For a local-only export, leave upload disabled (the default). For a host-side
-upload to a custom dataset repository, add:
+For a local-only export, leave upload disabled (the default). The command above
+uses the authorized public trial repository. For a different host-side dataset
+repository, change:
 
 ```text
 --pk upload=true

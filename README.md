@@ -16,27 +16,51 @@ benchmark.
 | [`Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam) | Benchmark task package | Harbor task directories, instructions, writer environments, oracle solutions, and verifiers |
 | [`Paper-Writing-Exam-Trials`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Trials) | Public run archive | Sanitized agent trajectories, submissions, logs, scores, and complete trial archives |
 
-Trial publishing is opt-in. Install the Harbor integration with
-`python -m pip install -e '.[harbor]'`, then pass the registered plugin and its
-host-side metadata to `harbor run`:
+Trial publishing is opt-in. The following is the reproducible single-task
+example used by the current integration: benchmark release `v0.3.1`
+(`bfe2471c41f416d877e74bfa73cf0f29165c7567`), Harbor `v0.22.0`
+(`4407eb5227a2ff4f0d3f16b2eb48849382fdf276`), and Codex
+`openai/gpt-5.6-terra` with medium reasoning effort. Run it from a checkout of
+this repository after configuring the host's provider credentials:
 
 ```bash
-harbor run \
-  ... \
+BENCHMARK_REVISION=bfe2471c41f416d877e74bfa73cf0f29165c7567
+BENCHMARK_DIR=/path/to/Paper-Writing-Exam
+hf download Jack-Jieke-Wu/Paper-Writing-Exam \
+  --repo-type dataset --revision "$BENCHMARK_REVISION" \
+  --include 'paperwrite-bench-short/pwb-0001/**' --local-dir "$BENCHMARK_DIR"
+TASK_DIR="$BENCHMARK_DIR/paperwrite-bench-short/pwb-0001"
+JOB_ROOT=/path/to/harbor-jobs
+TRIAL_DATASET_DIR=/path/to/Paper-Writing-Exam-Trials
+AGENT_CONFIG_HASH=$(printf '%s\n' \
+  'agent=codex' 'model=openai/gpt-5.6-terra' 'reasoning_effort=medium' \
+  | sha256sum | cut -d' ' -f1)
+
+uv run --extra harbor harbor run \
+  --jobs-dir "$JOB_ROOT" \
+  --path "$TASK_DIR" \
+  --agent codex \
+  --model openai/gpt-5.6-terra \
+  --ak reasoning_effort=medium \
   --plugin paperbench-trial-export \
-  --pk output_dir=/path/to/Paper-Writing-Exam-Trials \
-  --pk benchmark_hf_revision=bfe2471c41f416d877e74bfa73cf0f29165c7567 \
-  --pk harbor_repo_commit=<paperbench-harbor-commit> \
-  --pk integration_commit=<agent-integration-commit> \
-  --pk agent_config_hash=<64-character-sha256> \
-  --pk private_manifest=/path/to/task/tests/private/source_manifest.json
+  --pk output_dir="$TRIAL_DATASET_DIR" \
+  --pk benchmark_hf_revision="$BENCHMARK_REVISION" \
+  --pk harbor_repo_commit=4407eb5227a2ff4f0d3f16b2eb48849382fdf276 \
+  --pk integration_commit="$(git rev-parse HEAD)" \
+  --pk agent_config_hash="$AGENT_CONFIG_HASH" \
+  --pk private_manifest="$TASK_DIR/tests/private/source_manifest.json" \
+  --pk upload=true \
+  --pk dataset_repo=Jack-Jieke-Wu/Paper-Writing-Exam-Trials \
+  --pk revision=main \
+  --yes --n-concurrent 1
 ```
 
 This exports final retry results on the host. Add
-`--pk upload=true --pk dataset_repo=my-org/my-paper-writing-exam-trials` to
-publish the sanitized files and report the immutable Hub commit SHA. Omit the
-plugin for unchanged Harbor behavior. The manual exporter plus `hf upload`
-workflow remains available as a fallback; see
+`--pk upload=true --pk dataset_repo=Jack-Jieke-Wu/Paper-Writing-Exam-Trials` to
+publish the sanitized files and report the immutable Hub commit SHA. The
+example above includes those options. Omit the plugin for unchanged Harbor
+behavior. The manual exporter plus `hf upload` workflow remains available as a
+fallback; see
 [`docs/trial-dataset.md`](docs/trial-dataset.md).
 
 GitHub is the source of truth for how tasks and integrations are built.
