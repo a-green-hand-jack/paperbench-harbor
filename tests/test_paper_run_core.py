@@ -46,6 +46,8 @@ def test_brief_and_start_command_bridge_harbor_inputs() -> None:
     assert "--template 'v0.3.0'" in core.init_command()
     assert "git ls-remote --exit-code" in core.init_command()
     assert core.HARNESS_TEMPLATE_COMMIT in core.init_command()
+    assert "env *" not in core.patch_opencode_project_command()
+    assert "bash['ls *'] = 'allow'" in core.patch_opencode_project_command()
 
 
 def test_install_command_uses_pinned_v050_source_build() -> None:

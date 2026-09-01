@@ -226,12 +226,11 @@ The wrapper, inside the task container:
 
 These paper-run behaviours are handled by the wrapper:
 
-- **Headless permissions.** The wrapper keeps the generated `paper-run`
-  permission policy unchanged. Writers use OpenCode's native read, glob, grep,
-  list, and edit tools; controller-owned validation and publication builds do
-  not require writer shell access. Unlisted bash commands stay `ask` and fail
-  fast in headless mode, so environment-dumping and arbitrary interpreter or
-  file-copy commands are not added downstream.
+- **Headless permissions.** The wrapper keeps the generated `paper-run` policy
+  deny-by-default and adds only a narrow project-level allowlist for read-only
+  inspection, Git inspection, and local publication-build commands.
+  Environment-dumping and arbitrary network commands remain unlisted and stay
+  `ask` in headless mode.
 - **Material assessment.** It only considers files inside the writing repo, so
   public materials are copied into `<repo>/materials/` before `start`.
 - **Locked contracts.** `PAPER.md ## What must not change silently` is a hard

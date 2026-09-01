@@ -122,6 +122,14 @@ class PaperRun(BaseInstalledAgent):
             timeout_sec=1200,
         )
 
+        # Keep paper-run's default deny-by-default policy, while allowing the
+        # narrow read/build commands its autonomous stages use.
+        await self.exec_as_agent(
+            environment,
+            command=core.patch_opencode_project_command(),
+            timeout_sec=60,
+        )
+
         # Stage the public benchmark materials into the repo so the material
         # assessment can see them, and commit with a manual checkpoint.
         await self.exec_as_agent(
