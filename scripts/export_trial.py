@@ -102,6 +102,11 @@ RECOGNIZABLE_SECRET_RE = re.compile(
 )
 JSON_UNICODE_ESCAPE_RE = re.compile(r"(?:\\u[0-9a-fA-F]{4})+")
 JSON_HEX_ESCAPE_RE = re.compile(r"(?:\\x[0-9a-fA-F]{2})+")
+STRUCTURED_SECRET_KEY_RE = re.compile(
+    r"(?i)^(?:[A-Z0-9]+[_-])?(?:API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|"
+    r"CLIENT[_-]?SECRET|PASSWORD|TOKEN|SECRET|CREDENTIALS?|SECRET[_-]?KEY|"
+    r"PRIVATE[_-]?KEY)$"
+)
 SAFE_ENV_REFERENCE_RE = re.compile(
     r"^(?:\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\})$"
 )
@@ -290,7 +295,9 @@ def _check_secret_bytes(data: bytes, relative_path: Path) -> None:
             _check_secret_text(decoded.decode("latin1"), relative_path)
 
 
-def _check_secret_text(text: str, relative_path: Path) -> None:
+def _check_secret_text(
+    text: str, relative_path: Path, *, check_assignments: bool = True
+) -> None:
     decoded = JSON_UNICODE_ESCAPE_RE.sub(
         lambda match: "".join(
             chr(int(match.group(0)[index + 2 : index + 6], 16))
@@ -309,20 +316,21 @@ def _check_secret_text(text: str, relative_path: Path) -> None:
     for candidate in candidates:
         if RECOGNIZABLE_SECRET_RE.search(candidate.encode("utf-8", errors="ignore")):
             raise _secret_error(relative_path)
-        for pattern in TEXT_SECRET_PATTERNS:
-            for match in pattern.finditer(candidate):
-                if match.lastindex:
-                    value = (
-                        next(group for group in match.groups() if group is not None)
-                        .replace('\\"', '"')
-                        .replace("\\'", "'")
-                        .strip("\"'")
-                    )
-                    if value.lower() in SAFE_SECRET_VALUES or SAFE_ENV_REFERENCE_RE.fullmatch(
-                        value
-                    ):
-                        continue
-                raise _secret_error(relative_path)
+        if check_assignments:
+            for pattern in TEXT_SECRET_PATTERNS:
+                for match in pattern.finditer(candidate):
+                    if match.lastindex:
+                        value = (
+                            next(group for group in match.groups() if group is not None)
+                            .replace('\\"', '"')
+                            .replace("\\'", "'")
+                            .strip("\"'")
+                        )
+                        if value.lower() in SAFE_SECRET_VALUES or SAFE_ENV_REFERENCE_RE.fullmatch(
+                            value
+                        ):
+                            continue
+                    raise _secret_error(relative_path)
 
 
 def _check_json_values(text: str, relative_path: Path) -> None:
@@ -333,11 +341,13 @@ def _check_json_values(text: str, relative_path: Path) -> None:
 
     def visit(value: Any) -> None:
         if isinstance(value, str):
-            _check_secret_text(value, relative_path)
+            _check_secret_text(value, relative_path, check_assignments=False)
         elif isinstance(value, dict):
             for key, item in value.items():
                 if isinstance(key, str):
-                    _check_secret_text(key, relative_path)
+                    _check_secret_text(key, relative_path, check_assignments=False)
+                    if isinstance(item, str) and STRUCTURED_SECRET_KEY_RE.fullmatch(key):
+                        _check_secret_text(f"{key}={item}", relative_path)
                 visit(item)
         elif isinstance(value, list):
             for item in value:
@@ -403,7 +413,11 @@ def _scan_text_file(path: Path, relative_path: Path) -> None:
                 if structured_lines is not None:
                     structured_lines.append(decoded_chunk)
                 text = carry + decoded_chunk
-                _check_secret_text(text, relative_path)
+                _check_secret_text(
+                    text,
+                    relative_path,
+                    check_assignments=path.suffix.lower() not in {".json", ".jsonl"},
+                )
                 carry = text[-SCAN_OVERLAP_BYTES:]
             final_chunk = decoder.decode(b"", final=True)
             text = carry + final_chunk
@@ -411,7 +425,11 @@ def _scan_text_file(path: Path, relative_path: Path) -> None:
                 structured_parts.append(final_chunk)
             if structured_lines is not None:
                 structured_lines.append(final_chunk)
-            _check_secret_text(text, relative_path)
+            _check_secret_text(
+                text,
+                relative_path,
+                check_assignments=path.suffix.lower() not in {".json", ".jsonl"},
+            )
             if structured_parts is not None:
                 _check_json_values("".join(structured_parts), relative_path)
             if structured_lines is not None:
