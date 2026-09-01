@@ -51,6 +51,9 @@ def test_brief_and_start_command_bridge_harbor_inputs() -> None:
     assert "bash['*'] = 'ask'" in patch_command
     assert "bash['git rev-parse --show-toplevel'] = 'allow'" in patch_command
     assert "git branch --show-current && git status --short && git remote -v" in patch_command
+    assert "bash['git branch --show-current'] = 'allow'" in patch_command
+    assert "bash['git status --short'] = 'allow'" in patch_command
+    assert "bash['git remote -v'] = 'allow'" in patch_command
     assert "bash['ls \"paper/figures/srcs\" \"paper/tables\" \"materials/figures\" \"materials/tables\"'] = 'allow'" in patch_command
     for unsafe in (
         "python3 *",
@@ -93,6 +96,9 @@ def test_patch_replaces_inherited_bash_permissions(tmp_path: Path) -> None:
         "*",
         "git rev-parse --show-toplevel",
         "git rev-parse --show-toplevel && git branch --show-current && git status --short && git remote -v",
+        "git branch --show-current",
+        "git status --short",
+        "git remote -v",
         'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"',
     ]
     assert bash_rules["*"] == "ask"
@@ -100,6 +106,9 @@ def test_patch_replaces_inherited_bash_permissions(tmp_path: Path) -> None:
     assert bash_rules[
         "git rev-parse --show-toplevel && git branch --show-current && git status --short && git remote -v"
     ] == "allow"
+    assert bash_rules["git branch --show-current"] == "allow"
+    assert bash_rules["git status --short"] == "allow"
+    assert bash_rules["git remote -v"] == "allow"
     assert bash_rules[
         'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"'
     ] == "allow"

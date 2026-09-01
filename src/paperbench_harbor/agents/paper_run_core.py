@@ -373,6 +373,9 @@ def opencode_user_config_command(base_url: str | None, model: str | None) -> str
 NARROW_BASH_ALLOW: dict[str, str] = {
     "git rev-parse --show-toplevel": "allow",
     "git rev-parse --show-toplevel && git branch --show-current && git status --short && git remote -v": "allow",
+    "git branch --show-current": "allow",
+    "git status --short": "allow",
+    "git remote -v": "allow",
     'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"': "allow",
 }
 
