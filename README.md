@@ -27,7 +27,7 @@ are not committed to GitHub.
 - **LifeSci-PaperRecon**: project-original biology/life-sciences corpus using
   the PaperRecon-style task recipe.
 
-The first public release contains two protocols:
+The public release contains three protocols:
 
 | Dataset directory | Tasks | Protocol |
 |---|---:|---|
@@ -44,6 +44,25 @@ configs. For reproducible runs, use that tag or the recorded immutable revision
 instead of the Hub default branch. The previous `v0.3.0` and `v0.2.0` releases
 remain available.
 Dataset release details are recorded in `docs/dataset-versioning.md`.
+
+Run a task directly from the Hugging Face repository without maintaining a
+local dataset checkout. Harbor resolves the immutable repository revision and
+manages its temporary task cache:
+
+```bash
+harbor run \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --include-task-name lspr-0001 \
+  --agent codex \
+  --model <provider>/<model> \
+  --yes --n-concurrent 1
+```
+
+Replace the configuration subdirectory and task name for another protocol.
+The Dataset Viewer is disabled because this repository contains executable
+Harbor task trees rather than compatible tabular splits. In this command,
+`--repo` is Harbor's Git-repository dataset source; `--dataset` is reserved
+for Harbor Hub packages.
 
 ## Public benchmark release
 

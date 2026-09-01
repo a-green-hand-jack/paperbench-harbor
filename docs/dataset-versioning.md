@@ -19,6 +19,13 @@ The generated `dataset-manifest.jsonl` is the task-level record. The dataset
 card should also contain a short changelog mapping each public version to its
 source and converter revisions.
 
+Harbor task-tree repositories are not conventional tabular datasets. When the
+Hugging Face Dataset Viewer cannot infer compatible splits, set `viewer: false`
+in the dataset card instead of adding synthetic `train`/`validation`/`test`
+data. The card should document the direct Harbor `--repo` task-fetch command
+and the immutable revision used for reproduction. This metadata does not
+modify the immutable task release.
+
 ## Publishing Workflow
 
 1. Merge and record the code change in GitHub.
@@ -42,6 +49,22 @@ revision recorded below. It adds the 22-task `lifesci-paperrecon-short`
 configuration to the two existing configurations. The earlier `v0.3.0` and
 `v0.2.0` releases remain available and must be used when reproducing results
 from those releases.
+
+For a direct single-task run, point Harbor at the Hugging Face dataset tree and
+filter by task name. No user-managed local dataset checkout is required:
+
+```bash
+harbor run \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --include-task-name lspr-0001 \
+  --agent codex \
+  --model <provider>/<model> \
+  --yes --n-concurrent 1
+```
+
+Harbor uses its own task cache and repository checkout internally. The
+immutable revision and task filter keep the run reproducible. `--dataset` is
+reserved for Harbor Hub packages; use `--repo` for this Hugging Face Git source.
 
 ### v0.3.1
 
