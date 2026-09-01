@@ -31,7 +31,13 @@ def _local_file(output_dir: Path, relative: str) -> tuple[Path, str]:
         raise TrialUploadError(f"invalid local export path: {relative!r}")
     normalized = posix.as_posix()
     root = output_dir.resolve()
-    path = (root / Path(*posix.parts)).resolve()
+    candidate = root / Path(*posix.parts)
+    current = root
+    for part in posix.parts:
+        current /= part
+        if current.is_symlink():
+            raise TrialUploadError(f"local export file is missing or unsafe: {relative}")
+    path = candidate.resolve()
     try:
         path.relative_to(root)
     except ValueError as exc:
@@ -81,23 +87,24 @@ def _remote_file(
     repo_id: str, filename: str, revision: str, *, enabled: bool
 ) -> Path | None:
     """Download one remote index/manifest when a real Hub client is in use."""
+    if not enabled:
+        return None
     try:
-        from huggingface_hub import EntryNotFoundError, hf_hub_download
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.utils import EntryNotFoundError
     except ImportError as exc:  # pragma: no cover
         raise TrialUploadError("huggingface-hub is required for upload") from exc
-    if enabled:
-        try:
-            return Path(
-                hf_hub_download(
-                    repo_id=repo_id,
-                    filename=filename,
-                    repo_type="dataset",
-                    revision=revision,
-                )
+    try:
+        return Path(
+            hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                repo_type="dataset",
+                revision=revision,
             )
-        except EntryNotFoundError:
-            return None
-    return None
+        )
+    except EntryNotFoundError:
+        return None
 
 
 def upload_export(
@@ -169,7 +176,9 @@ def upload_export(
         filtered: list[tuple[Path, str]] = []
         for relative, path in by_name.items():
             if relative.startswith("manifests/"):
-                remote_manifest = _remote_file(api, repo_id, relative, revision)
+                remote_manifest = _remote_file(
+                    repo_id, relative, revision, enabled=not injected_api
+                )
                 if remote_manifest is not None:
                     local_manifest = json.loads(path.read_text(encoding="utf-8"))
                     remote_data = json.loads(remote_manifest.read_text(encoding="utf-8"))

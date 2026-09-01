@@ -230,7 +230,10 @@ def publish_job(job: Any, job_result: Any, config: TrialPublicationConfig, *, up
         if "CancelledError" in exception_types and not config.include_cancelled:
             publications.append(TrialPublication(trial_id, "skipped_cancelled"))
             continue
-        if exception_types and not config.include_failed:
+        non_cancellation_errors = [
+            exception_type for exception_type in exception_types if exception_type != "CancelledError"
+        ]
+        if non_cancellation_errors and not config.include_failed:
             publications.append(TrialPublication(trial_id, "skipped_failed"))
             continue
         try:

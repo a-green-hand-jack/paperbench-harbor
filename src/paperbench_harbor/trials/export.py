@@ -1005,7 +1005,7 @@ def _validate_atif_step(
     source: Path,
     expected_id: int,
     step_count: list[int],
-    trajectory_files: set[Path] | None,
+    available_files: set[Path] | None,
 ) -> None:
     if not isinstance(step, dict):
         raise TrialExportError(f"ATIF trajectory step is not an object: {source}")
@@ -1030,7 +1030,7 @@ def _validate_atif_step(
     message = step.get("message")
     if not isinstance(message, (str, list)):
         raise TrialExportError(f"ATIF message is missing or invalid: {source}")
-    _validate_atif_content(message, source, "message", trajectory_files)
+    _validate_atif_content(message, source, "message", available_files)
     agent_only = {"model_name", "reasoning_effort", "reasoning_content", "tool_calls", "metrics"}
     if source_name != "agent" and any(step.get(key) is not None for key in agent_only):
         raise TrialExportError(f"ATIF agent-only field on non-agent step: {source}")
@@ -1079,7 +1079,7 @@ def _validate_atif_step(
             if content is not None:
                 if not isinstance(content, (str, list)):
                     raise TrialExportError(f"ATIF observation content is invalid: {source}")
-                _validate_atif_content(content, source, "observation content", trajectory_files)
+                _validate_atif_content(content, source, "observation content", available_files)
             source_call_id = result.get("source_call_id")
             if source_call_id is not None and (
                 not isinstance(source_call_id, str) or source_call_id not in tool_call_ids
@@ -1120,7 +1120,7 @@ def _validate_atif_content(
     value: str | list[Any],
     source: Path,
     label: str,
-    trajectory_files: set[Path] | None,
+    available_files: set[Path] | None,
 ) -> None:
     if isinstance(value, str):
         return
@@ -1153,11 +1153,11 @@ def _validate_atif_content(
                 or "://" in image_path
             ):
                 raise TrialExportError(f"ATIF {label} image source is not local: {source}")
-            if trajectory_files is not None:
+            if available_files is not None:
                 image_target = Path(
                     os.path.normpath((source.parent / image_relative).as_posix())
                 )
-                if image_target not in trajectory_files:
+                if image_target not in available_files:
                     raise TrialExportError(
                         f"ATIF {label} image source is not included in the archive: {source}"
                     )
@@ -1267,7 +1267,7 @@ def _validate_atif_trajectory(
     nested: bool = False,
     depth: int = 0,
     step_count: list[int] | None = None,
-    trajectory_files: set[Path] | None = None,
+    available_files: set[Path] | None = None,
 ) -> list[dict[str, Any]]:
     if depth > MAX_TRAJECTORY_DEPTH:
         raise TrialExportError(f"ATIF trajectory is nested too deeply: {source}")
@@ -1322,7 +1322,7 @@ def _validate_atif_trajectory(
         raise TrialExportError(f"ATIF trajectory has no steps array: {source}")
     step_count = step_count or [0]
     for expected_id, step in enumerate(steps, start=1):
-        _validate_atif_step(step, source, expected_id, step_count, trajectory_files)
+        _validate_atif_step(step, source, expected_id, step_count, available_files)
     nested_trajectories = trajectory.get("subagent_trajectories")
     if nested_trajectories is not None:
         if not isinstance(nested_trajectories, list):
@@ -1341,7 +1341,7 @@ def _validate_atif_trajectory(
                 nested=True,
                 depth=depth + 1,
                 step_count=step_count,
-                trajectory_files=trajectory_files,
+                available_files=available_files,
             )
     continued_ref = trajectory.get("continued_trajectory_ref")
     if continued_ref is not None and (
@@ -1433,7 +1433,7 @@ def _load_events(files: list[SnapshotFile], trial_id: str) -> list[dict[str, Any
     trajectory_files = set(trajectories)
     for trajectory_path, trajectory in trajectories.items():
         _validate_atif_trajectory(
-            trajectory, trajectory_path, trajectory_files=available_paths
+            trajectory, trajectory_path, available_files=available_paths
         )
         _validate_atif_references(trajectory, trajectory_path, trajectory_files, trajectories)
     for item in files:
@@ -1951,6 +1951,11 @@ def validate_existing_export(
         if private_manifest is not None
         else set()
     )
+    _scan_file(
+        archive_path,
+        Path(f"artifacts/{trial_id}.tar.gz"),
+        private_hashes=private_hashes,
+    )
     seen: set[str] = set()
     try:
         with tarfile.open(archive_path, mode="r:gz") as archive:
@@ -1962,14 +1967,24 @@ def validate_existing_export(
                 source = archive.extractfile(member)
                 if source is None:
                     raise TrialExportError(f"existing export member cannot be read: {member.name}")
-                data = source.read()
-                _check_secret_bytes(data, relative)
-                digest = hashlib.sha256(data).hexdigest()
-                if digest in private_hashes:
-                    raise TrialExportError(f"existing export contains private source material: {member.name}")
+                digest_builder = hashlib.sha256()
+                size_bytes = 0
+                while True:
+                    chunk = source.read(SCAN_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    digest_builder.update(chunk)
+                    size_bytes += len(chunk)
+                digest = digest_builder.hexdigest()
                 item = expected_files.get(member.name)
-                if item is None or item.get("sha256") != digest or item.get("size_bytes") != len(data):
+                if (
+                    item is None
+                    or item.get("sha256") != digest
+                    or item.get("size_bytes") != size_bytes
+                ):
                     raise TrialExportError(f"existing export manifest mismatch: {member.name}")
+                if member.name in seen:
+                    raise TrialExportError(f"existing export contains a duplicate member: {member.name}")
                 seen.add(member.name)
     except (OSError, tarfile.TarError) as exc:
         raise TrialExportError(f"cannot inspect existing export archive: {trial_id}") from exc

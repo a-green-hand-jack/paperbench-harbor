@@ -69,6 +69,27 @@ def test_default_policy_skips_failed_trial(tmp_path: Path, monkeypatch: pytest.M
     assert report["trials"][0]["status"] == "skipped_failed"
 
 
+def test_include_cancelled_exports_cancelled_trial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = {
+        "trial_id": "trial-0001",
+        "artifact_archive": "artifacts/trial-0001.tar.gz",
+        "artifact_sha256": "b" * 64,
+    }
+    monkeypatch.setattr(orchestrator, "export_trial", lambda _args: record)
+    result = _result(tmp_path)
+    result.exception_info = {"exception_type": "CancelledError"}
+
+    report = publish_job(
+        SimpleNamespace(job_dir=tmp_path / "job"),
+        SimpleNamespace(trial_results=[result]),
+        _config(tmp_path, include_cancelled=True),
+    )
+
+    assert report["trials"][0]["status"] == "exported"
+
+
 def test_final_results_are_exported_and_upload_failure_preserves_local_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
