@@ -376,6 +376,7 @@ NARROW_BASH_ALLOW: dict[str, str] = {
     "git branch --show-current": "allow",
     "git status --short": "allow",
     "git remote -v": "allow",
+    "python3 .agents/tools/paper-init.py status": "allow",
     'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"': "allow",
 }
 
