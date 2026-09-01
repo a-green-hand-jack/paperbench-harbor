@@ -20,26 +20,20 @@ Harbor evaluation.
 
 ## Direct task fetch
 
-Install the Hugging Face CLI and Harbor, then use an include pattern to fetch
-only one task. Pass the resulting local task directory to Harbor; the full
-dataset does not need to be downloaded first:
+Install Harbor, then point `--repo` at the Hugging Face dataset tree and select
+one task by name. Harbor manages its own task cache; no user-managed local
+dataset checkout is required:
 
 ```bash
-hf download Jack-Jieke-Wu/Paper-Writing-Exam \
-  --repo-type dataset \
-  --revision bfe2471c41f416d877e74bfa73cf0f29165c7567 \
-  --include 'lifesci-paperrecon-short/lspr-0001/**' \
-  --local-dir ./paper-writing-exam
-
 harbor run \
-  --path ./paper-writing-exam/lifesci-paperrecon-short/lspr-0001 \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --include-task-name lspr-0001 \
   --agent codex \
   --model <provider>/<model> \
   --yes --n-concurrent 1
 ```
 
-Replace the configuration subdirectory and task ID in both the `--include`
-glob and the Harbor `--path` for another configuration:
+Replace the configuration subdirectory and task name for another configuration:
 
 | Configuration | Tree subdirectory | Example task |
 |---|---|---|
@@ -49,4 +43,6 @@ glob and the Harbor `--path` for another configuration:
 
 The release commit is
 `bfe2471c41f416d877e74bfa73cf0f29165c7567`; use it for reproducibility, or
-verify that `v0.3.1` still resolves to that commit.
+verify that `v0.3.1` still resolves to that commit. In this command, `--repo`
+means a Git-repository dataset source; `--dataset` is reserved for Harbor Hub
+packages.

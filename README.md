@@ -33,28 +33,25 @@ reproducible runs, use that commit, or verify that the tag still resolves to it,
 instead of the Hub default branch.
 Dataset release details are recorded in `docs/dataset-versioning.md`.
 
-Run one task directly from Hugging Face without downloading the whole dataset.
-The Hugging Face CLI's include pattern fetches only the selected task tree, which
-is then passed to Harbor:
+Run one task directly from the Hugging Face repository without maintaining a
+local dataset checkout. Harbor resolves the repository revision, selects the
+task, and manages its temporary/cache download:
 
 ```bash
-hf download Jack-Jieke-Wu/Paper-Writing-Exam \
-  --repo-type dataset \
-  --revision bfe2471c41f416d877e74bfa73cf0f29165c7567 \
-  --include 'lifesci-paperrecon-short/lspr-0001/**' \
-  --local-dir ./paper-writing-exam
-
 harbor run \
-  --path ./paper-writing-exam/lifesci-paperrecon-short/lspr-0001 \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --include-task-name lspr-0001 \
   --agent codex \
   --model <provider>/<model> \
   --yes --n-concurrent 1
 ```
 
-Replace the configuration subdirectory and task name in both commands for the
-other configurations. The Hugging Face Dataset Viewer is disabled because this
+Replace the configuration subdirectory and task name for the other
+configurations. The Hugging Face Dataset Viewer is disabled because this
 repository contains executable Harbor task trees, not compatible tabular
-`train`/`validation`/`test` splits.
+`train`/`validation`/`test` splits. `--repo` is Harbor's Git-repository dataset
+source; `--dataset` refers to Harbor Hub packages and is not used for this HF
+repository.
 
 ## Repository layout
 
