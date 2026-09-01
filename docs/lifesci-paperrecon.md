@@ -73,7 +73,7 @@ ground truth (directly, or via a rubric distilled from it beforehand);
 others are absolute quality judgments that never see the ground truth at
 all, functioning like a standalone peer reviewer.
 
-## LifeSci-PaperRecon: current status (2026-08-30)
+## LifeSci-PaperRecon: current status (2026-09-01)
 
 ### What it is
 
@@ -186,7 +186,22 @@ project-original. Dataset directory:
   end-to-end (unit-verified; the live end-to-end smoke test is still a
   separate open item) — see `docs/papersmith-architecture.md`
   ("One-command entry point").
-- **Phase 5 (Hugging Face publish)**: not started.
+- **Phase 5 (Hugging Face publish)**: complete. The 22-task
+  `lifesci-paperrecon-short` configuration was added to
+  `Jack-Jieke-Wu/Paper-Writing-Exam` at tag `v0.3.1` and immutable revision
+  `bfe2471c41f416d877e74bfa73cf0f29165c7567`. The existing `v0.3.0` release was
+  preserved rather than retagged. A full download of the tagged LifeSci tree
+  matched the local release tree for all 7,169 files by SHA-256; `lspr-0001`
+  produced oracle reward 1.0 and NOP reward 0.0 from the tagged download. The
+  repository verification suite passed with `193 passed`, and `ruff check .`
+  passed with no findings. A real-agent Harbor 0.20.0 run then exercised
+  `lspr-0001` and `lspr-0002` from the byte-matched release tree using Codex
+  0.151.0, `openai/gpt-5.6-terra`, and Harbor agent kwarg
+  `reasoning_effort=medium`, which invoked Codex with
+  `-c model_reasoning_effort=medium`. Both trials completed without exceptions
+  and earned reward 1.0. For each generated submission, the independent
+  verifier passed all three checks: submission structure, recompilation
+  without shell escape, and citation definitions.
 
 ### Open follow-ups
 

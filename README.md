@@ -25,10 +25,14 @@ The public Harbor dataset is available on [Hugging Face](https://huggingface.co/
 |---|---:|---|
 | `paperwrite-bench-short` | 51 | PaperWrite-Bench `short` |
 | `paperwritingbench-sparse-plotoff` | 200 | PaperWritingBench `sparse-plotoff` |
+| `lifesci-paperrecon-short` | 22 | LifeSci-PaperRecon `short` |
 
-The current release is tagged `v0.2.0` at immutable revision
-`5fe375dbd440409f0180e10dee213b1685c8f40d` and contains 251 tasks. For
-reproducible runs, use that tag or revision instead of the Hub default branch.
+The current release is tagged `v0.3.1` at immutable revision
+`bfe2471c41f416d877e74bfa73cf0f29165c7567` and contains 273 tasks. It adds the
+22-task LifeSci-PaperRecon configuration while preserving the two existing
+configs. For reproducible runs, use that tag or the recorded immutable revision
+instead of the Hub default branch. The previous `v0.3.0` and `v0.2.0` releases
+remain available.
 Dataset release details are recorded in `docs/dataset-versioning.md`.
 
 ## Repository layout
