@@ -227,8 +227,8 @@ The wrapper, inside the task container:
 These paper-run behaviours are handled by the wrapper:
 
 - **Headless permissions.** The wrapper keeps the generated `paper-run` policy
-  deny-by-default and adds only the fixed read-only directory check needed by
-  the citation stage. All other bash commands, including interpreters, file
+  deny-by-default and adds only fixed read-only repository and directory checks
+  needed by the pipeline. All other bash commands, including interpreters, file
   mutation, publication tools, environment-dumping, and network commands,
   remain unlisted and stay `ask` in headless mode.
 - **Material assessment.** It only considers files inside the writing repo, so

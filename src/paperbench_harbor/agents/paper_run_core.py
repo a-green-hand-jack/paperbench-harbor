@@ -371,12 +371,13 @@ def opencode_user_config_command(base_url: str | None, model: str | None) -> str
 
 
 NARROW_BASH_ALLOW: dict[str, str] = {
+    "git rev-parse --show-toplevel": "allow",
     'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"': "allow",
 }
 
 
 def patch_opencode_project_command(project_dir: str = PROJECT_DIR) -> str:
-    """Allow only the fixed directory check used by the writer pipeline."""
+    """Allow only fixed repository and directory checks used by the pipeline."""
     config_path = f"{project_dir}/opencode.json"
     script = (
         "import json, pathlib\n"

@@ -49,6 +49,7 @@ def test_brief_and_start_command_bridge_harbor_inputs() -> None:
     patch_command = core.patch_opencode_project_command()
     assert "bash.clear()" in patch_command
     assert "bash['*'] = 'ask'" in patch_command
+    assert "bash['git rev-parse --show-toplevel'] = 'allow'" in patch_command
     assert "bash['ls \"paper/figures/srcs\" \"paper/tables\" \"materials/figures\" \"materials/tables\"'] = 'allow'" in patch_command
     for unsafe in (
         "python3 *",
@@ -87,9 +88,11 @@ def test_patch_replaces_inherited_bash_permissions(tmp_path: Path) -> None:
     bash_rules = config["permission"]["bash"]
     assert list(bash_rules) == [
         "*",
+        "git rev-parse --show-toplevel",
         'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"',
     ]
     assert bash_rules["*"] == "ask"
+    assert bash_rules["git rev-parse --show-toplevel"] == "allow"
     assert bash_rules[
         'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"'
     ] == "allow"
