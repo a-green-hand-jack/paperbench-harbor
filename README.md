@@ -25,11 +25,36 @@ The public Harbor dataset is available on [Hugging Face](https://huggingface.co/
 |---|---:|---|
 | `paperwrite-bench-short` | 51 | PaperWrite-Bench `short` |
 | `paperwritingbench-sparse-plotoff` | 200 | PaperWritingBench `sparse-plotoff` |
+| `lifesci-paperrecon-short` | 22 | LifeSci-PaperRecon `short` |
 
-The current release is tagged `v0.2.0` at immutable revision
-`5fe375dbd440409f0180e10dee213b1685c8f40d` and contains 251 tasks. For
-reproducible runs, use that tag or revision instead of the Hub default branch.
+The current release is tagged `v0.3.1` at revision
+`bfe2471c41f416d877e74bfa73cf0f29165c7567` and contains 273 tasks. For
+reproducible runs, use that commit, or verify that the tag still resolves to it,
+instead of the Hub default branch.
 Dataset release details are recorded in `docs/dataset-versioning.md`.
+
+Run one task directly from Hugging Face without downloading the whole dataset.
+The Hugging Face CLI's include pattern fetches only the selected task tree, which
+is then passed to Harbor:
+
+```bash
+hf download Jack-Jieke-Wu/Paper-Writing-Exam \
+  --repo-type dataset \
+  --revision bfe2471c41f416d877e74bfa73cf0f29165c7567 \
+  --include 'lifesci-paperrecon-short/lspr-0001/**' \
+  --local-dir ./paper-writing-exam
+
+harbor run \
+  --path ./paper-writing-exam/lifesci-paperrecon-short/lspr-0001 \
+  --agent codex \
+  --model <provider>/<model> \
+  --yes --n-concurrent 1
+```
+
+Replace the configuration subdirectory and task name in both commands for the
+other configurations. The Hugging Face Dataset Viewer is disabled because this
+repository contains executable Harbor task trees, not compatible tabular
+`train`/`validation`/`test` splits.
 
 ## Repository layout
 
