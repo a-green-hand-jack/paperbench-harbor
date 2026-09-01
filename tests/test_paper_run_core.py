@@ -55,6 +55,10 @@ def test_brief_and_start_command_bridge_harbor_inputs() -> None:
     assert "bash['git status --short'] = 'allow'" in patch_command
     assert "bash['git remote -v'] = 'allow'" in patch_command
     assert "bash['python3 .agents/tools/paper-init.py status'] = 'allow'" in patch_command
+    assert (
+        'bash[\'cp "materials/figures/*" "paper/figures/srcs/*"\'] = \'allow\''
+        in patch_command
+    )
     assert "bash['ls \"paper/figures/srcs\" \"paper/tables\" \"materials/figures\" \"materials/tables\"'] = 'allow'" in patch_command
     for unsafe in (
         "python3 *",
@@ -101,6 +105,7 @@ def test_patch_replaces_inherited_bash_permissions(tmp_path: Path) -> None:
         "git status --short",
         "git remote -v",
         "python3 .agents/tools/paper-init.py status",
+        'cp "materials/figures/*" "paper/figures/srcs/*"',
         'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"',
     ]
     assert bash_rules["*"] == "ask"
@@ -112,6 +117,7 @@ def test_patch_replaces_inherited_bash_permissions(tmp_path: Path) -> None:
     assert bash_rules["git status --short"] == "allow"
     assert bash_rules["git remote -v"] == "allow"
     assert bash_rules["python3 .agents/tools/paper-init.py status"] == "allow"
+    assert bash_rules['cp "materials/figures/*" "paper/figures/srcs/*"'] == "allow"
     assert bash_rules[
         'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"'
     ] == "allow"

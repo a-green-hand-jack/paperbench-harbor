@@ -377,12 +377,13 @@ NARROW_BASH_ALLOW: dict[str, str] = {
     "git status --short": "allow",
     "git remote -v": "allow",
     "python3 .agents/tools/paper-init.py status": "allow",
+    'cp "materials/figures/*" "paper/figures/srcs/*"': "allow",
     'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"': "allow",
 }
 
 
 def patch_opencode_project_command(project_dir: str = PROJECT_DIR) -> str:
-    """Allow only fixed repository and directory checks used by the pipeline."""
+    """Allow only fixed checks and material copies used by the pipeline."""
     config_path = f"{project_dir}/opencode.json"
     script = (
         "import json, pathlib\n"
