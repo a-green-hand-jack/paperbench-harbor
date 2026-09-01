@@ -143,6 +143,31 @@ def test_export_trial_writes_record_manifest_and_archive(tmp_path: Path) -> None
     assert all(event["trajectory_path"] == "agent/trajectory.json" for event in events)
 
 
+def test_export_redacts_codex_session_ciphertext_and_credential_fields(tmp_path: Path) -> None:
+    trial = _trial(tmp_path)
+    session = trial / "agent" / "sessions" / "2026" / "09" / "01"
+    session.mkdir(parents=True)
+    original = {
+        "type": "response_item",
+        "payload": {
+            "type": "reasoning",
+            "encrypted_content": "hf_fixed-looking-ciphertext-value",
+            "api_key": "sk-fixed-looking-key",
+        },
+    }
+    source = session / "rollout.jsonl"
+    source.write_text(json.dumps(original) + "\n", encoding="utf-8")
+    args = _args(trial, tmp_path / "export")
+    _write_private_manifest(args)
+
+    export_trial(args)
+
+    with tarfile.open(args.output_dir / "artifacts" / "trial-0001.tar.gz", "r:gz") as archive:
+        payload = json.loads(archive.extractfile("agent/sessions/2026/09/01/rollout.jsonl").read())
+    assert payload["payload"]["encrypted_content"] == "REDACTED"
+    assert payload["payload"]["api_key"] == "REDACTED"
+
+
 def test_export_trial_archive_is_deterministic(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
     first_args = _args(trial, tmp_path / "export-one")

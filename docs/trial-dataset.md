@@ -131,6 +131,9 @@ The exporter accepts the ATIF versions implemented by Harbor `v0.20.0`
 (`ATIF-v1.0` through `ATIF-v1.7`). Local file references to external
 subagent trajectories must resolve to another allowlisted trajectory in the
 same archive; remote references and missing targets are rejected.
+Codex session JSONL records are sanitized before archiving: opaque
+`encrypted_content` fields and known credential fields are replaced with
+`REDACTED`, while unrecognized credential-shaped content still fails closed.
 
 ## Provenance
 

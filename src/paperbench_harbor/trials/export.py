@@ -92,6 +92,7 @@ MAX_ARCHIVE_EXPANDED_BYTES = 4 * 1024 * 1024 * 1024
 MAX_TRAJECTORY_DEPTH = 8
 MAX_TRAJECTORY_STEPS = 100_000
 MAX_STRUCTURED_JSON_BYTES = 64 * 1024 * 1024
+MAX_SESSION_JSONL_LINE_BYTES = 16 * 1024 * 1024
 
 TRIAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 HF_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -138,7 +139,7 @@ TEXT_SECRET_PATTERNS = (
         r"\s*[\"']?\s*[:=]" + SECRET_ASSIGNMENT_VALUE
     ),
 )
-SAFE_SECRET_VALUES = {"", "null", "none", "redacted", "masked", "***"}
+SAFE_SECRET_VALUES = {"", "null", "none", "redacted", "[redacted]", "masked", "***"}
 UNSUPPORTED_COMPRESSED_SUFFIXES = {
     ".7z",
     ".br",
@@ -718,7 +719,46 @@ def _assert_no_symlink_components(path: Path, label: str) -> None:
         if component.is_symlink():
             raise TrialExportError(f"refusing symlinked {label} path: {component}")
     if path.is_symlink():
-        raise TrialExportError(f"refusing symlinked {label} path: {path}")
+            raise TrialExportError(f"refusing symlinked {label} path: {path}")
+
+
+def _is_codex_session_log(relative: Path) -> bool:
+    return relative.parts[:2] == ("agent", "sessions") and relative.suffix.lower() == ".jsonl"
+
+
+def _redact_session_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[Any, Any] = {}
+        for key, item in value.items():
+            if isinstance(key, str) and key.lower() in {
+                "encrypted_content",
+                "api_key",
+                "access_token",
+                "refresh_token",
+                "client_secret",
+                "password",
+                "token",
+                "secret",
+            }:
+                redacted[key] = "REDACTED"
+            else:
+                redacted[key] = _redact_session_payload(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_session_payload(item) for item in value]
+    return value
+
+
+def _redact_codex_session_line(line: bytes, relative: Path) -> bytes:
+    if len(line) > MAX_SESSION_JSONL_LINE_BYTES:
+        raise TrialExportError(f"Codex session record is too large: {relative}")
+    try:
+        payload = json.loads(line)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TrialExportError(f"invalid Codex session record: {relative}") from exc
+    return (json.dumps(_redact_session_payload(payload), ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
 
 
 def _open_source_file(root: Path, relative: Path) -> Any:
@@ -753,18 +793,27 @@ def _snapshot_file(
     destination = snapshot_root / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
+    output_size = 0
     try:
         with _open_source_file(source_root, relative) as source_handle:
             before = os.fstat(source_handle.fileno())
             if not stat.S_ISREG(before.st_mode):
                 raise TrialExportError(f"refusing non-regular trial file: {relative}")
             with destination.open("wb") as target:
-                while True:
-                    chunk = source_handle.read(SCAN_CHUNK_BYTES)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-                    target.write(chunk)
+                if _is_codex_session_log(relative):
+                    for line in source_handle:
+                        chunk = _redact_codex_session_line(line, relative)
+                        digest.update(chunk)
+                        output_size += len(chunk)
+                        target.write(chunk)
+                else:
+                    while True:
+                        chunk = source_handle.read(SCAN_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        digest.update(chunk)
+                        output_size += len(chunk)
+                        target.write(chunk)
             after = os.fstat(source_handle.fileno())
     except (OSError, ValueError) as exc:
         raise TrialExportError(f"cannot snapshot trial file: {relative}") from exc
@@ -777,7 +826,7 @@ def _snapshot_file(
     ):
         raise TrialExportError(f"trial file changed while exporting: {relative}")
     os.chmod(destination, stat.S_IMODE(before.st_mode))
-    snapshot = SnapshotFile(destination, relative, before.st_size, digest.hexdigest())
+    snapshot = SnapshotFile(destination, relative, output_size, digest.hexdigest())
     _scan_file(snapshot.path, relative, private_hashes=private_hashes)
     return snapshot
 
