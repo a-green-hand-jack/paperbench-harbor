@@ -47,6 +47,8 @@ def test_brief_and_start_command_bridge_harbor_inputs() -> None:
     assert "git ls-remote --exit-code" in core.init_command()
     assert core.HARNESS_TEMPLATE_COMMIT in core.init_command()
     patch_command = core.patch_opencode_project_command()
+    assert "bash.clear()" in patch_command
+    assert "bash['*'] = 'ask'" in patch_command
     assert "bash['ls \"paper/figures/srcs\" \"paper/tables\" \"materials/figures\" \"materials/tables\"'] = 'allow'" in patch_command
     for unsafe in (
         "python3 *",
@@ -59,6 +61,38 @@ def test_brief_and_start_command_bridge_harbor_inputs() -> None:
         "pdflatex *",
     ):
         assert unsafe not in patch_command
+
+
+def test_patch_replaces_inherited_bash_permissions(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    config_path = project / "opencode.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "permission": {
+                    "bash": {
+                        "*": "ask",
+                        "python3 *": "allow",
+                        "git status*": "allow",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _run(core.patch_opencode_project_command(str(project)))
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    bash_rules = config["permission"]["bash"]
+    assert list(bash_rules) == [
+        "*",
+        'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"',
+    ]
+    assert bash_rules["*"] == "ask"
+    assert bash_rules[
+        'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"'
+    ] == "allow"
 
 
 def test_install_command_uses_pinned_v050_source_build() -> None:

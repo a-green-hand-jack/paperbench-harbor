@@ -383,7 +383,8 @@ def patch_opencode_project_command(project_dir: str = PROJECT_DIR) -> str:
         f"p = pathlib.Path({json.dumps(config_path)})\n"
         "cfg = json.loads(p.read_text())\n"
         "bash = cfg.setdefault('permission', {}).setdefault('bash', {})\n"
-        "bash.setdefault('*', 'ask')\n"
+        "bash.clear()\n"
+        "bash['*'] = 'ask'\n"
         + "".join(f"bash[{_q(k)}] = {_q(v)}\n" for k, v in NARROW_BASH_ALLOW.items())
         + "p.write_text(json.dumps(cfg, indent=2) + '\\n')\n"
     )
