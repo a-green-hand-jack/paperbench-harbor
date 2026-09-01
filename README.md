@@ -119,6 +119,22 @@ It installs pinned runtime components inside the task container, stages public
 materials, runs the writing harness, exports the paper tree, and records
 diagnostics without exposing verifier-private files.
 
+Pinned versions are `paper-run` v0.5.0 at immutable release commit
+`9925848adf195e68d3f3e3039959f9f2c19fb7a3`, OpenCode `1.18.25`, and Node 20.
+The wrapper builds the pinned source with its committed lockfile, validates the
+generated paper brief, stages only public materials, and runs one autonomous
+headless plan with `--stage-timeout-multiplier 2`. Because the full 13-stage
+plan can exceed two hours, Harbor runs should pass
+`--agent-timeout-multiplier 4` when selecting `paper-run`.
+
+The generated headless policy remains deny-by-default. It allows only fixed
+repository metadata checks, read-only directory inspection, and figure copies
+from `materials/figures/` into `paper/figures/srcs/`. Interpreters, arbitrary
+file mutation, publication tools, environment dumping, and network commands
+remain unlisted. The adapter supports new-paper production only; external
+manuscript `review`, `transfer`, and `adopt` workflows are intentionally not
+exposed through the benchmark integration.
+
 Adding an agent should require a thin wrapper and contract tests, not a fork of
 the benchmark tasks. Agent runs are exported with `scripts/export_trial.py` to
 the public trial dataset described in [`docs/trial-dataset.md`](docs/trial-dataset.md).
