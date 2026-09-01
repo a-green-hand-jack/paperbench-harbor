@@ -5,13 +5,21 @@ evaluation infrastructure for scientific paper-writing benchmarks. It turns
 benchmark inputs into isolated Harbor tasks and connects different
 paper-writing agents to the same submission contract and verifier.
 
-## Repository split
+## Public Hugging Face Datasets
 
-| Location | Role | Contents |
+The project publishes two different Hugging Face datasets. The first is the
+executable benchmark; the second is the archive of runs performed against that
+benchmark.
+
+| Dataset | Purpose | Contents |
 |---|---|---|
-| [GitHub](https://github.com/a-green-hand-jack/paperbench-harbor) | Source and integration platform | Converters, task templates, verifier/evaluator, audits, agent adapters, tests, and release provenance |
-| [Public HF dataset](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam) | Benchmark task release | Generated Harbor tasks that can be downloaded and executed |
-| [Public HF trial dataset](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Trials) | Evaluation archive | Sanitized agent trajectories, papers, logs, scores, and complete trial artifacts |
+| [`Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam) | Benchmark task package | Harbor task directories, instructions, writer environments, oracle solutions, and verifiers |
+| [`Paper-Writing-Exam-Trials`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Trials) | Public run archive | Sanitized agent trajectories, submissions, logs, scores, and complete trial archives |
+
+The run archive is not populated automatically by `harbor run`. A completed
+local trial must be exported with [`scripts/export_trial.py`](scripts/export_trial.py),
+inspected, and uploaded separately. See [`docs/trial-dataset.md`](docs/trial-dataset.md)
+for the complete save and view workflow.
 
 GitHub is the source of truth for how tasks and integrations are built.
 Hugging Face is the source of truth for the bytes in a published benchmark
@@ -89,23 +97,46 @@ change that binary reward.
 
 ## Run a task
 
-Install Harbor and download the desired directory from the public HF revision.
-The exact HF task package is intentionally kept outside this Git repository.
-For example:
+Install Harbor, then run a task directly from the reproducible `v0.3.1`
+benchmark release. This is a complete single-task example for
+PaperWrite-Bench `short` task `pwb-0001`:
 
 ```bash
-hf download Jack-Jieke-Wu/Paper-Writing-Exam \
-  --repo-type dataset \
-  --revision <hf-revision> \
-  --include 'paperwrite-bench-short/pwb-0001/**' \
-  --local-dir /tmp/paper-writing-exam
-
 harbor run \
-  --path /tmp/paper-writing-exam/paperwrite-bench-short/pwb-0001 \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/paperwrite-bench-short" \
+  --include-task-name pwb-0001 \
   --agent codex \
   --model openai/gpt-5.6-sol \
   --yes --n-concurrent 1 \
   --job-name paperwrite-bench-pwb-0001
+```
+
+This command lets Harbor download and cache the task itself. The model name is
+an example; configure the corresponding provider credentials and endpoint in
+your Harbor environment before running it. To run locally downloaded files
+instead, use `hf download` with the same immutable revision and pass the task
+directory to `harbor run --path`.
+
+Other ready-to-run task examples are:
+
+```bash
+# PaperWritingBench, sparse input with plots disabled
+harbor run \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/paperwritingbench-sparse-plotoff" \
+  --include-task-name pwbw-0001 \
+  --agent codex \
+  --model openai/gpt-5.6-sol \
+  --yes --n-concurrent 1 \
+  --job-name paperwritingbench-pwbw-0001
+
+# LifeSci-PaperRecon, short protocol
+harbor run \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --include-task-name lspr-0001 \
+  --agent codex \
+  --model openai/gpt-5.6-sol \
+  --yes --n-concurrent 1 \
+  --job-name lifesci-paperrecon-lspr-0001
 ```
 
 For judge-backed official metrics, pass verifier variables explicitly with

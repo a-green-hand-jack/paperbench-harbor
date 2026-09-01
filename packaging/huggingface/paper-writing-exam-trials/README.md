@@ -52,6 +52,101 @@ Archives retain Harbor's native `agent/`, `verifier/`, `steps/`, and
 `artifacts/` directories so single-step and multi-step trials remain
 reconstructable.
 
+## Saving A New Trial
+
+`harbor run` writes a trial locally; it does not upload the result here. From
+the `paperbench-harbor` repository, export one completed Harbor trial with the
+sanitizing exporter:
+
+```bash
+python3 scripts/export_trial.py \
+  --trial-dir /path/to/harbor-jobs/<job-name>/<trial-id> \
+  --output-dir /path/to/Paper-Writing-Exam-Trials \
+  --private-manifest /path/to/task/tests/private/source_manifest.json \
+  --task-id pwb-0001 \
+  --benchmark PaperWrite-Bench \
+  --protocol short \
+  --benchmark-hf-revision <immutable-benchmark-commit> \
+  --harbor-repo-commit <paperbench-harbor-commit> \
+  --agent-name codex \
+  --agent-version <agent-version> \
+  --integration-commit <integration-commit> \
+  --model <provider>/<model> \
+  --provider <provider> \
+  --agent-config-file /path/to/non-secret-agent-config.json
+```
+
+The exporter creates `artifacts/<trial-id>.tar.gz`,
+`manifests/<trial-id>.json`, and appends a record to `data/trials.jsonl`. When
+the trial contains ATIF events, it also appends their one-event-per-step index
+to `data/events.jsonl`. It performs the credential/private-file checks before
+committing those outputs. Inspect the result, then upload the staging
+directory separately:
+
+```bash
+hf upload Jack-Jieke-Wu/Paper-Writing-Exam-Trials \
+  /path/to/Paper-Writing-Exam-Trials . \
+  --repo-type dataset \
+  --exclude '.git/**' \
+  --commit-message "Add trial <trial-id>"
+```
+
+Record the immutable commit SHA returned by this upload as
+`TRIAL_DATASET_REVISION`; use that value in the viewing commands below.
+
+The full workflow, including how to choose `--jobs-dir`, is documented in the
+source repository's [`docs/trial-dataset.md`](https://github.com/a-green-hand-jack/paperbench-harbor/blob/main/docs/trial-dataset.md).
+
+## View One Trial
+
+Use the trial ID from `data/trials.jsonl`, then download its summary and
+manifest without downloading every archive:
+
+```bash
+TRIAL_ID=<trial-id>
+TRIAL_DATASET_REVISION=<40-character-Hugging-Face-commit>
+VIEW_DIR=/tmp/paper-writing-trial
+mkdir -p "$VIEW_DIR"
+
+hf download Jack-Jieke-Wu/Paper-Writing-Exam-Trials \
+  data/trials.jsonl \
+  "manifests/$TRIAL_ID.json" \
+  --repo-type dataset \
+  --revision "$TRIAL_DATASET_REVISION" \
+  --local-dir "$VIEW_DIR"
+```
+
+If `data/events.jsonl` exists in the selected release, download it separately
+to inspect the one-event-per-step index.
+
+To view the complete trajectory and final output, download and unpack the
+single archive:
+
+```bash
+hf download Jack-Jieke-Wu/Paper-Writing-Exam-Trials \
+  "artifacts/$TRIAL_ID.tar.gz" \
+  --repo-type dataset \
+  --revision "$TRIAL_DATASET_REVISION" \
+  --local-dir "$VIEW_DIR"
+mkdir -p "$VIEW_DIR/unpacked"
+tar -xzf "$VIEW_DIR/artifacts/$TRIAL_ID.tar.gz" -C "$VIEW_DIR/unpacked"
+```
+
+Then inspect:
+
+```text
+$VIEW_DIR/unpacked/agent/trajectory*.json                 # single-step trajectory
+$VIEW_DIR/unpacked/steps/*/agent/trajectory*.json          # multi-step trajectories
+$VIEW_DIR/unpacked/artifacts/workspace/submission/         # single-step output
+$VIEW_DIR/unpacked/steps/*/artifacts/workspace/submission/ # multi-step output
+$VIEW_DIR/unpacked/harbor/result.json
+$VIEW_DIR/unpacked/verifier/evaluation.json
+```
+
+`data/events.jsonl` is a one-event-per-step index derived from the original
+Harbor ATIF trajectory. The original trajectory and agent logs are preserved in
+the archive.
+
 ## Provenance
 
 Each trial references the benchmark without duplicating its task tree using:
