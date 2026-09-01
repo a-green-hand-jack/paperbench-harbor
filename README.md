@@ -165,8 +165,8 @@ paperbench_harbor.agents.paper_run:PaperRun
 
 Pinned versions (see `src/paperbench_harbor/agents/paper_run_core.py`):
 
-- `paper-run` v0.2.0 via its official versioned installer (release tag commit
-  `f952802a85c367be689c51c0cef14568b990cde8` at integration time)
+- `paper-run` v0.5.0 at immutable release commit
+  `9925848adf195e68d3f3e3039959f9f2c19fb7a3`
 - OpenCode `1.18.25` (matches the pinned lockfile)
 - Node `20` via nvm
 
@@ -192,11 +192,21 @@ batch runs where retaining containers is not needed.
 
 The wrapper, inside the task container:
 
-1. Installs Node and the pinned OpenCode runtime, then installs the pinned
-   `paper-run` release with its checksum-verified official installer at
-   `https://raw.githubusercontent.com/a-green-hand-jack/paper-run/v0.2.0/install.sh`.
+1. Installs Node and the pinned OpenCode runtime, then fetches the immutable
+   `paper-run` v0.5.0 commit, installs dependencies with the committed
+   `package-lock.json`, builds the CLI, and installs the generated package.
+   The lockfile is copied to the package's publishable `npm-shrinkwrap.json`,
+   and the temporary package manifest explicitly includes it, so the global
+   tarball install reuses the exact dependency tree from `npm ci`.
+   The v0.5.0 GitHub release currently has no uploaded tarball for its official
+   installer; the source build is therefore pinned to the release commit and
+   verified by both Git SHA and CLI version. The source commit's stale generated
+   version constant is corrected in the temporary build checkout before the
+   package is built; the upstream checkout is never written to this repository.
 2. Renders the task instruction into a valid harness `BRIEF.md` (validated by
-   `agent-writing-harness` v0.3.0 `paper-brief.py`).
+   `agent-writing-harness` v0.3.0 `paper-brief.py`). Before initialization, the
+   wrapper verifies the dereferenced template tag still resolves to the pinned
+   commit recorded in provenance.
 3. Writes a user-level OpenCode config pointing provider `openai` at
    `OPENAI_BASE_URL` (credentials are only read from the environment, never
    baked into files).
@@ -214,21 +224,20 @@ The wrapper, inside the task container:
    paper-run. The wrapper also mirrors `.paper-run/`, `run.log` and publication
    PDFs under `/logs/agent/paper-run/` as trial artifacts.
 
-Two paper-run behaviours are handled by the wrapper:
+These paper-run behaviours are handled by the wrapper:
 
-- **Headless permissions.** `paper-run` auto-approves no bash command, so a
-  narrow set of read-only rules (`ls *`, `cat *`, `git status*`, `pdfinfo *`,
-  `make *`, `pdflatex *`, ...) is added to the initialized project's
-  `opencode.json` and committed with the materials checkpoint; everything else
-  stays `ask` (fail-fast) in headless mode. The list is deliberately generous
-  for the commands an autonomous writer legitimately uses inside the isolated
-  container (inspection, git read, python, local file ops, publication build).
+- **Headless permissions.** The wrapper keeps the generated `paper-run`
+  permission policy unchanged. Writers use OpenCode's native read, glob, grep,
+  list, and edit tools; controller-owned validation and publication builds do
+  not require writer shell access. Unlisted bash commands stay `ask` and fail
+  fast in headless mode, so environment-dumping and arbitrary interpreter or
+  file-copy commands are not added downstream.
 - **Material assessment.** It only considers files inside the writing repo, so
   public materials are copied into `<repo>/materials/` before `start`.
 - **Locked contracts.** `PAPER.md ## What must not change silently` is a hard
   fail-closed section; the wrapper's brief explicitly tells the writer not to
   edit it, and to record lock candidates under `## Unresolved`.
-- **Per-stage budgets.** The wrapper uses paper-run v0.2.0's supported
+- **Per-stage budgets.** The wrapper uses paper-run v0.5.0's supported
   `--stage-timeout-multiplier 2` option, so slower gateways can finish one
   autonomous run without modifying paper-run source.
 - **Aggregate budget.** The full 13-stage run can exceed two hours. Keep the
@@ -237,6 +246,19 @@ Two paper-run behaviours are handled by the wrapper:
 
 The wrapper's single `paper-run start` execution budget is 4h. Harbor must be
 given the matching `--agent-timeout-multiplier 4` override shown above.
+
+### Supported paper-run modes
+
+The Harbor agent supports **new-paper production** only: `init --local` followed
+by the full autonomous `start` plan. This matches the benchmark's writer input
+and the unified `/workspace/submission` contract.
+
+The v0.5.0 external-manuscript commands (`review`, `transfer`, and its `adopt`
+alias) are intentionally not exposed by this agent. They require an external
+TeX repository as a source input and have different report-only or
+`existing-manuscript` plans; adding them here would weaken the benchmark's
+writer/verifier boundary. Their isolated-source security behavior remains
+covered upstream by paper-run's own test suite.
 
 ## Run Harbor tasks on Ubuntu
 

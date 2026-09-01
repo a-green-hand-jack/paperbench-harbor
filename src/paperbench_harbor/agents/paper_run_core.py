@@ -6,17 +6,20 @@ command sequences that the ``PaperRun`` agent executes inside the task
 environment, plus the brief file and the submission export mapping.
 
 All facts about the ``paper-run`` CLI (commands, flags, output paths) are
-derived from the pinned revision ``PAPER_RUN_COMMIT``.
+derived from the pinned release commit ``PAPER_RUN_COMMIT``.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
-# Pinned paper-run release (issues #22 and #23).  Do not float this.
-PAPER_RUN_VERSION = "0.2.0"
-PAPER_RUN_INSTALL_URL = (
+# Pinned paper-run release and immutable source revision.  Do not float these.
+PAPER_RUN_VERSION = "0.5.0"
+PAPER_RUN_COMMIT = "9925848adf195e68d3f3e3039959f9f2c19fb7a3"
+PAPER_RUN_REPOSITORY_URL = "https://github.com/a-green-hand-jack/paper-run.git"
+PAPER_RUN_OFFICIAL_INSTALL_URL = (
     f"https://raw.githubusercontent.com/a-green-hand-jack/paper-run/"
     f"v{PAPER_RUN_VERSION}/install.sh"
 )
@@ -24,6 +27,11 @@ PAPER_RUN_INSTALL_URL = (
 OPENCODE_VERSION = "1.18.25"
 NODE_MAJOR = "20"
 NVM_URL = "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh"
+HARNESS_TEMPLATE_VERSION = "v0.3.0"
+HARNESS_TEMPLATE_COMMIT = "513f743b7ad00b61ec07e9323f095b7a6ea77e19"
+HARNESS_REPOSITORY_URL = "https://github.com/a-green-hand-jack/agent-writing-harness.git"
+PACKAGE_HASH_ARTIFACT = "/logs/agent/paper-run/paper-run-package.sha256"
+PACKAGE_HASH_FILENAME = Path(PACKAGE_HASH_ARTIFACT).name
 
 # Paths inside the task environment (fixed by the environment template).
 WORKSPACE = "/workspace"
@@ -34,7 +42,7 @@ BRIEF_PATH = f"{WORKSPACE}/paper-run-brief.md"
 
 # Exec budget for the single `paper-run start` invocation.  A full 13-stage
 # autonomous paper-writing run can exceed two hours behind a slower gateway,
-# so Harbor runs select this budget with ``--agent-timeout 14400``.
+# so Harbor runs select this budget with ``--agent-timeout-multiplier 4``.
 START_TIMEOUT_SEC = 14400
 STAGE_TIMEOUT_MULTIPLIER = 2
 
@@ -271,19 +279,69 @@ def opencode_install_commands() -> list[str]:
 
 
 def paper_run_install_commands() -> list[str]:
-    """Install the pinned paper-run release with its official installer."""
+    """Build and install paper-run from its pinned immutable source revision.
+
+    The v0.5.0 GitHub release currently has no uploaded tarball for the official
+    installer to consume.  Building the tagged source with its committed npm
+    lockfile keeps the Harbor image reproducible without falling back to a
+    floating branch or an unpinned registry package.
+    """
+    version_patch = (
+        f"PAPER_RUN_SOURCE=\"$repo_dir\" PAPER_RUN_VERSION={_q(PAPER_RUN_VERSION)} node -e "
+        "'const fs=require(\"node:fs\"); "
+        "const path=require(\"node:path\"); "
+        "const file=path.join(process.env.PAPER_RUN_SOURCE,\"src/version.ts\"); "
+        "const text=fs.readFileSync(file,\"utf8\"); "
+        "const version=JSON.stringify(process.env.PAPER_RUN_VERSION); "
+        "const updated=text.replace(/export const version = \"[^\"]+\";/, "
+        "`export const version = ${version};`); "
+        "if (updated===text) throw new Error(\"paper-run version marker not found\"); "
+        "fs.writeFileSync(file,updated);'"
+    )
+    command = (
+        "tmp_dir=$(mktemp -d \"${TMPDIR:-/tmp}/paper-run-build.XXXXXX\") && "
+        "trap 'rm -rf \"$tmp_dir\"' EXIT HUP INT TERM && "
+        "repo_dir=\"$tmp_dir/paper-run\" && "
+        f"git init \"$repo_dir\" && "
+        f"git -C \"$repo_dir\" remote add origin {_q(PAPER_RUN_REPOSITORY_URL)} && "
+        f"git -C \"$repo_dir\" fetch --quiet --depth 1 origin {_q(PAPER_RUN_COMMIT)} && "
+        "git -C \"$repo_dir\" checkout --quiet --detach FETCH_HEAD && "
+        f"test \"$(git -C \"$repo_dir\" rev-parse HEAD)\" = {_q(PAPER_RUN_COMMIT)} && "
+        "cd \"$repo_dir\" && "
+        f"test \"$(node -p \"require('./package.json').version\")\" = {_q(PAPER_RUN_VERSION)} && "
+        "npm ci --ignore-scripts && "
+        f"{version_patch} && "
+        "cp package-lock.json npm-shrinkwrap.json && "
+        "PACKAGE_JSON=package.json node -e "
+        "'const fs=require(\"node:fs\"); "
+        "const file=process.env.PACKAGE_JSON; "
+        "const pkg=JSON.parse(fs.readFileSync(file,\"utf8\")); "
+        "const files=Array.isArray(pkg.files) ? pkg.files : [\"*\"]; "
+        "if (!files.includes(\"npm-shrinkwrap.json\")) files.push(\"npm-shrinkwrap.json\"); "
+        "pkg.files=files; fs.writeFileSync(file,JSON.stringify(pkg,null,2)+\"\\n\");' && "
+        "npm run build && "
+        "test -x dist/cli.js && "
+        f"npm pack --ignore-scripts --pack-destination \"$tmp_dir\" >/dev/null && "
+        f"package_path=\"$tmp_dir/paper-run-{PAPER_RUN_VERSION}.tgz\" && "
+        "test -f \"$package_path\" && "
+        f"mkdir -p {_q(str(Path(PACKAGE_HASH_ARTIFACT).parent))} && "
+        f"(cd \"$tmp_dir\" && sha256sum {_q(f'paper-run-{PAPER_RUN_VERSION}.tgz')}) "
+        f"> {_q(PACKAGE_HASH_ARTIFACT)} && "
+        "npm install -g \"$package_path\" --ignore-scripts && "
+        f"test \"$(paper-run --version)\" = {_q(PAPER_RUN_VERSION)}"
+    )
     return [
-        _nvm(
-            f"curl -fsSL {_q(PAPER_RUN_INSTALL_URL)} | sh && "
-            f"test \"$(paper-run --version)\" = {_q(PAPER_RUN_VERSION)}"
-        ),
+        _nvm(command),
     ]
 
 
 def version_check_command() -> str:
     """Print installed versions for the run record."""
     return (
-        _nvm("node --version; opencode --version; paper-run --version")
+        _nvm(
+            f"test \"$(paper-run --version)\" = {_q(PAPER_RUN_VERSION)} && "
+            "node --version && opencode --version && paper-run --version"
+        )
     )
 
 
@@ -294,15 +352,8 @@ def opencode_user_config_command(base_url: str | None, model: str | None) -> str
     the environment.  Only the provider base URL and an explicit model
     registration are declared, so a custom OpenAI-compatible endpoint (e.g. the
     Apex gateway) is reachable.
-
-    Narrow bash permission rules are intentionally NOT set here: OpenCode
-    merges config layers and "last matching rule wins", so the writing repo's
-    project ``opencode.json`` (with its ``bash: {"*": "ask"}`` catch-all,
-    installed after this layer) would override them. Project rules are patched
-    into the initialized repository instead (see
-    :func:`patch_opencode_project_command`) and committed with the materials
-    checkpoint.
     """
+    base_url = _validated_base_url(base_url)
     config: dict[str, object] = {}
     if model and "/" in model:
         provider, model_id = model.split("/", 1)
@@ -319,89 +370,31 @@ def opencode_user_config_command(base_url: str | None, model: str | None) -> str
     )
 
 
-# Narrow read-only bash rules the headless writer legitimately needs, layered
-# into the project opencode.json so the run stays a single clean invocation.
-# Everything else keeps the paper-run default ``"*": "ask"`` (fail-fast).
-NARROW_BASH_ALLOW: dict[str, str] = {
-    # Inspection / read-only (headless writers use these constantly).
-    "pwd": "allow",
-    "ls *": "allow",
-    "find *": "allow",
-    "cat *": "allow",
-    "head *": "allow",
-    "tail *": "allow",
-    "wc *": "allow",
-    "stat *": "allow",
-    "file *": "allow",
-    "which *": "allow",
-    "echo *": "allow",
-    "printf *": "allow",
-    "env *": "allow",
-    "grep *": "allow",
-    "rg *": "allow",
-    "sed *": "allow",
-    "awk *": "allow",
-    # Git inspection (read-only; no push/clone/remote mutation).
-    "git status*": "allow",
-    "git branch*": "allow",
-    "git rev-parse*": "allow",
-    "git remote -v": "allow",
-    "git log*": "allow",
-    "git show*": "allow",
-    "git diff*": "allow",
-    "git tag*": "allow",
-    "git show-ref*": "allow",
-    "git describe*": "allow",
-    # Python for harness tooling and light file ops.
-    "python3 *": "allow",
-    "python3": "allow",
-    "python *": "allow",
-    "python": "allow",
-    # Local file manipulation inside the isolated container.
-    "mkdir *": "allow",
-    "cp *": "allow",
-    "mv *": "allow",
-    "touch *": "allow",
-    # Publication-variant build toolchain.
-    "make *": "allow",
-    "make": "allow",
-    "pdflatex *": "allow",
-    "pdflatex --version": "allow",
-    "bibtex *": "allow",
-    "bibtex --version": "allow",
-    "latexmk *": "allow",
-    "tectonic *": "allow",
-    "pdfinfo *": "allow",
-    "pdftotext * -": "allow",
-    "python3 -m json.tool .paper-run/assessment.json": "allow",
-    # Candidate/release inspection commands used around the final stage.
-    "du *": "allow",
-    "df *": "allow",
-    "ls -la releases*": "allow",
-    "ls -la releases/*": "allow",
-}
+def _validated_base_url(base_url: str | None) -> str | None:
+    """Reject endpoint forms that could persist credentials in project artifacts."""
+    if not base_url:
+        return None
+    if any(char.isspace() for char in base_url):
+        raise ValueError("OPENAI_BASE_URL must not contain whitespace")
+    try:
+        parsed = urlsplit(base_url)
+        has_credentials = parsed.username is not None or parsed.password is not None
+    except ValueError as exc:
+        raise ValueError("OPENAI_BASE_URL is not a valid URL") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("OPENAI_BASE_URL must be an absolute HTTP(S) URL")
+    if has_credentials or parsed.query or parsed.fragment:
+        raise ValueError("OPENAI_BASE_URL must not contain credentials, query, or fragment data")
+    return base_url
 
 
-def patch_opencode_project_command(project_dir: str = PROJECT_DIR) -> str:
-    """Merge narrow bash allows into the initialized project config.
-
-    The official release installer does not expose its package directory as a
-    stable integration surface. Patching the generated config after
-    ``paper-run init`` keeps the package immutable; the next manual checkpoint
-    commits this change together with the public materials.
-    """
-    config_path = f"{project_dir}/opencode.json"
-    script = (
-        "import json, pathlib\n"
-        f"p = pathlib.Path({json.dumps(config_path)})\n"
-        "cfg = json.loads(p.read_text())\n"
-        "bash = cfg.setdefault('permission', {}).setdefault('bash', {})\n"
-        "bash.setdefault('*', 'ask')\n"
-        + "".join(f"bash[{_q(k)}] = {_q(v)}\n" for k, v in NARROW_BASH_ALLOW.items())
-        + "p.write_text(json.dumps(cfg, indent=2) + '\\n')\n"
-    )
-    marker = "PAPERRUN_PATCH_EOF"
-    return f"python3 - <<'{marker}'\n{script}{marker}\n"
+def _base_url_origin(base_url: str | None) -> str | None:
+    """Return only the non-sensitive origin for provenance records."""
+    validated = _validated_base_url(base_url)
+    if validated is None:
+        return None
+    parsed = urlsplit(validated)
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 # ---------------------------------------------------------------------------
@@ -414,12 +407,22 @@ def init_command(
     project_dir: str = PROJECT_DIR,
     mode: str = "autonomous",
     model: str | None = None,
+    template: str = HARNESS_TEMPLATE_VERSION,
 ) -> str:
-    """Initialize a local writing repository (network template fetch)."""
+    """Initialize a local writing repository from the pinned harness template."""
+    if template != HARNESS_TEMPLATE_VERSION:
+        raise ValueError(f"unsupported harness template: {template}")
     model_arg = f" --model {_q(model)}" if model else ""
+    template_commit_check = (
+        f"template_commit=\"$(git ls-remote --exit-code {_q(HARNESS_REPOSITORY_URL)} "
+        f"{_q(f'refs/tags/{template}^{{}}')} | cut -f1)\" && "
+        f"test \"$template_commit\" = {_q(HARNESS_TEMPLATE_COMMIT)} && "
+    )
     return _nvm(
-        f"paper-run init {_q(project_dir)} "
-        f"--brief {_q(brief_path)} --mode {mode} --local{model_arg}"
+        template_commit_check
+        + f"paper-run init {_q(project_dir)} "
+        f"--brief {_q(brief_path)} --mode {mode} --template {_q(template)} "
+        f"--local{model_arg}"
     )
 
 
@@ -476,6 +479,10 @@ def export_commands(
     submission_dir: str = SUBMISSION_DIR,
     logs_dir: str = "/logs/agent",
     materials_dir: str = MATERIALS_DIR,
+    *,
+    model: str | None = None,
+    variant: str | None = None,
+    base_url: str | None = None,
 ) -> list[str]:
     """Copy the harness paper/ tree into the submission contract.
 
@@ -489,6 +496,49 @@ def export_commands(
     """
     paper_dir = f"{project_dir}/paper"
     artifact_dir = f"{logs_dir}/paper-run"
+    package_hash_artifact = f"{artifact_dir}/{PACKAGE_HASH_FILENAME}"
+    package_hash_command = (
+        f"test -f {_q(PACKAGE_HASH_ARTIFACT)}"
+        if package_hash_artifact == PACKAGE_HASH_ARTIFACT
+        else f"cp {_q(PACKAGE_HASH_ARTIFACT)} {_q(package_hash_artifact)}"
+    )
+    safe_origin = _base_url_origin(base_url)
+    provenance = json.dumps(
+        {
+            "schema_version": "paperbench-harbor-paper-run-v1",
+            "paper_run_version": PAPER_RUN_VERSION,
+            "paper_run_commit": PAPER_RUN_COMMIT,
+            "paper_run_repository": PAPER_RUN_REPOSITORY_URL,
+            "paper_run_install_method": "pinned-source-build",
+            "paper_run_official_install_reference": PAPER_RUN_OFFICIAL_INSTALL_URL,
+            "paper_run_install_recipe": [
+                f"git fetch --depth 1 origin {PAPER_RUN_COMMIT}",
+                "npm ci --ignore-scripts",
+                "cp package-lock.json npm-shrinkwrap.json",
+                "npm run build",
+                "npm pack --ignore-scripts",
+                "npm install -g <generated-package>.tgz --ignore-scripts",
+            ],
+            "opencode_version": OPENCODE_VERSION,
+            "opencode_install_reference": f"opencode-ai@{OPENCODE_VERSION}",
+            "node_major": NODE_MAJOR,
+            "nvm_install_reference": NVM_URL,
+            "harness_repository": HARNESS_REPOSITORY_URL,
+            "harness_template": HARNESS_TEMPLATE_VERSION,
+            "harness_template_commit": HARNESS_TEMPLATE_COMMIT,
+            "model": model,
+            "variant": variant,
+            "stage_timeout_multiplier": STAGE_TIMEOUT_MULTIPLIER,
+            "harbor_start_timeout_sec": START_TIMEOUT_SEC,
+            "openai_base_url_origin": safe_origin,
+            "agent_environment": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+            "input_material_hashes": "materials.sha256",
+            "paper_run_state_hashes": "paper-run-state.sha256",
+            "submission_hashes": "submission.sha256",
+            "package_hash": PACKAGE_HASH_FILENAME,
+        },
+        indent=2,
+    )
     return [
         f"rm -rf {_q(submission_dir)} && mkdir -p {_q(submission_dir)}",
         (
@@ -508,6 +558,19 @@ def export_commands(
                 f"cp {_q(paper_dir)}/{name} {_q(artifact_dir)}/ 2>/dev/null || true"
                 for name in PUBLICATION_PDFS
             )
+            + " && "
+            + package_hash_command
+            + " && "
+            + f"printf '%s\\n' {_q(provenance)} > {_q(f'{artifact_dir}/provenance.json')}"
+            + " && "
+            + f"(cd {_q(materials_dir)} && find . -type f -print0 | xargs -0 sha256sum) > "
+            + f"{_q(f'{artifact_dir}/materials.sha256')}"
+            + " && "
+            + f"(cd {_q(artifact_dir + '/.paper-run')} && find . -type f -print0 | xargs -0 sha256sum) > "
+            + f"{_q(f'{artifact_dir}/paper-run-state.sha256')}"
+            + " && "
+            + f"(cd {_q(submission_dir)} && find . -type f -print0 | xargs -0 sha256sum) > "
+            + f"{_q(f'{artifact_dir}/submission.sha256')}"
         ),
     ]
 
