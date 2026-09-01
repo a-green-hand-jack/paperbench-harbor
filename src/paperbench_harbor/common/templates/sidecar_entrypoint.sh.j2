@@ -3,6 +3,7 @@ set -eu
 
 log_file=/workspace/paper_orchestra_sidecar.log
 adc_file=/tmp/paper-orchestra-application-default-credentials.json
+export PAPER_ORCHESTRA_RESEARCH_CUTOFF=2024-10-01
 
 if [ -f /run/secrets/paper-orchestra.env ]; then
   set -a

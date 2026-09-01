@@ -10,6 +10,10 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from paperbench_harbor.common.audit import audit_forbidden_names
 from paperbench_harbor.common.manifest import write_source_manifest
+from paperbench_harbor.common.task_contract import (
+    assert_valid_task_contract,
+    normalize_markdown_tables,
+)
 
 SUPPORTED_PROTOCOLS = {"sparse-plotoff", "sparse-ploton", "dense-plotoff"}
 IMPLEMENTED_PROTOCOLS = {"sparse-plotoff"}
@@ -29,6 +33,26 @@ _VENDOR_DIR = Path(__file__).resolve().parents[2] / "vendor"
 _CITATION_CACHE_PATTERN = re.compile(r"^original_paper_gt_citations_.+\.json$")
 
 _PAPER_ORDER_RE = re.compile(r"(\d+)")
+
+_UPSTREAM_DATA_WARNINGS = {
+    "pwbw-0007": "Some supplied visual comparisons are incomplete; do not infer missing rendered content.",
+    "pwbw-0025": "One result-table header is under-specified upstream; neutral labels preserve its extra values.",
+    "pwbw-0030": "Some supplied reenactment visual comparisons are incomplete; do not infer missing rendered content.",
+    "pwbw-0048": "One supplied figure is visibly clipped upstream; use it only for what is actually visible.",
+    "pwbw-0059": "One supplied figure is visibly incomplete upstream; use it only for what is actually visible.",
+    "pwbw-0083": "One supplied figure is visibly incomplete upstream; use it only for what is actually visible.",
+    "pwbw-0096": "A Markdown result-table alignment row was repaired mechanically from the upstream data.",
+    "pwbw-0101": "A Figure 2 caption is truncated in the upstream source; do not complete it by inference.",
+    "pwbw-0116": "The upstream experimental log does not state a batch size; do not report one as established fact.",
+    "pwbw-0132": "A Markdown result-table alignment row was repaired mechanically from the upstream data.",
+    "pwbw-0133": "Some Kendall tau cells use an ambiguous upstream sentinel; report the ambiguity rather than assigning meaning.",
+    "pwbw-0144": "Some figure captions are truncated in the upstream source; do not complete them by inference.",
+    "pwbw-0149": "Referenced audio supplements are absent upstream; do not claim observations from unavailable audio.",
+    "pwbw-0165": "A Markdown table contained an escaped-pipe repair from upstream notation; preserve the literal mathematical meaning.",
+    "pwbw-0170": "The supplied source omits central method definitions; restrict claims to the available description.",
+    "pwbw-0171": "Some figure captions are truncated in the upstream source; do not complete them by inference.",
+    "pwbw-0197": "A Markdown table contained an escaped-pipe repair from upstream notation; preserve the literal mathematical meaning.",
+}
 
 
 def _natural_sort_key(paper_id: str) -> tuple[object, ...]:
@@ -75,10 +99,14 @@ def _iter_papers(source: Path) -> list[tuple[Path, _PaperMetadata]]:
     return papers
 
 
-def _copy_public_materials(raw: Path, environment_dir: Path, venue: str) -> list[Path]:
+def _copy_public_materials(
+    raw: Path, environment_dir: Path, venue: str
+) -> tuple[list[Path], dict[Path, tuple[str, Path]], list[str]]:
     materials_dir = environment_dir / "materials"
     materials_dir.mkdir(parents=True, exist_ok=True)
     copied: list[Path] = []
+    provenance: dict[Path, tuple[str, Path]] = {}
+    warnings: list[str] = []
 
     for filename in ("idea_sparse.md", "experimental_log.md"):
         source = raw / filename
@@ -86,21 +114,30 @@ def _copy_public_materials(raw: Path, environment_dir: Path, venue: str) -> list
             destination = materials_dir / filename
             shutil.copy2(source, destination)
             copied.append(destination)
+            provenance[destination] = ("upstream", source)
+            if filename == "experimental_log.md":
+                warnings.extend(normalize_markdown_tables(destination))
 
     figures = raw / "figures"
     if figures.is_dir() and any(figures.iterdir()):
         destination = materials_dir / "figures"
         shutil.copytree(figures, destination)
-        copied.extend(path for path in destination.rglob("*") if path.is_file())
+        for path in destination.rglob("*"):
+            if path.is_file():
+                copied.append(path)
+                provenance[path] = ("upstream", figures / path.relative_to(destination))
 
     template_dir = _CONFERENCE_TEMPLATES_DIR / venue
     if not template_dir.is_dir():
         raise FileNotFoundError(f"conference template missing: {template_dir}")
     destination = materials_dir / "conference_template"
     shutil.copytree(template_dir, destination)
-    copied.extend(path for path in destination.rglob("*") if path.is_file())
+    for path in destination.rglob("*"):
+        if path.is_file():
+            copied.append(path)
+            provenance[path] = ("harbor_conference_template", template_dir / path.relative_to(destination))
 
-    return copied
+    return copied, provenance, warnings
 
 
 def _copy_private_materials(paper_dir: Path, raw: Path, solution_private: Path, tests_private: Path) -> list[Path]:
@@ -134,6 +171,8 @@ def _render_templates(
     environment: Environment,
     task_dir: Path,
     metadata: _PaperMetadata,
+    has_figures: bool,
+    has_upstream_warnings: bool,
 ) -> None:
     conference = metadata.venue.upper()
     difficulty_explanation = (
@@ -158,6 +197,8 @@ def _render_templates(
         "venue": metadata.venue,
         "num_page": "8",
         "column": "two-column",
+        "has_figures": has_figures,
+        "has_upstream_warnings": has_upstream_warnings,
         "grader_module": "grader_pwbw",
         "include_paper_orchestra": True,
         # Metadata previously hardcoded inside task.toml.j2; kept byte-identical
@@ -223,7 +264,24 @@ def _convert_paper(
     texmf_dir.mkdir(exist_ok=True)
     (texmf_dir / ".keep").touch()
 
-    public_files = _copy_public_materials(raw, environment_dir, metadata.venue)
+    public_files, material_provenance, normalization_warnings = _copy_public_materials(
+        raw, environment_dir, metadata.venue
+    )
+    upstream_warnings = [*normalization_warnings]
+    known_warning = _UPSTREAM_DATA_WARNINGS.get(task_id)
+    if known_warning:
+        upstream_warnings.append(known_warning)
+    if upstream_warnings:
+        warning_path = environment_dir / "materials" / "upstream_data_warnings.md"
+        warning_path.write_text(
+            "# Upstream Data Warnings\n\n"
+            "These limits are present in the pinned upstream material. Do not repair, "
+            "complete, or infer missing evidence.\n\n"
+            + "\n".join(f"- {warning}" for warning in upstream_warnings)
+            + "\n",
+            encoding="utf-8",
+        )
+        public_files.append(warning_path)
     private_files = _copy_private_materials(paper_dir, raw, solution_private, tests_private)
 
     shutil.copytree(
@@ -245,7 +303,14 @@ def _convert_paper(
 
     audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)
 
-    _render_templates(environment, task_dir, metadata)
+    _render_templates(
+        environment,
+        task_dir,
+        metadata,
+        has_figures=(environment_dir / "materials" / "figures").is_dir(),
+        has_upstream_warnings=bool(upstream_warnings),
+    )
+    assert_valid_task_contract(task_dir)
 
     write_source_manifest(
         destination=tests_private / "source_manifest.json",
@@ -255,11 +320,13 @@ def _convert_paper(
         upstream_revision=upstream_revision,
         public_files=public_files,
         private_files=private_files,
+        material_provenance=material_provenance,
         extra={
             "task_id": task_id,
             "venue": metadata.venue,
             "num_figures": metadata.num_figures,
             "num_tables": metadata.num_tables,
+            "upstream_data_warnings": upstream_warnings,
         },
     )
 

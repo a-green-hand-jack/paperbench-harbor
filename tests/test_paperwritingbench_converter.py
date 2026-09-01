@@ -58,12 +58,20 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert "braced `\\input{...}` or `\\include{...}` commands to\nreference files inside `/workspace/submission/`, using paths relative to the\nsubmission root" in instruction
     assert "every source dependency\nrequired by `main.tex` into `/workspace/submission/`" in instruction
     assert "Do not rely on absolute\npaths, parent-directory paths, or files under `/workspace/materials/`" in instruction
+    assert "2024-10-01" in instruction
+    assert "credential-free Semantic Scholar fallback" in instruction
     materials = task_dir / "environment" / "materials"
     assert (materials / "idea_sparse.md").is_file()
     assert (materials / "experimental_log.md").is_file()
     assert (materials / "figures" / "figure_1.png").is_file()
     assert (task_dir / "environment" / "texmf" / ".keep").is_file()
     assert (materials / "conference_template" / "template.tex").is_file()
+    conference_template = (materials / "conference_template" / "template.tex").read_text(
+        encoding="utf-8"
+    )
+    assert "Anonymous Authors" in conference_template
+    assert "Ambitious AI Researcher" not in conference_template
+    assert "\\usepackage[review]{cvpr}" in conference_template
     upstream = task_dir / "environment" / "paper_orchestra"
     assert (upstream / "paper_writing_cli.py").is_file()
     assert (upstream / "methods" / "paper_writer.py").is_file()

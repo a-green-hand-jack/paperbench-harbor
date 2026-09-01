@@ -13,11 +13,17 @@ Write a complete scientific paper based on the raw research materials in
   exactly match the experiments that were eventually performed.
 - `/workspace/materials/experimental_log.md` — the experimental setup,
   metrics, baselines, results, and analyses.
+{% if has_figures %}
 - `/workspace/materials/figures/` — provided figures plus `info.json` with a
   caption for each figure.
+{% endif %}
 - `/workspace/materials/conference_template/` — the {{ conference }} LaTeX
   template (`template.tex`), style files, bibliography style, a starter
   `references.bib`, and `guidelines.md`.
+{% if has_upstream_warnings %}
+- `/workspace/materials/upstream_data_warnings.md` — known limitations in the
+  pinned upstream materials that you must not repair by inference.
+{% endif %}
 
 ## Requirements
 
@@ -27,28 +33,35 @@ Write a complete scientific paper based on the raw research materials in
    `guidelines.md`, and write the completed document to
    `/workspace/submission/main.tex`.
 2. Report results accurately based on `/workspace/materials/experimental_log.md`.
+{% if has_figures %}
 3. Use the provided figures where they support the paper, with captions
    based on `figures/info.json`. Copy referenced assets into
    `/workspace/submission/figures/` and use root-relative paths such as
    `\includegraphics{figures/foo.png}`. If the template has a `\graphicspath`
    that prepends `figures/`, remove or update it so it does not prepend
    `figures/` twice.
-4. Ground every claim in the provided materials; do not invent datasets,
+{% endif %}
+{{ 4 if has_figures else 3 }}. Ground every claim in the provided materials; do not invent datasets,
    numbers, or results that are not present in the materials.
-5. Write a bibliography in `references.bib`. All citations must come from
+{% if has_upstream_warnings %}
+{{ 5 if has_figures else 4 }}. Read `upstream_data_warnings.md` and preserve its stated
+   limitations rather than filling gaps with inferred evidence.
+{% endif %}
+{{ 6 if has_figures and has_upstream_warnings else 5 if has_figures or has_upstream_warnings else 4 }}. Write a bibliography in `references.bib`. All citations must come from
    your literature review; every cited key must be defined in
    `references.bib`, and you must not cite works you have not obtained.
-6. Follow the page limit and formatting rules from
+{{ 7 if has_figures and has_upstream_warnings else 6 if has_figures or has_upstream_warnings else 5 }}. Follow the page limit and formatting rules from
    `/workspace/materials/conference_template/guidelines.md`.
-7. Network access is available. Use the local PaperOrchestra sidecar at
-   `http://127.0.0.1:8765` for scholarly literature retrieval. Its
-   `POST /v1/discover` endpoint performs upstream Gemini discovery and its
-   `POST /v1/enrich-title` endpoint performs upstream Semantic Scholar title
-   enrichment. The sidecar applies the research cutoff before fuzzy title
-   matching and Semantic Scholar enrichment. Set
-   `SEMANTIC_SCHOLAR_API_KEY` if available. All claims must still be grounded
-   in the provided materials and experiments.
-8. Compile the final paper successfully with `pdflatex` and `bibtex` before
+{{ 8 if has_figures and has_upstream_warnings else 7 if has_figures or has_upstream_warnings else 6 }}. Network access is available. The literature-review cutoff is
+   **2024-10-01**: do not cite work first published on or after that date.
+   You may use the local PaperOrchestra sidecar at `http://127.0.0.1:8765`.
+   Its `POST /v1/discover` endpoint uses Gemini only when valid Gemini or
+   Vertex credentials are deliberately provided; otherwise it uses a
+   credential-free Semantic Scholar fallback. `POST /v1/enrich-title` always
+   uses Semantic Scholar and accepts `SEMANTIC_SCHOLAR_API_KEY` only as an
+   optional rate-limit improvement. All claims must still be grounded in the
+   provided materials and experiments.
+{{ 9 if has_figures and has_upstream_warnings else 8 if has_figures or has_upstream_warnings else 7 }}. Compile the final paper successfully with `pdflatex` and `bibtex` before
    finishing.
 
 ## Submission contract

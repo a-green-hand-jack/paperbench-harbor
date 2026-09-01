@@ -10,9 +10,13 @@ The research overview is in `/workspace/materials/research_overview.md`; read it
 
 Note that the overview represents a preliminary hypothesis and may not necessarily align with the experiments that were eventually performed.
 
-First, make sure to refer to the experiment data contained in `/workspace/materials/tables/` and `/workspace/materials/figures/`.
-
-We have VLM-based table descriptions in `/workspace/materials/table_summary.txt` and VLM-based figure descriptions in `/workspace/materials/figure_summary.txt`.
+{% if has_tables %}
+First, make sure to refer to the experiment data contained in `/workspace/materials/tables/`.
+We have VLM-based table descriptions in `/workspace/materials/table_summary.txt`.
+{% endif %}
+{% if has_figures %}
+Refer to the experiment figures in `/workspace/materials/figures/` and their VLM-based descriptions in `/workspace/materials/figure_summary.txt`.
+{% endif %}
 {% if has_code %}
 To better understand the methodology and experiments, please also refer to `/workspace/materials/code/` as the proposed method's code implementation.
 {% endif %}
@@ -42,7 +46,7 @@ This Harbor task requires a fixed output contract in addition to the benchmark i
 ├── styles/      (optional: non-standard source dependencies)
 ```
 
-Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserve any needed subdirectories, and reference them with paths relative to the submission root (for example, `\includegraphics{figures/foo.png}`). If the supplied template has a `\graphicspath` that prepends `figures/`, remove or update it so it does not prepend `figures/` twice. Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently.
+Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. {% if has_figures %}If the paper uses figures, copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserve any needed subdirectories, and reference them with paths relative to the submission root (for example, `\includegraphics{figures/foo.png}`). If the supplied template has a `\graphicspath` that prepends `figures/`, remove or update it so it does not prepend `figures/` twice. {% endif %}Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently.
 
 You may use any workspace layout for planning and drafting, including directories such as `/workspace/writing/`. For final submission, `/workspace/submission/` must be self-contained. `main.tex` is the authoritative compilation entry point, not necessarily the only LaTeX source file; it may use braced `\input{...}` or `\include{...}` commands to reference files inside `/workspace/submission/`, using paths relative to the submission root. Before finishing, copy every source dependency required by `main.tex` into `/workspace/submission/`. Do not rely on absolute paths, parent-directory paths, or files under `/workspace/materials/` during final compilation.
 
