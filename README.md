@@ -16,10 +16,28 @@ benchmark.
 | [`Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam) | Benchmark task package | Harbor task directories, instructions, writer environments, oracle solutions, and verifiers |
 | [`Paper-Writing-Exam-Trials`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Trials) | Public run archive | Sanitized agent trajectories, submissions, logs, scores, and complete trial archives |
 
-The run archive is not populated automatically by `harbor run`. A completed
-local trial must be exported with [`scripts/export_trial.py`](scripts/export_trial.py),
-inspected, and uploaded separately. See [`docs/trial-dataset.md`](docs/trial-dataset.md)
-for the complete save and view workflow.
+Trial publishing is opt-in. Install the Harbor integration with
+`python -m pip install -e '.[harbor]'`, then pass the registered plugin and its
+host-side metadata to `harbor run`:
+
+```bash
+harbor run \
+  ... \
+  --plugin paperbench-trial-export \
+  --pk output_dir=/path/to/Paper-Writing-Exam-Trials \
+  --pk benchmark_hf_revision=bfe2471c41f416d877e74bfa73cf0f29165c7567 \
+  --pk harbor_repo_commit=<paperbench-harbor-commit> \
+  --pk integration_commit=<agent-integration-commit> \
+  --pk agent_config_hash=<64-character-sha256> \
+  --pk private_manifest=/path/to/task/tests/private/source_manifest.json
+```
+
+This exports final retry results on the host. Add
+`--pk upload=true --pk dataset_repo=my-org/my-paper-writing-exam-trials` to
+publish the sanitized files and report the immutable Hub commit SHA. Omit the
+plugin for unchanged Harbor behavior. The manual exporter plus `hf upload`
+workflow remains available as a fallback; see
+[`docs/trial-dataset.md`](docs/trial-dataset.md).
 
 GitHub is the source of truth for how tasks and integrations are built.
 Hugging Face is the source of truth for the bytes in a published benchmark

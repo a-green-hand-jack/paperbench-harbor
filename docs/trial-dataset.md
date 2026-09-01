@@ -17,10 +17,12 @@ configuration. The agent trajectory is the central part of a trial, but the
 trial also records the final submission, Harbor result, verifier output, timing,
 and reproducibility metadata.
 
-The save path is deliberately a two-stage process:
+The save path is deliberately a two-stage process. It can be run manually, or
+the opt-in `paperbench-trial-export` Harbor JobPlugin can perform the second
+stage after the final job result:
 
 ```text
-harbor run
+harbor run [--plugin paperbench-trial-export]
     -> local Harbor job/trial directory
     -> scripts/export_trial.py
     -> local sanitized trial dataset directory
@@ -28,8 +30,64 @@ harbor run
     -> Paper-Writing-Exam-Trials
 ```
 
-`harbor run` does not upload anything to Hugging Face. It creates the local
-Harbor output first; the exporter creates the public representation later.
+Without the plugin, `harbor run` does not export or upload anything to Hugging
+Face. With the plugin, export still happens locally first and upload is enabled
+only with `--pk upload=true`. Both operations run on the host, never in the
+evaluated task container.
+
+## Automatic host-side publishing
+
+Install the integration against the verified Harbor baseline:
+
+```bash
+python3 -m pip install -e '.[harbor]'
+```
+
+Use Harbor's repeatable plugin kwargs for the required provenance. The plugin
+uses `JobResult.trial_results`, so Harbor retries are already resolved and
+intermediate retry directories are not published:
+
+```bash
+harbor run \
+  --jobs-dir "$JOB_ROOT" \
+  --path /path/to/Paper-Writing-Exam/paperwrite-bench-short/pwb-0001 \
+  --agent codex \
+  --model openai/gpt-5.6-sol \
+  --plugin paperbench-trial-export \
+  --pk output_dir="$TRIAL_DATASET_DIR" \
+  --pk benchmark_hf_revision="$BENCHMARK_HF_REVISION" \
+  --pk harbor_repo_commit="$HARBOR_REPO_COMMIT" \
+  --pk integration_commit="$INTEGRATION_COMMIT" \
+  --pk agent_config_hash="$AGENT_CONFIG_HASH" \
+  --pk private_manifest="$TASK_DIR/tests/private/source_manifest.json" \
+  --yes --n-concurrent 1
+```
+
+For a local-only export, leave upload disabled (the default). For a host-side
+upload to a custom dataset repository, add:
+
+```text
+--pk upload=true
+--pk dataset_repo=my-org/my-paper-writing-exam-trials
+--pk revision=main
+```
+
+The plugin writes `trial-export-report.json` beside the Harbor job result. It
+records per-trial export/upload status and the immutable Hugging Face commit
+SHA when upload succeeds. `include_failed=true` and `include_cancelled=true`
+can be supplied when those final results should also be exported. A failed
+upload leaves the local sanitized output intact and does not change Harbor's
+benchmark reward or original job result.
+
+For multiple tasks, use `private_manifest_map=/path/to/task-manifests.json`
+instead of one shared manifest. The mapping is keyed by Harbor task name or
+task ID. If omitted, the plugin resolves a local task's
+`tests/private/source_manifest.json` from the resolved Harbor task config when
+possible; ambiguous resolution fails closed.
+
+The plugin accepts no credential argument. `huggingface_hub` uses the host's
+existing `hf auth` state or `HF_TOKEN`; these credentials are never passed to
+the agent, verifier, task files, or trial archive.
 
 ## Layout
 

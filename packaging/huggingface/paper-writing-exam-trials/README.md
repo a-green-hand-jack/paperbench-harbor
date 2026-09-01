@@ -54,9 +54,9 @@ reconstructable.
 
 ## Saving A New Trial
 
-`harbor run` writes a trial locally; it does not upload the result here. From
-the `paperbench-harbor` repository, export one completed Harbor trial with the
-sanitizing exporter:
+`harbor run` writes a trial locally. The recommended opt-in path is the
+host-side `paperbench-trial-export` plugin; the manual exporter below remains
+the fallback when the plugin is not installed:
 
 ```bash
 python3 scripts/export_trial.py \
