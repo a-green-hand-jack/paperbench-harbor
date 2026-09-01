@@ -371,58 +371,12 @@ def opencode_user_config_command(base_url: str | None, model: str | None) -> str
 
 
 NARROW_BASH_ALLOW: dict[str, str] = {
-    "pwd": "allow",
-    "ls *": "allow",
-    "find *": "allow",
-    "cat *": "allow",
-    "head *": "allow",
-    "tail *": "allow",
-    "wc *": "allow",
-    "stat *": "allow",
-    "file *": "allow",
-    "which *": "allow",
-    "grep *": "allow",
-    "rg *": "allow",
-    "sed *": "allow",
-    "awk *": "allow",
-    "git status*": "allow",
-    "git branch*": "allow",
-    "git rev-parse*": "allow",
-    "git remote -v": "allow",
-    "git log*": "allow",
-    "git show*": "allow",
-    "git diff*": "allow",
-    "git tag*": "allow",
-    "git show-ref*": "allow",
-    "git describe*": "allow",
-    "python3 *": "allow",
-    "python3": "allow",
-    "python *": "allow",
-    "python": "allow",
-    "mkdir *": "allow",
-    "cp *": "allow",
-    "mv *": "allow",
-    "touch *": "allow",
-    "make *": "allow",
-    "make": "allow",
-    "pdflatex *": "allow",
-    "pdflatex --version": "allow",
-    "bibtex *": "allow",
-    "bibtex --version": "allow",
-    "latexmk *": "allow",
-    "tectonic *": "allow",
-    "pdfinfo *": "allow",
-    "pdftotext * -": "allow",
-    "python3 -m json.tool .paper-run/assessment.json": "allow",
-    "du *": "allow",
-    "df *": "allow",
-    "ls -la releases*": "allow",
-    "ls -la releases/*": "allow",
+    'ls "paper/figures/srcs" "paper/tables" "materials/figures" "materials/tables"': "allow",
 }
 
 
 def patch_opencode_project_command(project_dir: str = PROJECT_DIR) -> str:
-    """Allow only the read/build shell commands used by the writer pipeline."""
+    """Allow only the fixed directory check used by the writer pipeline."""
     config_path = f"{project_dir}/opencode.json"
     script = (
         "import json, pathlib\n"

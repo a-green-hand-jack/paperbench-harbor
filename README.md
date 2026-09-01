@@ -227,10 +227,10 @@ The wrapper, inside the task container:
 These paper-run behaviours are handled by the wrapper:
 
 - **Headless permissions.** The wrapper keeps the generated `paper-run` policy
-  deny-by-default and adds only a narrow project-level allowlist for read-only
-  inspection, Git inspection, and local publication-build commands.
-  Environment-dumping and arbitrary network commands remain unlisted and stay
-  `ask` in headless mode.
+  deny-by-default and adds only the fixed read-only directory check needed by
+  the citation stage. All other bash commands, including interpreters, file
+  mutation, publication tools, environment-dumping, and network commands,
+  remain unlisted and stay `ask` in headless mode.
 - **Material assessment.** It only considers files inside the writing repo, so
   public materials are copied into `<repo>/materials/` before `start`.
 - **Locked contracts.** `PAPER.md ## What must not change silently` is a hard
