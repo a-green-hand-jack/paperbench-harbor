@@ -123,7 +123,8 @@ existing task: never edit a corpus or generated Harbor task by hand.
        --build-root /home/user/lifesci-paperrecon-scratch/issue37-<short-revision>/build \\
        --log-dir /home/user/lifesci-paperrecon-scratch/issue37-<short-revision>/logs \\
        --published-manifest .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest/lifesci-paperrecon-short/dataset-manifest.jsonl \\
-       --concurrency 3 \\
+       --model openai/gpt-5.6-sol \\
+       --concurrency 1 \\
        --fresh \\
        --report .cache/lifesci-paperrecon/issue37-<short-revision>/build-report.json
    ```
@@ -146,8 +147,11 @@ existing task: never edit a corpus or generated Harbor task by hand.
    partial corpus is not a release candidate.
 
 This path deliberately still starts one isolated opencode session per paper.
-It may run for hours, but every session is restartable from its saved logs and
-the deterministic gates decide admission. No manual repair path exists.
+Use the explicitly pinned `gpt-5.6-sol` worker and one worker at a time: a
+published-corpus rebuild is a long autonomous job, and this avoids losing a
+batch of independent starts to a provider's per-model usage ceiling. It may
+run for hours, but every session is restartable from its saved logs and the
+deterministic gates decide admission. No manual repair path exists.
 
 ## The fixed procedure
 
