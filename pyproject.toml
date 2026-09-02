@@ -7,7 +7,7 @@ name = "paperbench-harbor"
 version = "0.1.0"
 description = "Harbor adapters for PaperWritingBench and PaperWrite-Bench"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [
   { name = "a-green-hand-jack" },
 ]
@@ -24,6 +24,13 @@ datasets = [
   "huggingface-hub>=0.25",
   "Pillow>=10.0",
 ]
+trials = [
+  "huggingface-hub>=0.25",
+]
+harbor = [
+  "harbor==0.22.0",
+  "huggingface-hub>=0.25",
+]
 sidecar = [
   "google-genai>=1.0",
   "python-dotenv>=1.0",
@@ -37,6 +44,9 @@ dev = [
 
 [project.scripts]
 paperbench-harbor = "paperbench_harbor.cli:app"
+
+[project.entry-points."harbor.plugins"]
+paperbench-trial-export = "paperbench_harbor.trials.orchestrator:SanitizedTrialExportPlugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/paperbench_harbor"]

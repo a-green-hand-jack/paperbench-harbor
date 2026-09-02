@@ -17,10 +17,12 @@ configuration. The agent trajectory is the central part of a trial, but the
 trial also records the final submission, Harbor result, verifier output, timing,
 and reproducibility metadata.
 
-The save path is deliberately a two-stage process:
+The save path is deliberately a two-stage process. It can be run manually, or
+the opt-in `paperbench-trial-export` Harbor JobPlugin can perform the second
+stage after the final job result:
 
 ```text
-harbor run
+harbor run [--plugin paperbench-trial-export]
     -> local Harbor job/trial directory
     -> scripts/export_trial.py
     -> local sanitized trial dataset directory
@@ -28,8 +30,82 @@ harbor run
     -> Paper-Writing-Exam-Trials
 ```
 
-`harbor run` does not upload anything to Hugging Face. It creates the local
-Harbor output first; the exporter creates the public representation later.
+Without the plugin, `harbor run` does not export or upload anything to Hugging
+Face. With the plugin, export still happens locally first and upload is enabled
+only with `--pk upload=true`. Both operations run on the host, never in the
+evaluated task container.
+
+## Automatic host-side publishing
+
+Install the integration against Harbor `v0.22.0` (commit
+`4407eb5227a2ff4f0d3f16b2eb48849382fdf276`):
+
+```bash
+python3 -m pip install -e '.[harbor]'
+```
+
+Use Harbor's repeatable plugin kwargs for the required provenance. The plugin
+uses `JobResult.trial_results`, so Harbor retries are already resolved and
+intermediate retry directories are not published:
+
+```bash
+BENCHMARK_REVISION=bfe2471c41f416d877e74bfa73cf0f29165c7567
+BENCHMARK_DIR=/path/to/Paper-Writing-Exam
+hf download Jack-Jieke-Wu/Paper-Writing-Exam \
+  --repo-type dataset --revision "$BENCHMARK_REVISION" \
+  --include 'paperwrite-bench-short/pwb-0001/**' --local-dir "$BENCHMARK_DIR"
+TASK_DIR="$BENCHMARK_DIR/paperwrite-bench-short/pwb-0001"
+JOB_ROOT=/path/to/harbor-jobs
+TRIAL_DATASET_DIR=/path/to/Paper-Writing-Exam-Trials
+AGENT_CONFIG_HASH=$(printf '%s\n' \
+  'agent=codex' 'model=openai/gpt-5.6-terra' 'reasoning_effort=medium' \
+  | sha256sum | cut -d' ' -f1)
+
+uv run --extra harbor harbor run \
+  --jobs-dir "$JOB_ROOT" \
+  --path "$TASK_DIR" \
+  --agent codex \
+  --model openai/gpt-5.6-terra \
+  --ak reasoning_effort=medium \
+  --plugin paperbench-trial-export \
+  --pk output_dir="$TRIAL_DATASET_DIR" \
+  --pk benchmark_hf_revision="$BENCHMARK_REVISION" \
+  --pk harbor_repo_commit=4407eb5227a2ff4f0d3f16b2eb48849382fdf276 \
+  --pk integration_commit="$(git rev-parse HEAD)" \
+  --pk agent_config_hash="$AGENT_CONFIG_HASH" \
+  --pk private_manifest="$TASK_DIR/tests/private/source_manifest.json" \
+  --pk upload=true \
+  --pk dataset_repo=Jack-Jieke-Wu/Paper-Writing-Exam-Trials \
+  --pk revision=main \
+  --yes --n-concurrent 1
+```
+
+For a local-only export, leave upload disabled (the default). The command above
+uses the authorized public trial repository. For a different host-side dataset
+repository, change:
+
+```text
+--pk upload=true
+--pk dataset_repo=my-org/my-paper-writing-exam-trials
+--pk revision=main
+```
+
+The plugin writes `trial-export-report.json` beside the Harbor job result. It
+records per-trial export/upload status and the immutable Hugging Face commit
+SHA when upload succeeds. `include_failed=true` and `include_cancelled=true`
+can be supplied when those final results should also be exported. A failed
+upload leaves the local sanitized output intact and does not change Harbor's
+benchmark reward or original job result.
+
+For multiple tasks, use `private_manifest_map=/path/to/task-manifests.json`
+instead of one shared manifest. The mapping is keyed by Harbor task name or
+task ID. If omitted, the plugin resolves a local task's
+`tests/private/source_manifest.json` from the resolved Harbor task config when
+possible; ambiguous resolution fails closed.
+
+The plugin accepts no credential argument. `huggingface_hub` uses the host's
+existing `hf auth` state or `HF_TOKEN`; these credentials are never passed to
+the agent, verifier, task files, or trial archive.
 
 ## Layout
 
@@ -55,6 +131,9 @@ The exporter accepts the ATIF versions implemented by Harbor `v0.20.0`
 (`ATIF-v1.0` through `ATIF-v1.7`). Local file references to external
 subagent trajectories must resolve to another allowlisted trajectory in the
 same archive; remote references and missing targets are rejected.
+Codex session JSONL records are sanitized before archiving: opaque
+`encrypted_content` fields and known credential fields are replaced with
+`REDACTED`, while unrecognized credential-shaped content still fails closed.
 
 ## Provenance
 

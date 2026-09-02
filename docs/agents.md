@@ -72,11 +72,12 @@ third-party provenance in `src/paperbench_harbor/vendor/NOTICE.md`.
 
 ## Trial records
 
-Each completed Harbor trial should be exported with
-`scripts/export_trial.py` into the public
-`Jack-Jieke-Wu/Paper-Writing-Exam-Trials` dataset. A trial record references
-the public benchmark by immutable Hugging Face revision and task checksum; it
-does not duplicate the benchmark task tree.
+Each completed Harbor trial may be exported by the opt-in
+`paperbench-trial-export` Harbor JobPlugin, which calls the same exporter
+implementation as `scripts/export_trial.py`. The plugin publishes only final
+retry results and can target a user-selected dataset repository. A trial record
+references the public benchmark by immutable Hugging Face revision and task
+checksum; it does not duplicate the benchmark task tree.
 
 The exporter accepts only known Harbor result and artifact locations and
 rejects API keys, bearer tokens, credential files, host credentials, and

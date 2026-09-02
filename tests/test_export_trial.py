@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from paperbench_harbor.trials.export import _check_json_values
 from scripts.export_trial import TrialExportError, export_trial
 
 
@@ -141,6 +142,90 @@ def test_export_trial_writes_record_manifest_and_archive(tmp_path: Path) -> None
     ]
     assert [event["source"] for event in events] == ["user", "agent"]
     assert all(event["trajectory_path"] == "agent/trajectory.json" for event in events)
+
+
+def test_export_redacts_codex_session_ciphertext_and_credential_fields(tmp_path: Path) -> None:
+    trial = _trial(tmp_path)
+    session = trial / "agent" / "sessions" / "2026" / "09" / "01"
+    session.mkdir(parents=True)
+    original = {
+        "type": "response_item",
+        "payload": {
+            "type": "reasoning",
+            "encrypted_content": "hf_fixed-looking-ciphertext-value",
+            "api_key": "sk-fixed-looking-key",
+            "Authorization": "Bearer fixed-looking-token",
+            "Cookie": "session=fixed-looking-cookie",
+            "Set_Cookie": "session=fixed-looking-cookie",
+            "Proxy_Authorization": "Bearer fixed-looking-token",
+        },
+    }
+    source = session / "rollout.jsonl"
+    source.write_text(json.dumps(original) + "\n", encoding="utf-8")
+    nested_session = trial / "steps" / "draft" / "agent" / "sessions"
+    nested_session.mkdir(parents=True)
+    (nested_session / "rollout.jsonl").write_text(json.dumps(original) + "\n", encoding="utf-8")
+    args = _args(trial, tmp_path / "export")
+    _write_private_manifest(args)
+
+    export_trial(args)
+
+    with tarfile.open(args.output_dir / "artifacts" / "trial-0001.tar.gz", "r:gz") as archive:
+        payload = json.loads(archive.extractfile("agent/sessions/2026/09/01/rollout.jsonl").read())
+        nested_payload = json.loads(
+            archive.extractfile("steps/draft/agent/sessions/rollout.jsonl").read()
+        )
+    assert payload["payload"]["encrypted_content"] == "REDACTED"
+    assert payload["payload"]["api_key"] == "REDACTED"
+    assert payload["payload"]["Authorization"] == "REDACTED"
+    assert payload["payload"]["Cookie"] == "REDACTED"
+    assert payload["payload"]["Set_Cookie"] == "REDACTED"
+    assert payload["payload"]["Proxy_Authorization"] == "REDACTED"
+    assert nested_payload["payload"]["encrypted_content"] == "REDACTED"
+
+
+def test_export_rejects_nonstandard_json_in_codex_session_log(tmp_path: Path) -> None:
+    trial = _trial(tmp_path)
+    session = trial / "agent" / "sessions" / "2026" / "09" / "01"
+    session.mkdir(parents=True)
+    (session / "rollout.jsonl").write_bytes(b'{"type":"response_item","value":NaN}\n')
+    args = _args(trial, tmp_path / "export")
+    _write_private_manifest(args)
+
+    with pytest.raises(TrialExportError, match="invalid Codex session record"):
+        export_trial(args)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "Authorization",
+        "Cookie",
+        "Set-Cookie",
+        "Set_Cookie",
+        "Proxy-Authorization",
+        "Proxy_Authorization",
+        "X-Auth-Token",
+        "X_Auth_Token",
+        "ID-Token",
+        "ID_Token",
+        "OAuth-Token",
+        "OAuth_Token",
+        "API-KEY",
+        "AWS_SESSION_TOKEN",
+        "AZURE_OPENAI_API_KEY",
+    ],
+)
+def test_structured_header_credentials_are_rejected(key: str) -> None:
+    with pytest.raises(TrialExportError, match="sensitive credential"):
+        _check_json_values(json.dumps({key: "actual-secret"}), Path("session.jsonl"))
+
+
+def test_structured_credential_containers_are_rejected() -> None:
+    with pytest.raises(TrialExportError, match="sensitive credential"):
+        _check_json_values(
+            '{"Authorization":{"value":"actual-secret"}}', Path("session.jsonl")
+        )
 
 
 def test_export_trial_archive_is_deterministic(tmp_path: Path) -> None:
