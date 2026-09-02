@@ -85,9 +85,15 @@ upstream does.
 - Output contract: upstream agents edit `template.tex`; Harbor requires the
   submission contract `main.tex` + `references.bib` + optional `figures/`.
   Inputs are unchanged; only the output path is fixed.
-- Network policy: Harbor tasks currently run with `allow_internet=true`, like
-  the upstream writer-facing surface. Verifier recompilation and smoke tests
-  remain isolated from the network. The repository provides a controlled,
+- Network policy: Harbor tasks currently declare
+  `[environment] network_mode = "public"`, like the upstream writer-facing
+  surface. The verifier declares no phase policy of its own and therefore
+  inherits that baseline; it is **not** network-isolated by Harbor. What
+  isolates the recompilation is the compile itself -- a clean copy, no ground
+  truth, no judge credentials, and `-no-shell-escape`. The verifier phase is
+  left inheritable on purpose: the optional official metrics call an
+  operator-supplied judge endpoint, and an explicit `[verifier] network_mode`
+  could not be loosened at run time by `--allow-environment-host`. The repository provides a controlled,
   cutoff-aware scholarly-search sidecar, but populating and operating its
   versioned index is still a deployment concern; open-internet retrieval is
   therefore not automatically reproducible in every run.
@@ -194,8 +200,8 @@ against the fixed upstream revisions and the published Harbor dataset revision
   all remaining writer files were declared generated/vendor artifacts.
 - Every verifier-only private copy matched its upstream source byte-for-byte
   and none of that content appeared in the writer environment.
-- Task contract checks (`allow_internet = true`, separate verifier
-  environment, submission entry points) passed for all 251 tasks.
+- Task contract checks (effective agent and verifier network policy, separate
+  verifier environment, submission entry points) passed for all 251 tasks.
 - Repeated conversion of each full fixed dataset produced identical task trees,
   manifests, and hashes.
 
