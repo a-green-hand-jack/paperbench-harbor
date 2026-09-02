@@ -10,10 +10,14 @@ One `opencode` session searches arXiv's `q-bio.*` categories with real network
 access and proposes papers that satisfy `LIFESCI_SCREENING_POLICY`. What comes
 back is a **proposal**: this script validates its shape and its policy
 compliance and writes it out, and nothing here appends to `APPROVED_PAPERS`.
-Promotion stays a human edit, because the construction gate's
-`provenance-mismatch` check only means something while the approved list is a
-human decision the agent cannot reach — see
-`src/paperbench_harbor/construction/core/screen.py`.
+Promotion stays out of this script's reach, because the construction gate's
+`provenance-mismatch` check only means something while the approved list is not
+something the screening agent can write to — see
+`src/paperbench_harbor/construction/core/screen.py`. It happens in
+`scripts/promote_lifesci_paperrecon_candidates.py`, which re-derives every
+claim from the live arXiv and GitHub APIs with no model in the loop, and
+appends accepted candidates to `approved_scaleup.jsonl` only under an explicit
+`--promote`.
 
 The screening machinery is domain-agnostic and lives in
 `paperbench_harbor.construction.core.screen`; this script is the life-sciences
@@ -203,9 +207,9 @@ def main() -> int:
         _log(f"  {label}: {summary[label]}")
     _log("")
     _log(
-        "This is a proposal. Nothing was added to APPROVED_PAPERS; promoting a "
-        "candidate is a human edit to "
-        "src/paperbench_harbor/construction/lifesci_paperrecon/papers.py."
+        "This is a proposal. Nothing was added to the approved set; promoting a "
+        "candidate requires scripts/promote_lifesci_paperrecon_candidates.py "
+        "--promote, which re-verifies every claim against live sources first."
     )
 
     # Falling short is a reportable outcome, not a crash: the caller asked for a

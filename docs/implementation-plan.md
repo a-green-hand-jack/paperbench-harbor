@@ -58,8 +58,10 @@ Verifier-only materials:
 - evaluator outputs and reproduction judgments.
 
 The writer network policy follows the current task template and README:
-`allow_internet = true`. The verifier recompilation and smoke tests remain
-isolated from the network.
+`[environment] network_mode = "public"`. The verifier inherits that baseline
+rather than declaring its own, so it is not network-isolated by Harbor; the
+recompilation's isolation comes from the clean copy and `-no-shell-escape`,
+not from a network policy.
 
 ## Task contract
 
@@ -74,7 +76,7 @@ The writer produces:
 └── figures/ (optional)
 ```
 
-`main.tex` is authoritative. The verifier recompiles it in a restricted compiler environment with no ground truth, no judge credentials, no network, and shell escape disabled.
+`main.tex` is authoritative. The verifier recompiles it in a restricted compiler environment with no ground truth, no judge credentials, and shell escape disabled.
 
 ## Security boundary
 

@@ -18,6 +18,8 @@ input twice into scratch directories and compares digests.
 
 from __future__ import annotations
 
+import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -216,6 +218,74 @@ def _audit_verifier(
         report.errors.append(str(exc))
 
 
+#: Harbor's network policy vocabulary (`harbor.models.task.config.NetworkMode`).
+NETWORK_MODES = frozenset({"no-network", "public", "allowlist"})
+
+#: What an `[environment]` baseline means when it declares nothing. Harbor's
+#: `BaselineNetworkPolicyConfig.network_mode` defaults to `public`.
+DEFAULT_NETWORK_MODE = "public"
+
+#: The policy the current task specification expects, per execution phase.
+#: These are the values the audit enforces; changing the generated templates
+#: means changing these in the same commit.
+EXPECTED_NETWORK_MODES = {
+    "agent": "public",
+    "verifier": "public",
+}
+
+
+def _table(config: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    section = config.get(key)
+    return section if isinstance(section, Mapping) else {}
+
+
+def _declared_baseline(section: Mapping[str, Any]) -> str | None:
+    """Resolve one `[environment]`-shaped section's declared network baseline.
+
+    Returns `None` when the section declares no policy at all, which is what
+    makes the caller fall through to the next level of Harbor's inheritance.
+    An explicit `network_mode` wins over the deprecated `allow_internet`,
+    matching Harbor's `_apply_legacy_allow_internet`, which only migrates the
+    legacy field when `network_mode` was not set.
+    """
+    declared = section.get("network_mode")
+    if declared is not None:
+        return str(declared)
+    legacy = section.get("allow_internet")
+    if legacy is None:
+        return None
+    return "public" if legacy else "no-network"
+
+
+def effective_network_mode(config: Mapping[str, Any], phase: str) -> str:
+    """The network policy Harbor will actually apply to one execution phase.
+
+    Replicates Harbor 0.22.0's resolution order so the audit checks the policy
+    that takes effect rather than the policy a file appears to declare:
+
+    1. `[<phase>].network_mode`, an explicit phase override;
+    2. `[<phase>.environment]`'s own baseline, where the phase runs in a
+       separate environment that declares one;
+    3. the top-level `[environment]` baseline;
+    4. `public`, Harbor's default when nothing declares anything.
+
+    A task that sets `environment_mode = "separate"` but no verifier policy
+    therefore inherits the writer environment's baseline -- it does not become
+    isolated by virtue of being separate.
+    """
+    phase_section = _table(config, phase)
+    declared = phase_section.get("network_mode")
+    if declared is not None:
+        return str(declared)
+    nested = phase_section.get("environment")
+    if isinstance(nested, Mapping):
+        baseline = _declared_baseline(nested)
+        if baseline is not None:
+            return baseline
+    baseline = _declared_baseline(_table(config, "environment"))
+    return baseline if baseline is not None else DEFAULT_NETWORK_MODE
+
+
 def _audit_contract(
     task_dir: Path,
     report: TaskReport,
@@ -226,18 +296,43 @@ def _audit_contract(
     not in task.toml, so that mapping is checked by the CLI's mapping stage
     rather than here. Here we verify the fields task.toml and instruction.md
     actually declare.
+
+    task.toml is parsed, not searched. A substring check cannot distinguish a
+    declared policy from an inherited one, and it pins one spelling of a field
+    that Harbor may deprecate underneath it.
     """
     task_toml = task_dir / "task.toml"
     if not task_toml.is_file():
         report.errors.append("task.toml missing")
         return
     text = task_toml.read_text(encoding="utf-8", errors="replace")
+    try:
+        config = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        report.contract_checks += 1
+        report.errors.append(f"contract check failed: task.toml is not valid TOML ({exc})")
+        return
 
-    # Network policy: current spec is allow_internet = true for both datasets.
     checks: list[tuple[str, bool]] = [
-        ("allow_internet = true", "allow_internet = true" in text),
-        ('environment_mode = "separate"', 'environment_mode = "separate"' in text),
+        (
+            'verifier environment_mode = "separate"',
+            _table(config, "verifier").get("environment_mode") == "separate",
+        ),
     ]
+    for phase, expected in EXPECTED_NETWORK_MODES.items():
+        actual = effective_network_mode(config, phase)
+        checks.append(
+            (
+                f"{phase} network policy is {expected!r} (declared or inherited), got {actual!r}",
+                actual == expected,
+            )
+        )
+        checks.append(
+            (
+                f"{phase} network policy {actual!r} is a Harbor network mode",
+                actual in NETWORK_MODES,
+            )
+        )
     for name, passed in checks:
         report.contract_checks += 1
         if not passed:
