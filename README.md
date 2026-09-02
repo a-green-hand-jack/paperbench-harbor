@@ -185,14 +185,10 @@ For judge-backed official metrics, pass verifier variables explicitly with
 Harbor's `--verifier-env` flags. Keep their values in a private environment
 file and never place them in a task, image, command log, or trial archive.
 
-## Agent integrations
+## Submission contract
 
-The repository also provides the integration layer for paper-writing agents.
-Each adapter documents its immutable version, runtime, writer-visible input
-allowlist, model settings, credential boundary, output mapping, and artifact
-layout. See [`docs/agents.md`](docs/agents.md).
-
-The common output contract is:
+Every task in every protocol grades the same deliverable: a complete LaTeX
+source tree at a fixed location inside the task container.
 
 ```text
 /workspace/submission/
@@ -201,35 +197,18 @@ The common output contract is:
 └── figures/ (optional)
 ```
 
-The integrated `paper-run` adapter is registered as:
+The contract is agent-neutral, and running a published task never requires
+installing this repository. Harbor's native agents (`codex`, `claude-code`)
+write into it directly. An external writing harness with its own workspace
+layout needs a thin Harbor agent wrapper that exports its output tree into
+this contract; that wrapper belongs to whoever runs the harness. The benchmark
+ships no agent adapters.
 
-```text
-paperbench_harbor.agents.paper_run:PaperRun
-```
+See [`docs/submission-contract.md`](docs/submission-contract.md) for what the
+verifier checks and what a wrapper has to get right.
 
-It installs pinned runtime components inside the task container, stages public
-materials, runs the writing harness, exports the paper tree, and records
-diagnostics without exposing verifier-private files.
-
-Pinned versions are `paper-run` v0.5.0 at immutable release commit
-`9925848adf195e68d3f3e3039959f9f2c19fb7a3`, OpenCode `1.18.25`, and Node 20.
-The wrapper builds the pinned source with its committed lockfile, validates the
-generated paper brief, stages only public materials, and runs one autonomous
-headless plan with `--stage-timeout-multiplier 2`. Because the full 13-stage
-plan can exceed two hours, Harbor runs should pass
-`--agent-timeout-multiplier 4` when selecting `paper-run`.
-
-The generated headless policy remains deny-by-default. It allows only fixed
-repository metadata checks, read-only directory inspection, and figure copies
-from `materials/figures/` into `paper/figures/srcs/`. Interpreters, arbitrary
-file mutation, publication tools, environment dumping, and network commands
-remain unlisted. The adapter supports new-paper production only; external
-manuscript `review`, `transfer`, and `adopt` workflows are intentionally not
-exposed through the benchmark integration.
-
-Adding an agent should require a thin wrapper and contract tests, not a fork of
-the benchmark tasks. Agent runs are exported with `scripts/export_trial.py` to
-the public trial dataset described in [`docs/trial-dataset.md`](docs/trial-dataset.md).
+Agent runs are exported with `scripts/export_trial.py` to the public trial
+dataset described in [`docs/trial-dataset.md`](docs/trial-dataset.md).
 
 ## Build and test
 

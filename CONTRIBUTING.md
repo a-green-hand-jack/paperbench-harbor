@@ -7,7 +7,7 @@
 3. Keep writer-visible and verifier-only files separated by explicit allowlists.
 4. Pin upstream revisions and record file hashes for every generated task.
 5. Add smoke fixtures before converting the complete datasets.
-6. Integrate paper-writing agents through a thin, tested Harbor adapter.
+6. Keep the submission contract agent-neutral; ship no agent adapters.
 7. Keep benchmark releases and agent trials in their respective Hugging Face
    repositories, not in Git history.
 
