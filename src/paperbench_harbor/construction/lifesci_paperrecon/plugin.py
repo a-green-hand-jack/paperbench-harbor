@@ -95,4 +95,5 @@ LIFESCI_PLUGIN = DomainPlugin(
         "phylogenetic trees, pathway diagrams and dose-response curves rather than\n"
         "training curves and architecture diagrams."
     ),
+    require_table_inventory=True,
 )

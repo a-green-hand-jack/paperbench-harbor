@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shutil
 from pathlib import Path
@@ -54,6 +56,25 @@ def _make_source(tmp_path: Path, paper_type: str = "method") -> Path:
     for paper_id in PAPERS:
         _make_paper(source, paper_id, paper_type)
     return source
+
+
+def _write_table_inventory(resources: Path) -> None:
+    material = resources / "tables" / "a.tex"
+    resources.joinpath("table_inventory.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tables": [
+                    {
+                        "id": "table-001",
+                        "public_path": "tables/a.tex",
+                        "content_sha256": hashlib.sha256(material.read_bytes()).hexdigest(),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def _environment_names(task_dir: Path) -> set[str]:
@@ -154,6 +175,35 @@ def test_missing_figures_are_not_required(tmp_path: Path) -> None:
     task_dir = output / "pwb-0001"
     for path in (task_dir / "instruction.md", task_dir / "environment" / "materials" / "AGENTS.md"):
         assert "/workspace/materials/figures/" not in path.read_text(encoding="utf-8")
+
+
+def test_validated_table_inventory_is_published_with_the_task(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    _write_table_inventory(resources)
+    output = tmp_path / "out"
+
+    assert convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=output, overview="short", limit=1)
+    ) == 1
+    task_dir = output / "pwb-0001"
+    assert (task_dir / "environment" / "materials" / "table_inventory.json").is_file()
+    assert "/workspace/materials/tables/" in (task_dir / "instruction.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_table_directory_cannot_bypass_an_empty_inventory(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "table_inventory.json").write_text(
+        '{"schema_version": 1, "tables": []}\n', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="tables/ does not match inventory entries"):
+        convert_paperwrite_bench(
+            PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+        )
 
 
 def test_unsupported_overview_raises(tmp_path: Path) -> None:

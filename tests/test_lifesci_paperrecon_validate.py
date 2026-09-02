@@ -13,12 +13,15 @@ failure names the check that regressed.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from paperbench_harbor.construction.core.prompt import build_prompt
 from paperbench_harbor.construction.core.spec import PaperSpec
-from paperbench_harbor.construction.core.validate import validate_paper
+from paperbench_harbor.construction.core.validate import collect_source_tables, validate_paper
 from paperbench_harbor.construction.lifesci_paperrecon.papers import APPROVED_BY_ID
 from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
@@ -35,6 +38,11 @@ Phylogenetic inference is expensive~\cite{felsenstein1981}.
 We implemented the peeling algorithm on GPUs, following \cite{ayres2012}.
 \section{Results}
 Throughput improved by a factor of eleven on the benchmark alignments.
+\begin{table}
+\caption{Runtime on the benchmark alignments.}
+\label{tab:runtime}
+\begin{tabular}{lr}Dataset & Runtime \\ \hline Example & 11\end{tabular}
+\end{table}
 \section{Discussion}
 The speedup holds for large state spaces.
 \bibliographystyle{plain}
@@ -90,6 +98,40 @@ def _provenance(**overrides: object) -> dict:
     return record
 
 
+def _write_table_materials(root: Path) -> None:
+    """Write the public contract directly from the ground-truth source table list."""
+
+    resources = root / "resources"
+    table_dir = resources / "tables"
+    table_dir.mkdir(exist_ok=True)
+    records: list[dict[str, object]] = []
+    summary_lines: list[str] = []
+    for table in collect_source_tables(root / "original"):
+        public_path = f"tables/{table.id}.tex"
+        (resources / public_path).write_text(table.content, encoding="utf-8")
+        records.append(
+            {
+                "id": table.id,
+                "source_path": table.source_path,
+                "line_start": table.line_start,
+                "environment": table.environment,
+                "caption": table.caption,
+                "label": table.label,
+                "content_sha256": table.content_sha256,
+                "public_path": public_path,
+            }
+        )
+        summary_lines.append(f"{public_path}: {table.caption}")
+    (resources / "table_inventory.json").write_text(
+        json.dumps({"schema_version": 1, "tables": records}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (resources / "table_summary.txt").write_text(
+        "\n".join(summary_lines) + "\n" if summary_lines else "The source has no tables.\n",
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def paper(tmp_path: Path) -> Path:
     """A sample that passes every structural check."""
@@ -116,9 +158,7 @@ def paper(tmp_path: Path) -> Path:
     (resources / "figure_summary.txt").write_text(
         "figures/tree.png: Maximum-likelihood phylogeny of the 64 taxa.\n", encoding="utf-8"
     )
-    (resources / "table_summary.txt").write_text(
-        "This paper has no table assets; its tables are inline.\n", encoding="utf-8"
-    )
+    _write_table_materials(root)
     (resources / "code" / "LICENSE").write_text("MIT\n", encoding="utf-8")
     (resources / "code" / "peel.c").write_text("int main(void){return 0;}\n", encoding="utf-8")
     return root
@@ -137,6 +177,115 @@ def _codes(paper: Path) -> set[str]:
 def test_a_well_formed_sample_passes(paper: Path) -> None:
     report = _validate(paper)
     assert report.ok, report.summary()
+
+
+def test_table_coverage_cli_reports_source_and_public_counts(paper: Path, tmp_path: Path) -> None:
+    (tmp_path / "build-artifacts").mkdir()
+    output = tmp_path / "table-coverage.json"
+    script = Path(__file__).parents[1] / "scripts" / "audit_lifesci_table_coverage.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--source", str(paper.parent), "--output", str(output)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["total_tasks"] == 1
+    assert report["total_source_tables"] == 1
+    assert report["total_public_tables"] == 1
+    assert report["mismatched_tasks"] == []
+
+
+def test_lifesci_prompt_requires_source_table_inventory() -> None:
+    prompt = build_prompt(SPEC, "/scratch/paper_1", LIFESCI_PLUGIN)
+
+    assert "table_inventory.json" in prompt
+    assert "recursively inspect" in prompt
+    assert "source table even if it is written inline" in prompt
+
+
+def test_an_inline_source_table_without_public_material_fails(paper: Path) -> None:
+    (paper / "resources" / "tables" / "table-001.tex").unlink()
+
+    assert "table-material-missing" in _codes(paper)
+
+
+def test_a_stale_source_table_inventory_fails(paper: Path) -> None:
+    inventory_path = paper / "resources" / "table_inventory.json"
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    inventory["tables"][0]["content_sha256"] = "0" * 64
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    assert "table-inventory-mismatch" in _codes(paper)
+
+
+def test_a_table_summary_must_include_the_source_caption(paper: Path) -> None:
+    (paper / "resources" / "table_summary.txt").write_text(
+        "tables/table-001.tex: runtime results\n", encoding="utf-8"
+    )
+
+    assert "table-summary-incomplete" in _codes(paper)
+
+
+def test_tables_reached_through_input_are_inventoried(paper: Path) -> None:
+    original = paper / "original"
+    (original / "results.tex").write_text(
+        """\\begin{table*}
+\\caption{Results supplied through an input file.}
+\\label{tab:input}
+\\begin{tabular}{lr}Method & Score \\\\ \\hline Example & 42\\end{tabular}
+\\end{table*}
+""",
+        encoding="utf-8",
+    )
+    main = original / "main.tex"
+    main.write_text(
+        main.read_text(encoding="utf-8").replace(
+            "\\section{Results}", "\\input results\n\\section{Results}"
+        ),
+        encoding="utf-8",
+    )
+    _write_table_materials(paper)
+
+    source_tables = collect_source_tables(original)
+    assert len(source_tables) == 2
+    assert any(table.source_path == "results.tex" for table in source_tables)
+    assert _validate(paper).ok
+
+
+def test_lspr_style_five_inline_tables_reject_an_empty_public_inventory(paper: Path) -> None:
+    tables = "\n".join(
+        "\\begin{" + environment + "}\n"
+        f"\\caption{{Result table {index}.}}\n"
+        f"\\label{{tab:result-{index}}}\n"
+        "\\begin{tabular}{lr}Method & Score \\\\ \\hline Example & 1\\end{tabular}\n"
+        "\\end{" + environment + "}"
+        for index, environment in enumerate(("table", "table*", "table*", "table*", "table*"), start=1)
+    )
+    original = paper / "original"
+    main = original / "main.tex"
+    start = main.read_text(encoding="utf-8")
+    old_table = r"""\begin{table}
+\caption{Runtime on the benchmark alignments.}
+\label{tab:runtime}
+\begin{tabular}{lr}Dataset & Runtime \\ \hline Example & 11\end{tabular}
+\end{table}"""
+    main.write_text(start.replace(old_table, tables), encoding="utf-8")
+    for path in (paper / "resources" / "tables").iterdir():
+        path.unlink()
+    (paper / "resources" / "table_inventory.json").write_text(
+        '{"schema_version": 1, "tables": []}\n', encoding="utf-8"
+    )
+    (paper / "resources" / "table_summary.txt").write_text(
+        "The source has no tables.\n", encoding="utf-8"
+    )
+
+    assert len(collect_source_tables(original)) == 5
+    codes = _codes(paper)
+    assert "table-inventory-mismatch" in codes
+    assert "table-summary-incomplete" in codes
 
 
 def test_skipping_compilation_is_recorded_not_silent(paper: Path) -> None:

@@ -24,11 +24,14 @@ permission:
     "uv run scripts/build_lifesci_paperrecon_source.py *": allow
     "python scripts/build_lifesci_paperrecon_source.py *": allow
     "uv run scripts/audit_fidelity.py lifesci-paperrecon *": allow
+    "uv run scripts/audit_lifesci_table_coverage.py *": allow
+    "python scripts/audit_lifesci_table_coverage.py *": allow
     "python scripts/audit_fidelity.py lifesci-paperrecon *": allow
     "uv run paperbench-harbor lifesci-paperrecon *": allow
     "paperbench-harbor lifesci-paperrecon *": allow
     "python -m paperbench_harbor.cli lifesci-paperrecon *": allow
     "git rev-parse HEAD": allow
+    "hf download Jack-Jieke-Wu/Paper-Writing-Exam *": allow
     "git rev-parse --short HEAD": allow
     "cat *": allow
     "ls *": allow
@@ -48,8 +51,12 @@ Run from the repository root on the build host:
 opencode run --agent papersmith-lifesci "give me 10 more life-sciences papers about genomics with public code"
 ```
 
-The free text is the interface. Everything else about the procedure below is
-fixed and runs the same way every time.
+The free text is the interface. It supports both collection requests and a
+release-candidate rebuild of every currently published task, for example:
+
+```
+opencode run --agent papersmith-lifesci "rebuild every published LifeSci task as a release candidate"
+```
 
 ## What you are not
 
@@ -85,6 +92,62 @@ depends on.
 Use only the command forms shown below. The permission block denies bash by
 default and allows precisely these; a different form is not a hint to be
 creative, it is a stop.
+
+## Rebuild the published corpus
+
+When the request says **rebuild**, **repair published tasks**, **release
+candidate**, or otherwise asks to regenerate existing published papers, use this
+path instead of steps 1--3 below. It is the only permitted way to repair an
+existing task: never edit a corpus or generated Harbor task by hand.
+
+1. Read the actual current revision with `git rev-parse HEAD`, and download the
+   current immutable published task selection into the new run root. The
+   run root must be new and empty because `--fresh` clears agent workspaces but
+   intentionally does not delete a prior corpus. The manifest's `upstream_paper_id` records are the rebuild scope; do not replace
+   them with a hand-written list or the wider set of merely approved papers:
+
+   ```
+   hf download Jack-Jieke-Wu/Paper-Writing-Exam \\
+       lifesci-paperrecon-short/dataset-manifest.jsonl \\
+       --repo-type dataset \\
+       --local-dir .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest
+   ```
+
+2. Run the construction/review loop for every task selected by that manifest.
+   Keep `--fresh`, do not use `--skip-review`, and preserve the report and logs:
+
+   ```
+   uv run scripts/build_lifesci_paperrecon_source.py \\
+       --scratch-root /home/user/lifesci-paperrecon-scratch/issue37-<short-revision> \\
+       --corpus-root .cache/lifesci-paperrecon/issue37-<short-revision>/corpus \\
+       --build-root /home/user/lifesci-paperrecon-scratch/issue37-<short-revision>/build \\
+       --log-dir /home/user/lifesci-paperrecon-scratch/issue37-<short-revision>/logs \\
+       --published-manifest .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest/lifesci-paperrecon-short/dataset-manifest.jsonl \\
+       --concurrency 3 \\
+       --fresh \\
+       --report .cache/lifesci-paperrecon/issue37-<short-revision>/build-report.json
+   ```
+
+3. Require a complete table-coverage report before conversion. This traverses
+   every `main.tex` and reachable `input`/`include` file, then compares the
+   source inventory, public fragments and summaries. It exits non-zero for any
+   discrepancy:
+
+   ```
+   uv run scripts/audit_lifesci_table_coverage.py \\
+       --source .cache/lifesci-paperrecon/issue37-<short-revision>/corpus \\
+       --published-manifest .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest/lifesci-paperrecon-short/dataset-manifest.jsonl \\
+       --output reports/lspr/issue37-<short-revision>-table-coverage.json
+   ```
+
+4. Only after that report passes, run steps 5 and 6 below against this new
+   corpus and new candidate dataset directory. Use the same exact Git revision
+   for conversion and fidelity audit. Report every failed or blocked paper; a
+   partial corpus is not a release candidate.
+
+This path deliberately still starts one isolated opencode session per paper.
+It may run for hours, but every session is restartable from its saved logs and
+the deterministic gates decide admission. No manual repair path exists.
 
 ## The fixed procedure
 

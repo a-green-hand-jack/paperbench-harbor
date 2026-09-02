@@ -293,6 +293,7 @@ def test_no_biology_leaks_into_another_domains_prompt() -> None:
 
     for biological in ("biolog", "life-sciences", "micrograph", "Dose-response"):
         assert biological.lower() not in prompt.lower(), biological
+    assert "table_inventory.json" not in prompt
 
 
 def test_core_invariants_survive_any_plugin() -> None:

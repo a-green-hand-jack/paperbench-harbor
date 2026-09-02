@@ -169,6 +169,7 @@ _PWB_PUBLIC_RESOURCE_FILES = (
     "references.bib",
     "figure_summary.txt",
     "table_summary.txt",
+    "table_inventory.json",
 )
 _PWB_PUBLIC_RESOURCE_DIRS = ("figures", "tables", "code")
 _PWB_OVERVIEW_FILENAMES = {
