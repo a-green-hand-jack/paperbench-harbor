@@ -17,7 +17,9 @@ screening output: a primary category reported from the model's prior instead of
 read off the API. Caught here it costs one HTTP request; missed here it costs a
 full construction run, which fails late as a `provenance-mismatch`.
 
-Promotion never edits `papers.py`. Accepted candidates are appended to
+Promotion never edits `papers.py`. After independent verification, an explicit
+human approval record binds selected candidate ids to the exact proposal bytes
+before anything can be appended to
 `approved_scaleup.jsonl` as `PaperSpec`-shaped records, one per line, deduplicated
 on `arxiv_id`. Keeping the hand-curated tuple in `papers.py` a hand-edited Python
 artifact, and this file data, is what stops an automated stage from redefining
@@ -32,6 +34,7 @@ requests/hour anonymous rate limit.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -138,6 +141,75 @@ class Outcome:
         if self.mismatches:
             return "; ".join(mismatch.describe() for mismatch in self.mismatches)
         return self.reason
+
+
+@dataclass(frozen=True)
+class HumanApproval:
+    """A reviewer attestation bound to one immutable candidate proposal."""
+
+    candidate_sha256: str
+    approved_arxiv_ids: frozenset[str]
+    reviewer: str
+
+
+def _candidate_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _default_human_approval_path(candidates: Path) -> Path:
+    return candidates.with_name(f"{candidates.name}.human-approval.json")
+
+
+def read_human_approval(
+    path: Path, *, candidates_path: Path, candidates: list[Candidate]
+) -> HumanApproval:
+    """Read a human review record and bind it to the exact candidate file.
+
+    The agent that screens and verifies candidates has no write permission, so
+    this separate file is deliberately supplied by a human after reviewing the
+    deterministic verification report.  A byte digest prevents approval of one
+    proposal from being replayed against a later, edited proposal.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise PromotionError(
+            f"human approval is required for --promote: {path} does not exist"
+        ) from error
+    except (OSError, json.JSONDecodeError) as error:
+        raise PromotionError(f"cannot read human approval {path}: {error}") from error
+    if not isinstance(payload, dict):
+        raise PromotionError(f"human approval {path} must be a JSON object")
+    if payload.get("schema_version") != 1:
+        raise PromotionError(f"human approval {path} must set schema_version to 1")
+    digest = payload.get("candidate_sha256")
+    if not isinstance(digest, str) or digest != _candidate_sha256(candidates_path):
+        raise PromotionError(
+            f"human approval {path} does not match the exact candidate proposal"
+        )
+    reviewer = payload.get("reviewer")
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        raise PromotionError(f"human approval {path} must name a non-empty reviewer")
+    approved = payload.get("approved_arxiv_ids")
+    if not isinstance(approved, list) or any(
+        not isinstance(arxiv_id, str) or not arxiv_id.strip() for arxiv_id in approved
+    ):
+        raise PromotionError(
+            f"human approval {path} must contain approved_arxiv_ids as a string list"
+        )
+    approved_ids = frozenset(arxiv_id.strip() for arxiv_id in approved)
+    candidate_ids = {candidate.arxiv_id for candidate in candidates}
+    unknown_ids = sorted(approved_ids - candidate_ids)
+    if unknown_ids:
+        raise PromotionError(
+            f"human approval {path} names candidate ids absent from the proposal: "
+            + ", ".join(unknown_ids)
+        )
+    return HumanApproval(
+        candidate_sha256=digest,
+        approved_arxiv_ids=approved_ids,
+        reviewer=reviewer.strip(),
+    )
 
 
 def _log(message: str) -> None:
@@ -393,7 +465,13 @@ def spec_from_candidate(candidate: Candidate, paper_id: str) -> PaperSpec:
     )
 
 
-def summarize(outcomes: list[Outcome], *, promoted: list[PaperSpec], dry_run: bool) -> dict:
+def summarize(
+    outcomes: list[Outcome],
+    *,
+    promoted: list[PaperSpec],
+    dry_run: bool,
+    human_reviewer: str | None,
+) -> dict:
     """The run, as one JSON-able record. Shaped like `fidelity.audit.summarize`."""
 
     by_status: dict[str, int] = {}
@@ -406,7 +484,10 @@ def summarize(outcomes: list[Outcome], *, promoted: list[PaperSpec], dry_run: bo
         "eligible": by_status.get("eligible", 0),
         "rejected": by_status.get("rejected", 0),
         "unverifiable": by_status.get("unverifiable", 0),
+        "awaiting_human_approval": by_status.get("awaiting-human-approval", 0),
         "already_promoted": by_status.get("already-promoted", 0),
+        "human_approval": human_reviewer is not None,
+        "human_reviewer": human_reviewer,
         "promoted_now": len(promoted),
         "promoted_paper_ids": [spec.paper_id for spec in promoted],
         "rejected_detail": [
@@ -454,6 +535,8 @@ def promote(
     approved_file: Path,
     promote_now: bool,
     limit: int | None,
+    approved_arxiv_ids: frozenset[str] | None = None,
+    human_reviewer: str | None = None,
 ) -> tuple[list[Outcome], list[PaperSpec], dict]:
     """Verify every candidate, then write the accepted ones if asked to.
 
@@ -484,6 +567,16 @@ def promote(
         outcome = verify_candidate(candidate)
         outcomes.append(outcome)
         if not outcome.eligible:
+            continue
+        if promote_now and (
+            approved_arxiv_ids is None or candidate.arxiv_id not in approved_arxiv_ids
+        ):
+            outcomes[-1] = Outcome(
+                candidate=candidate,
+                status="awaiting-human-approval",
+                live=outcome.live,
+                reason="eligible but not selected in the human approval record",
+            )
             continue
         if limit is not None and len(accepted) >= limit:
             continue
@@ -516,7 +609,12 @@ def promote(
             handle.write(lines)
         written = accepted
 
-    summary = summarize(outcomes, promoted=written, dry_run=not promote_now)
+    summary = summarize(
+        outcomes,
+        promoted=written,
+        dry_run=not promote_now,
+        human_reviewer=human_reviewer,
+    )
     return outcomes, written, summary
 
 
@@ -594,6 +692,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--human-approval",
+        type=Path,
+        default=None,
+        help=(
+            "Human-created JSON approval bound to the candidate file. Required with "
+            "--promote; defaults to <candidates>.human-approval.json."
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -618,12 +725,27 @@ def main(argv: list[str] | None = None) -> int:
     _log(f"{len(candidates)} candidate(s) in {args.candidates}")
     _log("verifying every claim against arXiv and GitHub — no model call")
 
+    approval: HumanApproval | None = None
+    if args.promote:
+        approval_path = args.human_approval or _default_human_approval_path(args.candidates)
+        try:
+            approval = read_human_approval(
+                approval_path,
+                candidates_path=args.candidates,
+                candidates=candidates,
+            )
+        except PromotionError as error:
+            _log(f"cannot promote: {error}")
+            return 1
+
     try:
         outcomes, written, summary = promote(
             candidates,
             approved_file=args.approved_file.resolve(),
             promote_now=args.promote,
             limit=args.limit,
+            approved_arxiv_ids=approval.approved_arxiv_ids if approval else None,
+            human_reviewer=approval.reviewer if approval else None,
         )
     except PromotionError as error:
         _log(f"cannot promote: {error}")
@@ -632,7 +754,10 @@ def main(argv: list[str] | None = None) -> int:
     _report(outcomes, summary, dry_run=not args.promote)
 
     if written:
-        _log(f"appended {len(written)} record(s) -> {args.approved_file}")
+        _log(
+            f"appended {len(written)} human-approved record(s) -> {args.approved_file} "
+            f"(reviewer: {approval.reviewer})"
+        )
         if args.approved_file.resolve() == APPROVED_SCALEUP_PATH.resolve():
             _log(
                 "papers.py's loader reads this file automatically — "

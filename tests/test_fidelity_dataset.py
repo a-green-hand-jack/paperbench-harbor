@@ -123,10 +123,33 @@ def test_conversion_audits_by_default(tmp_path: Path) -> None:
             "--source", str(source),
             "--output-dir", str(tmp_path / "out"),
             "--upstream-revision", "deadbeef",
+            "--no-semantic-review",
         ],
     )
     assert result.exit_code == 0, result.output
     assert "Fidelity audit passed" in result.output
+
+
+def test_conversion_enables_semantic_review_by_default(tmp_path: Path, monkeypatch) -> None:
+    source = _make_source(tmp_path)
+    seen: dict = {}
+
+    def _fake(**kwargs):
+        seen.update(kwargs)
+        return [_report("pwb-0001", [])]
+
+    monkeypatch.setattr("paperbench_harbor.cli.audit_dataset", _fake)
+    result = runner.invoke(
+        app,
+        [
+            "paperwrite-bench",
+            "--source", str(source),
+            "--output-dir", str(tmp_path / "out"),
+            "--upstream-revision", "deadbeef",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["semantic_review"] is True
 
 
 def test_no_audit_skips_it(tmp_path: Path) -> None:

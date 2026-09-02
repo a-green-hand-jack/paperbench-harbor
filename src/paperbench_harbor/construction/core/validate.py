@@ -47,9 +47,10 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     FORBIDDEN_PUBLIC_NAMES,
     OVERVIEW_FILENAMES,
-    _copy_public_materials,
     _read_config,
 )
+from paperbench_harbor.adapters.paperwrite_bench.spec import SPEC as PWB_LAYOUT
+from paperbench_harbor.adapters.spec import stage_declared_copies
 from paperbench_harbor.common.audit import LeakageError, audit_forbidden_names
 from paperbench_harbor.construction.core.latex import (
     CompileResult,
@@ -1052,7 +1053,7 @@ def _check_compiles(report: ValidationReport, build_root: Path) -> None:
     submission = staging / "submission"
     submission.mkdir(parents=True)
     try:
-        _copy_public_materials(resources, environment_dir, "short")
+        stage_declared_copies(PWB_LAYOUT, report.paper_dir, staging, "short")
     except FileNotFoundError as error:
         report.fail("oracle-materials", str(error))
         return

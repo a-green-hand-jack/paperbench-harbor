@@ -8,6 +8,8 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from paperbench_harbor.adapters.paperwritingbench.spec import SPEC
+from paperbench_harbor.adapters.spec import find_paper_dirs, stage_declared_copies
 from paperbench_harbor.common.audit import audit_forbidden_names
 from paperbench_harbor.common.manifest import write_source_manifest
 from paperbench_harbor.common.task_contract import (
@@ -17,14 +19,7 @@ from paperbench_harbor.common.task_contract import (
 
 SUPPORTED_PROTOCOLS = {"sparse-plotoff", "sparse-ploton", "dense-plotoff"}
 IMPLEMENTED_PROTOCOLS = {"sparse-plotoff"}
-VENUES = ("cvpr2025", "iclr2025")
-FORBIDDEN_PUBLIC_NAMES = {
-    "idea_dense.md",
-    "main.pdf",
-    "config.yaml",
-    "eval_points.json",
-    "source_manifest.json",
-}
+FORBIDDEN_PUBLIC_NAMES = set(SPEC.forbidden_public_names)
 _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "common" / "templates"
 _CONFERENCE_TEMPLATES_DIR = (
     Path(__file__).resolve().parents[4] / "packaging" / "conference-templates"
@@ -79,53 +74,33 @@ class _PaperMetadata:
 
 def _iter_papers(source: Path) -> list[tuple[Path, _PaperMetadata]]:
     papers: list[tuple[Path, _PaperMetadata]] = []
-    for venue in VENUES:
-        papers_root = source / venue / "papers"
-        if not papers_root.is_dir():
-            continue
-        for paper_dir in papers_root.iterdir():
-            raw = paper_dir / "raw_materials"
-            if not raw.is_dir() or not (raw / "idea_sparse.md").is_file():
-                continue
-            figures = list((raw / "figures").glob("*.*")) if (raw / "figures").is_dir() else []
-            metadata = _PaperMetadata(
-                paper_id=paper_dir.name,
-                venue=venue,
-                num_figures=len(figures),
-                num_tables=0,
-            )
-            papers.append((paper_dir, metadata))
+    for paper_dir in find_paper_dirs(SPEC, source):
+        raw = paper_dir / "raw_materials"
+        venue = paper_dir.relative_to(source).parts[0]
+        figures = list((raw / "figures").glob("*.*")) if (raw / "figures").is_dir() else []
+        metadata = _PaperMetadata(
+            paper_id=paper_dir.name,
+            venue=venue,
+            num_figures=len(figures),
+            num_tables=0,
+        )
+        papers.append((paper_dir, metadata))
     papers.sort(key=lambda item: (item[1].venue, _natural_sort_key(item[1].paper_id)))
     return papers
 
 
 def _copy_public_materials(
-    raw: Path, environment_dir: Path, venue: str
+    paper_dir: Path, task_dir: Path, venue: str
 ) -> tuple[list[Path], dict[Path, tuple[str, Path]], list[str]]:
+    environment_dir = task_dir / "environment"
     materials_dir = environment_dir / "materials"
     materials_dir.mkdir(parents=True, exist_ok=True)
-    copied: list[Path] = []
-    provenance: dict[Path, tuple[str, Path]] = {}
+    copied, provenance = stage_declared_copies(SPEC, paper_dir, task_dir)
     warnings: list[str] = []
 
-    for filename in ("idea_sparse.md", "experimental_log.md"):
-        source = raw / filename
-        if source.is_file():
-            destination = materials_dir / filename
-            shutil.copy2(source, destination)
-            copied.append(destination)
-            provenance[destination] = ("upstream", source)
-            if filename == "experimental_log.md":
-                warnings.extend(normalize_markdown_tables(destination))
-
-    figures = raw / "figures"
-    if figures.is_dir() and any(figures.iterdir()):
-        destination = materials_dir / "figures"
-        shutil.copytree(figures, destination)
-        for path in destination.rglob("*"):
-            if path.is_file():
-                copied.append(path)
-                provenance[path] = ("upstream", figures / path.relative_to(destination))
+    experimental_log = materials_dir / "experimental_log.md"
+    if experimental_log.is_file():
+        warnings.extend(normalize_markdown_tables(experimental_log))
 
     template_dir = _CONFERENCE_TEMPLATES_DIR / venue
     if not template_dir.is_dir():
@@ -138,33 +113,6 @@ def _copy_public_materials(
             provenance[path] = ("harbor_conference_template", template_dir / path.relative_to(destination))
 
     return copied, provenance, warnings
-
-
-def _copy_private_materials(paper_dir: Path, raw: Path, solution_private: Path, tests_private: Path) -> list[Path]:
-    copied: list[Path] = []
-
-    for pdf in paper_dir.glob("*.pdf"):
-        destination = solution_private / pdf.name
-        shutil.copy2(pdf, destination)
-        copied.append(destination)
-        evaluator_copy = tests_private / pdf.name
-        shutil.copy2(pdf, evaluator_copy)
-        copied.append(evaluator_copy)
-
-    idea_dense = raw / "idea_dense.md"
-    if idea_dense.is_file():
-        for target in (solution_private, tests_private):
-            destination = target / "idea_dense.md"
-            shutil.copy2(idea_dense, destination)
-            copied.append(destination)
-
-    for source in sorted(raw.glob("original_paper_gt_citations_*.json")):
-        for target in (solution_private, tests_private):
-            destination = target / source.name
-            shutil.copy2(source, destination)
-            copied.append(destination)
-
-    return copied
 
 
 def _render_templates(
@@ -251,7 +199,6 @@ def _convert_paper(
     upstream_revision: str | None,
     source_root: Path,
 ) -> None:
-    raw = paper_dir / "raw_materials"
     environment_dir = task_dir / "environment"
     solution_dir = task_dir / "solution"
     solution_private = solution_dir / "private"
@@ -266,7 +213,7 @@ def _convert_paper(
     (texmf_dir / ".keep").touch()
 
     public_files, material_provenance, normalization_warnings = _copy_public_materials(
-        raw, environment_dir, metadata.venue
+        paper_dir, task_dir, metadata.venue
     )
     upstream_warnings = [*normalization_warnings]
     known_warning = _UPSTREAM_DATA_WARNINGS.get(task_id)
@@ -283,7 +230,7 @@ def _convert_paper(
             encoding="utf-8",
         )
         public_files.append(warning_path)
-    private_files = _copy_private_materials(paper_dir, raw, solution_private, tests_private)
+    private_files, _ = stage_declared_copies(SPEC, paper_dir, task_dir, private=True)
 
     # Ignore bytecode caches: a .pyc embeds the source path and mtime of the
     # machine that compiled it, so copying one makes the generated task depend
@@ -309,7 +256,11 @@ def _convert_paper(
         environment.get_template("sidecar_entrypoint.sh.j2").render(), encoding="utf-8"
     )
 
-    audit_forbidden_names(environment_dir, FORBIDDEN_PUBLIC_NAMES)
+    audit_forbidden_names(
+        environment_dir,
+        set(SPEC.forbidden_public_names),
+        ignore_globs=SPEC.forbidden_public_ignore_globs,
+    )
 
     _render_templates(
         environment,

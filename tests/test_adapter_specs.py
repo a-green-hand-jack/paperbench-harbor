@@ -1,8 +1,9 @@
 """Does the declarative layout actually describe what the converters do?
 
 `adapters/spec.py` claims each benchmark's layout can be expressed as data.
-This module is the evidence for that claim, and it is the only thing standing
-behind it: nothing consumes a spec as the source of truth yet.
+This module checks that the production spec-driven staging helper produces the
+declared surfaces exactly; the fidelity audit supplies a separate byte-origin
+check instead of treating this declaration as self-certifying.
 
 The check runs a real conversion over each benchmark's existing fixture and
 compares the files that came out against what the spec predicts, both ways.
@@ -56,7 +57,11 @@ def _actual_writer_copies(task_dir: Path, spec) -> set[str]:
         for path in root.rglob("*")
         if path.is_file()
         for rel in [f"environment/{path.relative_to(root).as_posix()}"]
-        if not classify_generated_vendor(rel) and rel not in spec.generated_public
+        if not classify_generated_vendor(rel)
+        and not any(
+            rel == pattern or (pattern.endswith("/") and rel.startswith(pattern))
+            for pattern in spec.generated_public
+        )
     }
 
 

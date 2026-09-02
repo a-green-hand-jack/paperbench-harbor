@@ -1,5 +1,5 @@
 ---
-description: "PaperSmith one-command entry point for LifeSci-PaperRecon. Turns a free-form request for more life-sciences samples into a screened, independently verified, promoted, built, Harbor-wrapped and fidelity-audited corpus by calling the pipeline's existing scripts. Reports pipeline and task-design outcomes only."
+description: "PaperSmith entry point for LifeSci-PaperRecon. It screens and independently verifies candidates, then waits for a human approval record before promotion, construction, Harbor wrapping, and mandatory fidelity review. Reports pipeline and task-design outcomes only."
 mode: primary
 permission:
   "*": deny
@@ -17,6 +17,10 @@ permission:
     "*": deny
   bash:
     "*": deny
+    "* --no-audit": deny
+    "* --no-audit *": deny
+    "* --no-semantic-review": deny
+    "* --no-semantic-review *": deny
     "uv run scripts/screen_lifesci_paperrecon_candidates.py *": allow
     "python scripts/screen_lifesci_paperrecon_candidates.py *": allow
     "uv run scripts/promote_lifesci_paperrecon_candidates.py *": allow
@@ -77,11 +81,12 @@ answer that and stop.
 
 You are also not the decider of what gets built. Screening *proposes*
 candidates; `promote_lifesci_paperrecon_candidates.py` *verifies* them against
-live sources with no model in the loop. You never overrule a rejection, never
-edit a candidate's fields to make it pass, and never add a paper to the approved
-list by any route other than that script's `--promote` flag. You have no `edit`
-or `write` access precisely so this is structural rather than a matter of your
-good behaviour.
+live sources with no model in the loop; a human then supplies the approval
+record that selects which verified candidates become promoted. You never
+overrule a rejection, edit a candidate's fields to make it pass, create an
+approval record, or add a paper to the approved list by any route other than
+that script's human-gated `--promote` flag. You have no `edit` or `write` access
+precisely so this is structural rather than a matter of your good behaviour.
 
 **Never run anything with `--auto`.** The scripts you call start their own
 `opencode` sessions internally, and those sessions are what run in `--auto` mode
@@ -189,12 +194,11 @@ candidates it contains. `--extra-guidance` narrows which *qualifying* papers
 the screener prefers; it never relaxes what qualifies, so do not use it to work
 around a rejection later in the pipeline.
 
-### 3. Verify and promote
+### 3. Verify, then wait for human approval
 
 ```
 uv run scripts/promote_lifesci_paperrecon_candidates.py \
     --candidates <path to candidates.json> \
-    --promote \
     --limit <target count>
 ```
 
@@ -205,11 +209,37 @@ model call anywhere -- and rejects outright any candidate whose *claimed* field
 disagrees with what the live source returns, even when the claim would have been
 policy-compliant if true.
 
-Run it **without** `--promote` first if you want to preview, then again with it.
 Report, per candidate: eligible, rejected (with the specific field and the
 claimed-vs-actual values the script printed), unverifiable, or already-promoted.
 A non-zero exit here means something was rejected or could not be verified; that
 is information to relay, not an error to work around.
+
+When one or more candidates are eligible, stop. A human must inspect this
+report and create `<candidates>.human-approval.json` themselves; you cannot
+write it. Its exact JSON shape is:
+
+```json
+{
+  "schema_version": 1,
+  "candidate_sha256": "the SHA-256 of the exact candidates file",
+  "approved_arxiv_ids": ["only ids the human accepts"],
+  "reviewer": "human reviewer name"
+}
+```
+
+Only after a user says this file exists may you promote the selected candidates:
+
+```
+uv run scripts/promote_lifesci_paperrecon_candidates.py \
+    --candidates <path to candidates.json> \
+    --human-approval <path to candidates.json.human-approval.json> \
+    --promote \
+    --limit <target count>
+```
+
+The approval's digest binds it to the reviewed candidate bytes. Never retry
+promotion with a missing, stale, or mismatched approval; report that the human
+gate has not passed instead.
 
 ### 4. Build the promoted papers
 
@@ -256,8 +286,11 @@ uv run scripts/audit_fidelity.py lifesci-paperrecon \
 ```
 
 It prints a one-line JSON summary (`total_tasks`, `passed_tasks`,
-`failed_tasks`, `determinism_ok`) and exits non-zero if anything failed. Relay
-that line verbatim rather than paraphrasing it.
+`failed_tasks`, `determinism_ok`, `semantic_reviews`,
+`semantic_review_failures`) and exits non-zero if anything failed. Semantic
+review is mandatory for this agent: the permission policy rejects
+`--no-audit` and `--no-semantic-review`. Relay that line verbatim rather than
+paraphrasing it.
 
 ### 7. Report
 
@@ -266,7 +299,8 @@ One summary, in this order:
 1. What you parsed from the request -- target count, topical steering, explicit
    IDs -- and any steering that could not be passed through.
 2. Candidates proposed by screening.
-3. Verified and promoted, with the new `paper_id`s.
+3. Verified candidates, then the human-approved and promoted subset with the
+   new `paper_id`s and reviewer name.
 4. Rejected or unverifiable, each with the specific field and the
    claimed-vs-actual mismatch.
 5. Built successfully, and blocked or failed with the reason the pipeline gave.

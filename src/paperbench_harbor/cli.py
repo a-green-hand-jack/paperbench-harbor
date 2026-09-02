@@ -28,8 +28,21 @@ _AUDIT_HELP = (
     "costs two more full conversions and stays in scripts/audit_fidelity.py."
 )
 
+_SEMANTIC_REVIEW_HELP = (
+    "Run the isolated semantic review after the deterministic fidelity checks. "
+    "It is on by default; --no-semantic-review is an explicit cost-saving override. "
+    "A malformed or rejecting verdict makes conversion fail."
+)
 
-def _audit_or_exit(*, benchmark: str, source: Path, output_dir: Path, protocol: str) -> None:
+
+def _audit_or_exit(
+    *,
+    benchmark: str,
+    source: Path,
+    output_dir: Path,
+    protocol: str,
+    semantic_review: bool,
+) -> None:
     """Audit a freshly converted dataset, and fail the command if it does not pass.
 
     A conversion command that exits 0 on a tree the audit would reject is the
@@ -38,7 +51,11 @@ def _audit_or_exit(*, benchmark: str, source: Path, output_dir: Path, protocol: 
     """
     try:
         reports = audit_dataset(
-            benchmark=benchmark, source=source, dataset=output_dir, protocol=protocol
+            benchmark=benchmark,
+            source=source,
+            dataset=output_dir,
+            protocol=protocol,
+            semantic_review=semantic_review,
         )
     except DatasetAuditError as exc:
         typer.echo(f"fidelity audit could not run: {exc}", err=True)
@@ -76,6 +93,7 @@ def paperwritingbench_command(
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
+    semantic_review: Annotated[bool, typer.Option(help=_SEMANTIC_REVIEW_HELP)] = True,
 ) -> None:
     """Convert PaperWritingBench samples into Harbor tasks."""
     if not upstream_revision.strip():
@@ -96,6 +114,7 @@ def paperwritingbench_command(
             source=source,
             output_dir=output_dir,
             protocol=protocol,
+            semantic_review=semantic_review,
         )
 
 
@@ -108,6 +127,7 @@ def paperwrite_bench_command(
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
+    semantic_review: Annotated[bool, typer.Option(help=_SEMANTIC_REVIEW_HELP)] = True,
 ) -> None:
     """Convert PaperWrite-Bench samples into Harbor tasks."""
     if not upstream_revision.strip():
@@ -128,6 +148,7 @@ def paperwrite_bench_command(
             source=source,
             output_dir=output_dir,
             protocol=overview,
+            semantic_review=semantic_review,
         )
 
 
@@ -142,6 +163,7 @@ def lifesci_paperrecon_command(
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
+    semantic_review: Annotated[bool, typer.Option(help=_SEMANTIC_REVIEW_HELP)] = True,
 ) -> None:
     """Convert a LifeSci-PaperRecon source corpus into Harbor tasks.
 
@@ -169,7 +191,11 @@ def lifesci_paperrecon_command(
         from paperbench_harbor.adapters.lifesci_paperrecon.harbor import BENCHMARK
 
         _audit_or_exit(
-            benchmark=BENCHMARK, source=source, output_dir=output_dir, protocol=overview
+            benchmark=BENCHMARK,
+            source=source,
+            output_dir=output_dir,
+            protocol=overview,
+            semantic_review=semantic_review,
         )
 
 

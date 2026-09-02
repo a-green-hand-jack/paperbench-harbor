@@ -74,6 +74,7 @@ def lifesci_paperrecon_conversion_config(
         agents_md_dir=AGENTS_MD_DIR,
         agents_md_fallback=AGENTS_MD_FALLBACK,
         include_official_grader=False,
+        layout_spec=SPEC,
     )
 
 

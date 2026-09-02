@@ -52,11 +52,18 @@ conversion command: it is a property of the converter rather than of any task,
 and establishing it costs two further full conversions.
 
 The audit writes one `<task-id>.json` report per task plus a `summary.json`
-with the overall totals and the determinism result. The machine-readable
-source-to-Harbor transform declarations live in
-`src/paperbench_harbor/fidelity/transforms.py`; every writer-visible file must
-be accounted for by a declared copy/rename/move/generated/vendor transform, and
-any undeclared or semantically different file fails the audit.
+with overall totals, determinism, semantic-review outcomes, and a version-pinned
+evidence block: upstream revision/tree digest, dataset tree digest, converter
+revision, and reviewer selection. Retain that generated report with the
+released dataset version; it is the audit evidence, rather than a copied table
+of counts in this document.
+
+Source-to-Harbor layout lives in each benchmark's
+`src/paperbench_harbor/adapters/*/spec.py` and drives production staging. The
+audit does not trust that declaration on its own: it independently recovers
+writer origins from actual SHA-256 bytes, then compares the recovered evidence
+to the spec. Every unexplained writer file, altered undeclared copy, private
+content leak, or semantic-review rejection fails the audit.
 
 The converter CLI now requires a non-empty `--upstream-revision`, which is
 recorded both in each task's `source_manifest.json` and in the dataset-level
@@ -200,30 +207,10 @@ These results validate task conversion and Harbor's binary verifier contract.
 They do not constitute upstream evaluator parity results or numeric evidence
 that the official judge-backed metrics match upstream runs.
 
-### Task-fidelity audit results
+### Task-fidelity audit evidence
 
-The reproducible audit (Section "Reproducible task-fidelity audit") is run
-against the fixed upstream revisions and the published Harbor dataset revision
-(`Jack-Jieke-Wu/Paper-Writing-Exam` @ `v0.2.0`,
-`5fe375dbd440409f0180e10dee213b1685c8f40d`). Results (2026-08-30, Ubuntu box):
-
-| Dataset | Tasks | Passed | Writer files checked | Verifier entries checked | Determinism |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `paperwrite-bench-short` | 51 | 51 | 10,919 | 458 | tree+manifest identical |
-| `paperwritingbench-sparse-plotoff` | 200 | 200 | 2,039 | 1,600 | tree+manifest identical |
-
-- Every writer-visible file matched its declared upstream source by SHA-256;
-  all remaining writer files were declared generated/vendor artifacts.
-- Every verifier-only private copy matched its upstream source byte-for-byte
-  and none of that content appeared in the writer environment.
-- Task contract checks (effective agent and verifier network policy, separate
-  verifier environment, submission entry points) passed for all 251 tasks.
-- Repeated conversion of each full fixed dataset produced identical task trees,
-  manifests, and hashes.
-
-Per-task reports and the dataset-level `summary.json` are written to
-`reports/pwb/` and `reports/pwbw/` when the audit is run (they are generated
-artifacts, not committed).
-
-The numbers in this file were previously manual conclusions; the audit now
-provides the machine-checked equivalent.
+Do not copy task counts or pass/fail claims here. Each fixed dataset revision
+must retain the actual `summary.json` and per-task reports produced by the
+command above. Those artifacts include the input revision and hashes needed to
+establish what was audited, and they make the report independently inspectable
+without treating prose as an authority.

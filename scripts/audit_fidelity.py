@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -58,6 +59,20 @@ def _tree_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _code_revision() -> str | None:
+    """The converter source revision that produced this audit evidence."""
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            check=True,
+            encoding="utf-8",
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
 def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn) -> int:
     try:
         reports = audit_dataset(
@@ -65,6 +80,8 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
             source=args.source,
             dataset=args.dataset,
             protocol=protocol,
+            semantic_review=args.semantic_review,
+            reviewer_model=args.reviewer_model,
         )
     except DatasetAuditError as exc:
         raise SystemExit(str(exc)) from exc
@@ -174,11 +191,48 @@ def _write_reports(args: argparse.Namespace, reports, determinism_fn) -> int:
         )
     summary = summarize(reports)
     determinism_fn(args, summary)
+    summary["evidence"] = {
+        "schema_version": 1,
+        "benchmark": reports[0].benchmark if reports else None,
+        "upstream_revision": args.upstream_revision,
+        "upstream_tree_sha256": _tree_digest(args.source),
+        "dataset_tree_sha256": _tree_digest(args.dataset),
+        "converter_revision": _code_revision(),
+        "semantic_review_required": args.semantic_review,
+        "reviewer_model": args.reviewer_model,
+    }
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
-    print(json.dumps({k: summary[k] for k in ("total_tasks", "passed_tasks", "failed_tasks", "determinism_ok")}))
+    print(
+        json.dumps(
+            {
+                key: summary[key]
+                for key in (
+                    "total_tasks",
+                    "passed_tasks",
+                    "failed_tasks",
+                    "determinism_ok",
+                    "semantic_reviews",
+                    "semantic_review_failures",
+                )
+            }
+        )
+    )
     return 0 if summary["failed_tasks"] == 0 and summary.get("determinism_ok") else 1
+
+
+def _add_semantic_review_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--semantic-review",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="run the isolated semantic reviewer after deterministic audit checks",
+    )
+    parser.add_argument(
+        "--reviewer-model",
+        help="override the isolated semantic reviewer model",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -191,6 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
     pwb.add_argument("--upstream-revision", required=True, help="pinned upstream revision")
     pwb.add_argument("--overview", default="short", choices=["short", "long"])
     pwb.add_argument("--output", type=Path, required=True, help="report output directory")
+    _add_semantic_review_options(pwb)
     pwb.set_defaults(func=_audit_paperwrite)
 
     bio = sub.add_parser(
@@ -203,6 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bio.add_argument("--overview", default="short", choices=["short", "long"])
     bio.add_argument("--output", type=Path, required=True, help="report output directory")
+    _add_semantic_review_options(bio)
     bio.set_defaults(func=_audit_lifesci_paperrecon)
 
     pwbw = sub.add_parser("paperwritingbench", help="Audit PaperWritingBench dataset")
@@ -211,6 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     pwbw.add_argument("--upstream-revision", required=True, help="pinned upstream revision")
     pwbw.add_argument("--protocol", default="sparse-plotoff", choices=["sparse-plotoff"])
     pwbw.add_argument("--output", type=Path, required=True, help="report output directory")
+    _add_semantic_review_options(pwbw)
     pwbw.set_defaults(func=_audit_paperwritingbench)
     return parser
 

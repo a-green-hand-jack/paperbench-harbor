@@ -14,16 +14,6 @@ from paperbench_harbor.adapters.paperwritingbench.converter import (
     convert_paperwritingbench,
 )
 from paperbench_harbor.fidelity.audit import run_fidelity_audit, summarize
-from paperbench_harbor.fidelity.transforms import (
-    KIND_COPY,
-    KIND_GENERATED,
-    KIND_RENAME,
-    classify_generated_vendor,
-    pwb_verifier_entries,
-    pwb_writer_transforms,
-    pwbw_verifier_entries,
-    pwbw_writer_transforms,
-)
 
 PWB_PAPERS = ("paper_1", "paper_2", "paper_3")
 
@@ -125,41 +115,6 @@ def test_pwbw_manifest_records_revision(pwbw_source: Path, tmp_path: Path) -> No
         assert entry["protocol"] == "sparse-plotoff"
 
 
-def test_pwb_transforms_declare_all_writer_files(pwb_source: Path, tmp_path: Path) -> None:
-    out = _pwb_dataset(pwb_source, tmp_path)
-    task_dir = out / "pwb-0001"
-    transforms = pwb_writer_transforms(pwb_source, "paper_1", task_dir, "short")
-    targets = {t.target for t in transforms}
-
-    # Overview is a rename, upstream files are copies, AGENTS.md generated.
-    assert any(t.kind == KIND_RENAME and t.target == "environment/materials/research_overview.md" for t in transforms)
-    assert any(t.kind == KIND_COPY and t.target == "environment/materials/template.tex" for t in transforms)
-    assert any(t.kind == KIND_COPY and t.target == "environment/materials/figures/a.png" for t in transforms)
-    assert any(t.kind == KIND_GENERATED and t.target == "environment/materials/AGENTS.md" for t in transforms)
-
-    env_files = {p.relative_to(task_dir / "environment").as_posix() for p in (task_dir / "environment").rglob("*") if p.is_file()}
-    # Every writer-visible file is either declared or a known vendor/generated artifact.
-    for rel in env_files:
-        full = f"environment/{rel}"
-        assert full in targets or classify_generated_vendor(full), f"undeclared: {full}"
-
-
-def test_pwbw_transforms_declare_all_writer_files(pwbw_source: Path, tmp_path: Path) -> None:
-    out = _pwbw_dataset(pwbw_source, tmp_path)
-    task_dir = out / "pwbw-0001"
-    paper_id = "cvpr2025_0b62029e18"
-    transforms = pwbw_writer_transforms(pwbw_source, paper_id, task_dir, "cvpr2025")
-    targets = {t.target for t in transforms}
-
-    assert any(t.kind == KIND_COPY and t.target == "environment/materials/idea_sparse.md" for t in transforms)
-    assert any(t.kind == KIND_COPY and t.target == "environment/materials/figures/figure_1.png" for t in transforms)
-
-    env_files = {p.relative_to(task_dir / "environment").as_posix() for p in (task_dir / "environment").rglob("*") if p.is_file()}
-    for rel in env_files:
-        full = f"environment/{rel}"
-        assert full in targets or classify_generated_vendor(full), f"undeclared: {full}"
-
-
 def test_pwb_fidelity_audit_passes(pwb_source: Path, tmp_path: Path) -> None:
     out = _pwb_dataset(pwb_source, tmp_path)
     for index, paper_id in enumerate(PWB_PAPERS, start=1):
@@ -255,6 +210,29 @@ def test_pwb_audit_detects_verifier_leakage(pwb_source: Path, tmp_path: Path) ->
     assert any("leaked into writer environment" in e for e in report.errors)
 
 
+def test_pwb_audit_ignores_generated_vendor_bytes_matching_private_source(
+    pwb_source: Path, tmp_path: Path
+) -> None:
+    out = _pwb_dataset(pwb_source, tmp_path)
+    task_dir = out / "pwb-0001"
+    # A generated style can happen to have the same bytes as a private source;
+    # it is not a writer-visible copy and must not become a false leakage finding.
+    generated = task_dir / "environment" / "texmf" / "coincidental.sty"
+    generated.write_bytes((pwb_source / "paper_1" / "original" / "main.tex").read_bytes())
+
+    report = run_fidelity_audit(
+        benchmark="PaperWrite-Bench",
+        task_id="pwb-0001",
+        upstream_paper_id="paper_1",
+        upstream_root=pwb_source,
+        task_dir=task_dir,
+        protocol="short",
+        venue=None,
+    )
+
+    assert report.ok, report.errors
+
+
 def test_summarize_reports_failures() -> None:
     from paperbench_harbor.fidelity.audit import TaskReport
 
@@ -266,21 +244,3 @@ def test_summarize_reports_failures() -> None:
     assert summary["passed_tasks"] == 1
     assert summary["failed_tasks"] == 1
     assert summary["failed_tasks_detail"][0]["task_id"] == "pwb-0002"
-
-
-def test_pwb_verifier_entries_cover_private_files(pwb_source: Path, tmp_path: Path) -> None:
-    out = _pwb_dataset(pwb_source, tmp_path)
-    entries = pwb_verifier_entries(pwb_source, "paper_1", out / "pwb-0001", "short")
-    upstream_set = {e.upstream for e in entries}
-    assert "paper_1/original/main.tex" in upstream_set
-    assert "paper_1/resources/eval_points.json" in upstream_set
-    assert "paper_1/resources/research_overview_long.md" in upstream_set
-
-
-def test_pwbw_verifier_entries_cover_private_files(pwbw_source: Path, tmp_path: Path) -> None:
-    out = _pwbw_dataset(pwbw_source, tmp_path)
-    entries = pwbw_verifier_entries(pwbw_source, "cvpr2025_0b62029e18", out / "pwbw-0001", "cvpr2025")
-    upstream_set = {e.upstream for e in entries}
-    assert any(u.endswith(".pdf") for u in upstream_set)
-    assert any("original_paper_gt_citations" in u for u in upstream_set)
-    assert any(u.endswith("idea_dense.md") for u in upstream_set)

@@ -7,13 +7,11 @@ means writing all three again -- measured at 550-800 hand-written lines when the
 corpus can be pre-shaped into the PaperWrite-Bench layout, and 1500-2200 when it
 cannot.
 
-This module is the first step out of that: one declarative description of where
-a benchmark's material lives and where it goes. Nothing consumes it as the
-source of truth yet. A spec is currently *checked against* its converter -- see
-`tests/test_adapter_specs.py`, which converts a fixture and asserts the spec
-predicts exactly the copied files that came out. That is deliberate. The value
-of the exercise is evidence that the layouts really are expressible as data
-before any converter is rewritten to depend on it.
+The shared staging helper below now consumes one declarative description as the
+production source of truth. Fidelity does not simply re-read that declaration:
+it recovers origins from task and upstream bytes, then compares the recovered
+evidence against the spec. That preserves an independent check even though the
+converter has stopped maintaining a second layout table.
 
 What is intentionally **not** here
 ----------------------------------
@@ -32,6 +30,7 @@ description.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,8 +72,16 @@ class CopyRule:
     #: where it fired also ships `upstream_data_warnings.md` saying so.
     may_be_rewritten: bool = False
 
+    #: Restrict a rule to selected protocols. This makes the non-selected
+    #: PaperWrite-Bench overview explicit verifier-only material without
+    #: pretending that both variants are copied in one conversion.
+    protocols: tuple[str, ...] = ()
+
     def targets(self) -> tuple[str, ...]:
         return (self.target, *self.extra_targets)
+
+    def applies_to(self, protocol: str) -> bool:
+        return not self.protocols or protocol in self.protocols
 
 
 @dataclass(frozen=True)
@@ -98,6 +105,10 @@ class UpstreamLayoutSpec:
     #: independent layer over the copy rules: a rule that accidentally staged
     #: ground truth would still be caught here.
     forbidden_public_names: frozenset[str] = frozenset()
+    #: Paths relative to ``environment/`` that may contain names otherwise
+    #: forbidden to the writer. A vendored code checkout is source material,
+    #: not ground truth, so its upstream filenames are not leak evidence.
+    forbidden_public_ignore_globs: tuple[str, ...] = ()
     #: Writer-visible paths the conversion *generates* rather than copies.
     #: `fidelity/transforms.classify_generated_vendor` already covers what is
     #: generated for every benchmark; these are the per-benchmark additions it
@@ -187,6 +198,8 @@ def predict_copies(
     rules = spec.private if private else spec.public
     predicted: dict[str, Path] = {}
     for rule in rules:
+        if not rule.applies_to(protocol):
+            continue
         resolved = spec.resolve(rule, protocol)
         matches = list(_expand(paper_dir, resolved))
         if not matches and rule.required:
@@ -209,3 +222,71 @@ def predict_copies(
                     name = match.name if target.endswith("/") else None
                     predicted[f"{target}{name}" if name else target] = match
     return predicted
+
+
+def stage_declared_copies(
+    spec: UpstreamLayoutSpec,
+    paper_dir: Path,
+    task_dir: Path,
+    protocol: str = "",
+    *,
+    private: bool = False,
+) -> tuple[list[Path], dict[Path, tuple[str, Path]]]:
+    """Copy one spec surface into a task and record its upstream provenance.
+
+    This is the converter-side counterpart to :func:`predict_copies`: the
+    latter is read-only evidence for the audit, while this function is the
+    production implementation of a layout rule.  It deliberately keeps only
+    filesystem mechanics here.  Benchmark-specific normalization, rendering,
+    and vendor staging remain explicit converter hooks.
+
+    Tree copies preserve symlinks and drop repository/cache residue exactly as
+    the original benchmark converters did.  ``dirs_exist_ok`` supports the
+    PaperWrite-Bench verifier tree, where the ``original`` and ``resources``
+    subtrees are intentionally combined under one evaluator root.
+    """
+    rules = spec.private if private else spec.public
+    copied: list[Path] = []
+    provenance: dict[Path, tuple[str, Path]] = {}
+
+    for rule in rules:
+        if not rule.applies_to(protocol):
+            continue
+        resolved = spec.resolve(rule, protocol)
+        matches = list(_expand(paper_dir, resolved))
+        if not matches and rule.required:
+            raise FileNotFoundError(f"{spec.benchmark}: required source missing: {resolved}")
+        for source in matches:
+            for target in rule.targets():
+                destination = task_dir / target
+                if rule.kind == "tree":
+                    if not source.is_dir() or not any(source.iterdir()):
+                        continue
+                    shutil.copytree(
+                        source,
+                        destination,
+                        symlinks=True,
+                        ignore=shutil.ignore_patterns(*rule.tree_excludes, "*.pyc"),
+                        dirs_exist_ok=destination.exists(),
+                    )
+                    for upstream_file in sorted(source.rglob("*")):
+                        if not upstream_file.is_file():
+                            continue
+                        relative = upstream_file.relative_to(source)
+                        if any(part in rule.tree_excludes for part in relative.parts):
+                            continue
+                        if upstream_file.suffix == ".pyc":
+                            continue
+                        copied_file = destination / relative
+                        copied.append(copied_file)
+                        provenance[copied_file] = ("upstream", upstream_file)
+                    continue
+                if not source.is_file():
+                    continue
+                copied_file = destination / source.name if target.endswith("/") else destination
+                copied_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, copied_file)
+                copied.append(copied_file)
+                provenance[copied_file] = ("upstream", source)
+
+    return copied, provenance

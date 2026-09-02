@@ -1,8 +1,8 @@
 """PaperWrite-Bench's layout, as data.
 
-Every path here was read off `converter.py`, not out of the upstream README:
-the point of the exercise is a description of what the conversion *does*, which
-`tests/test_adapter_specs.py` then checks against what it actually produces.
+The shared conversion staging helper consumes this spec directly. The
+regression tests check its predicted copies against the produced task tree, and
+the fidelity audit independently recovers source origins from bytes.
 
 LifeSci-PaperRecon reuses this shape (see `SPEC` in
 `adapters/lifesci_paperrecon/harbor.py`) because its corpus is built to this
@@ -52,6 +52,16 @@ PRIVATE_RULES = (
         "solution/private/eval_points.json",
         extra_targets=("tests/private/eval_points.json",),
     ),
+    CopyRule(
+        "resources/research_overview_short.md",
+        "tests/private/research_overview_short.md",
+        protocols=("long",),
+    ),
+    CopyRule(
+        "resources/research_overview_long.md",
+        "tests/private/research_overview_long.md",
+        protocols=("short",),
+    ),
     CopyRule("original/main.tex", "tests/private/ground_truth.tex"),
     CopyRule("resources/figure_summary.txt", "tests/private/figure_summary.txt"),
     CopyRule("resources/table_summary.txt", "tests/private/table_summary.txt"),
@@ -72,6 +82,7 @@ SPEC = UpstreamLayoutSpec(
     forbidden_public_names=frozenset(
         {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json"}
     ),
+    forbidden_public_ignore_globs=("materials/code/**",),
     generated_public=(
         "environment/materials/AGENTS.md",
         # Written only when the conversion had to drop a graphic the upstream

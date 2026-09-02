@@ -48,6 +48,8 @@ def audit_dataset(
     source: Path,
     dataset: Path,
     protocol: str,
+    semantic_review: bool = False,
+    reviewer_model: str | None = None,
 ) -> list[TaskReport]:
     """Run the per-task fidelity audit across one generated dataset.
 
@@ -70,6 +72,8 @@ def audit_dataset(
                 task_dir=task_dir,
                 protocol=protocol,
                 venue=entry.get("venue"),
+                semantic_review=semantic_review,
+                reviewer_model=reviewer_model,
             )
         )
     return reports

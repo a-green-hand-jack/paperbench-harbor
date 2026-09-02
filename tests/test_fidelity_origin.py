@@ -84,7 +84,7 @@ def test_edited_content_stops_being_upstream(tmp_path: Path) -> None:
 
     expected = predict_copies(pwb_spec.SPEC, paper_dir, "short")
     findings = compare_to_expectation(report, expected, paper_dir)
-    assert any("does not have" in f for f in findings)
+    assert any("content mismatch" in f for f in findings)
 
 
 def test_a_spec_naming_the_wrong_source_is_caught(tmp_path: Path) -> None:

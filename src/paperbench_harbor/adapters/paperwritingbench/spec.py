@@ -1,18 +1,16 @@
 """PaperWritingBench's layout, as data.
 
-The shape that made this a separate 426-line converter rather than a config of
-the PaperWrite-Bench one is visible in three fields below: papers are nested
-under a hand-listed venue (`VENUES`), the writer's material is `raw_materials/`
-rather than `resources/`, and the conference kit is a whole directory keyed by
-venue instead of individual style files discovered from the LaTeX.
+The shape that keeps this benchmark's explicit hooks separate from
+PaperWrite-Bench is visible in three fields below: papers are nested by venue,
+the writer's material is `raw_materials/` rather than `resources/`, and the
+conference kit is a whole directory keyed by venue instead of individual style
+files discovered from the LaTeX. Discovery itself is now data-driven through
+`PAPER_GLOB`, not a hand-maintained venue list in the converter.
 """
 
 from __future__ import annotations
 
 from paperbench_harbor.adapters.spec import CopyRule, UpstreamLayoutSpec
-
-#: Hand-listed, because the upstream archive has no manifest to enumerate.
-VENUES = ("cvpr2025", "iclr2025")
 
 PAPER_GLOB = "*/papers/*"
 DISCOVERY_MARKER = "raw_materials/idea_sparse.md"
@@ -71,6 +69,9 @@ SPEC = UpstreamLayoutSpec(
             "source_manifest.json",
         }
     ),
-    generated_public=("environment/materials/upstream_data_warnings.md",),
+    generated_public=(
+        "environment/materials/upstream_data_warnings.md",
+        "environment/paper_orchestra/",
+    ),
     generated_private=("tests/private/source_manifest.json",),
 )
