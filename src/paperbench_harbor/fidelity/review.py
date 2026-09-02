@@ -75,10 +75,10 @@ def prepare_conversion_review_dir(
             raise FileNotFoundError(f"conversion review input missing: {source}")
         shutil.copy2(source, task_evidence / filename)
 
-    materials = task_dir / "environment" / "materials"
-    if not materials.is_dir():
-        raise FileNotFoundError(f"conversion review input missing: {materials}")
-    _copytree(materials, task_evidence / "materials")
+    environment = task_dir / "environment"
+    if not environment.is_dir():
+        raise FileNotFoundError(f"conversion review input missing: {environment}")
+    _copytree(environment, task_evidence / "environment")
     return review_dir
 
 
@@ -93,7 +93,8 @@ evidence staged below, then write exactly one JSON verdict.
 
 - `{review_dir}/upstream/` is the complete upstream sample used for conversion.
 - `{review_dir}/task/instruction.md` and `task.toml` are the generated task contract.
-- `{review_dir}/task/materials/` is everything writer-visible in the Harbor task.
+- `{review_dir}/task/environment/` is everything writer-visible in the Harbor task,
+  including the material directory and the isolated LaTeX support files.
 
 You were intentionally not given a layout spec, converter code, transform
 declarations, `solution/`, or `tests/`. Do not infer facts from files you do not

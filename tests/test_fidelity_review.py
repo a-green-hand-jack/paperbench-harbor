@@ -43,7 +43,8 @@ def test_conversion_review_stages_only_upstream_and_writer_evidence(tmp_path: Pa
     assert (staged / "upstream" / "original" / "main.tex").is_file()
     assert (staged / "task" / "instruction.md").is_file()
     assert (staged / "task" / "task.toml").is_file()
-    assert (staged / "task" / "materials" / "research_overview.md").is_file()
+    assert (staged / "task" / "environment" / "materials" / "research_overview.md").is_file()
+    assert (staged / "task" / "environment" / "texmf" / ".keep").is_file()
     assert not (staged / "task" / "solution").exists()
     assert not (staged / "task" / "tests").exists()
 

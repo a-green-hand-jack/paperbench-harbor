@@ -181,7 +181,10 @@ def _sanitize_unavailable_graphics(template_tex: Path, materials_dir: Path) -> l
         ]
         if missing:
             output.append("% Harbor omitted unavailable upstream graphic: " + line)
-            warnings.extend(f"Removed unavailable upstream graphic `{graphic}` from template.tex." for graphic in missing)
+            warnings.extend(
+                f"Removed unavailable upstream graphic `{graphic}` from template.tex."
+                for graphic in missing
+            )
         else:
             output.append(line)
     normalized = "\n".join(output) + "\n"
@@ -201,9 +204,15 @@ def _copy_styles(template_tex: Path, environment_dir: Path, tests_dir: Path) -> 
 
 
 def _referenced_bst_files(*tex_files: Path) -> dict[str, Path]:
-    """Map bibliography styles referenced by any source to bundled files."""
+    """Map bibliography styles to an upstream file before a generic fallback.
+
+    A paper-local `.bst` is part of the writer's compilation contract. Looking
+    only in the Harbor-supplied conference kits made a valid LifeSci template
+    advertise a bibliography style that the task did not actually provide.
+    """
     found: dict[str, Path] = {}
-    search_dirs = [_STYLES_DIR]
+    search_dirs = [tex_file.parent for tex_file in tex_files if tex_file.is_file()]
+    search_dirs.append(_STYLES_DIR)
     if _CONFERENCE_TEMPLATES_DIR.is_dir():
         search_dirs.extend(sorted(_CONFERENCE_TEMPLATES_DIR.iterdir()))
     for tex_file in tex_files:
@@ -222,9 +231,7 @@ def _referenced_bst_files(*tex_files: Path) -> dict[str, Path]:
     return found
 
 
-def _copy_bibliography_styles(
-    environment_dir: Path, tests_dir: Path, *tex_files: Path
-) -> None:
+def _copy_bibliography_styles(environment_dir: Path, tests_dir: Path, *tex_files: Path) -> None:
     styles = _referenced_bst_files(*tex_files)
     for name, style in styles.items():
         for target_root in (environment_dir, tests_dir):
@@ -302,9 +309,12 @@ def _resource_conditional_agents_md(agents_md: str, has_figures: bool) -> str:
 
     if has_figures:
         return agents_md
-    return "\n".join(
-        line for line in agents_md.splitlines() if "/workspace/materials/figures/" not in line
-    ) + "\n"
+    return (
+        "\n".join(
+            line for line in agents_md.splitlines() if "/workspace/materials/figures/" not in line
+        )
+        + "\n"
+    )
 
 
 def _convert_paper(

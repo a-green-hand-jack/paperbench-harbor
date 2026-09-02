@@ -9,7 +9,7 @@ You are planning to submit to a peer-reviewed life-sciences journal, which has g
 - In general, try to use the available space and include all relevant information.
 - Do not change the overall style which is mandated by the journal. Keep to the current method of including the references.bib file.
 - Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`, preserving any needed subdirectories, and reference them with paths relative to the submission root (for example, `\includegraphics{figures/foo.png}`). If the template has a `\graphicspath` that prepends `figures/`, remove or update it so it does not prepend `figures/` twice.
-- Do not add `Acknowledgements` section to the paper.
+- Do not add an `Acknowledgements` section unless it is already present in the supplied template; preserve an existing heading without adding new content.
 - Use one backslash for LaTeX commands, such as `\section`. Do not write `\\section`. Standard LaTeX table row endings (`\\`) are allowed.
 
 The files `/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only; do not modify them. Write the completed document to `/workspace/submission/main.tex`. Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`. Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently.
