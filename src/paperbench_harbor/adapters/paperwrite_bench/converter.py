@@ -484,7 +484,15 @@ def _convert_paper(
             private_files.append(destination)
 
     if config.include_official_grader:
-        shutil.copytree(_VENDOR_DIR / "paper_recon", tests_dir / "vendor" / "paper_recon")
+        # Ignore bytecode caches: a .pyc embeds the source path and mtime of
+        # the machine that compiled it, so copying one makes the generated task
+        # depend on whether the build host happened to have imported the vendor
+        # tree. v0.3.1 shipped 348 of them.
+        shutil.copytree(
+            _VENDOR_DIR / "paper_recon",
+            tests_dir / "vendor" / "paper_recon",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
 
     audit_forbidden_names(
         environment_dir, FORBIDDEN_PUBLIC_NAMES, ignore_globs=("materials/code/**",)
@@ -512,6 +520,7 @@ def _convert_paper(
         upstream_revision=config.upstream_revision,
         public_files=public_files,
         private_files=private_files,
+        source_root=config.source,
         material_provenance=material_provenance,
         extra={
             "task_id": task_id,
