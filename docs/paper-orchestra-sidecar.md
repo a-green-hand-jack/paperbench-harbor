@@ -1,8 +1,14 @@
 # PaperOrchestra Sidecar
 
 PaperWritingBench tasks ship the pinned complete PaperOrchestra pipeline in
-`environment/paper_orchestra/` and the sidecar launcher as
+`environment/paper_orchestra/` and the sidecar server as
 `/workspace/paper_orchestra_sidecar.py`.
+
+That file is a copy of `src/paperbench_harbor/sidecar/server.py`, which runs
+standalone from its own `__main__` block. It is **not**
+`scripts/paper_orchestra_sidecar.py`; that launcher imports
+`paperbench_harbor.sidecar.server` and is host-only, so it would fail inside a
+task container, where this project is never installed.
 
 The generated Docker environment starts the sidecar automatically before the
 Harbor agent command through `/workspace/entrypoint.sh`. No interactive
