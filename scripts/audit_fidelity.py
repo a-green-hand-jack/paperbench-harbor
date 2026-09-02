@@ -43,19 +43,9 @@ from paperbench_harbor.adapters.paperwritingbench.converter import (
     PaperWritingBenchConversionConfig,
     convert_paperwritingbench,
 )
-from paperbench_harbor.fidelity.audit import run_fidelity_audit, summarize
+from paperbench_harbor.fidelity.audit import summarize
+from paperbench_harbor.fidelity.dataset import DatasetAuditError, audit_dataset
 from paperbench_harbor.fidelity.transforms import sha256
-
-
-def _load_manifest(dataset: Path) -> list[dict]:
-    manifest = dataset / "dataset-manifest.jsonl"
-    if not manifest.is_file():
-        raise SystemExit(f"dataset manifest not found: {manifest}")
-    entries = []
-    for line in manifest.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            entries.append(json.loads(line))
-    return entries
 
 
 def _tree_digest(root: Path) -> str:
@@ -68,26 +58,21 @@ def _tree_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def _audit_paperwrite(args: argparse.Namespace) -> int:
-    entries = _load_manifest(args.dataset)
-    reports = []
-    for entry in entries:
-        task_id = entry["task_id"]
-        upstream_paper_id = entry["upstream_paper_id"]
-        task_dir = args.dataset / task_id
-        if not task_dir.is_dir():
-            raise SystemExit(f"task dir missing: {task_dir}")
-        report = run_fidelity_audit(
-            benchmark="PaperWrite-Bench",
-            task_id=task_id,
-            upstream_paper_id=upstream_paper_id,
-            upstream_root=args.source,
-            task_dir=task_dir,
-            protocol=args.overview,
-            venue=None,
+def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn) -> int:
+    try:
+        reports = audit_dataset(
+            benchmark=benchmark,
+            source=args.source,
+            dataset=args.dataset,
+            protocol=protocol,
         )
-        reports.append(report)
-    return _write_reports(args, reports, _determinism_paperwrite)
+    except DatasetAuditError as exc:
+        raise SystemExit(str(exc)) from exc
+    return _write_reports(args, reports, determinism_fn)
+
+
+def _audit_paperwrite(args: argparse.Namespace) -> int:
+    return _run(args, "PaperWrite-Bench", args.overview, _determinism_paperwrite)
 
 
 def _audit_lifesci_paperrecon(args: argparse.Namespace) -> int:
@@ -98,26 +83,11 @@ def _audit_lifesci_paperrecon(args: argparse.Namespace) -> int:
     benchmark is built in-repo, so "fidelity" means the Harbor tasks preserve
     the pinned source corpus exactly.
     """
-    entries = _load_manifest(args.dataset)
-    reports = []
-    for entry in entries:
-        task_id = entry["task_id"]
-        upstream_paper_id = entry["upstream_paper_id"]
-        task_dir = args.dataset / task_id
-        if not task_dir.is_dir():
-            raise SystemExit(f"task dir missing: {task_dir}")
-        reports.append(
-            run_fidelity_audit(
-                benchmark=LSPR_BENCHMARK,
-                task_id=task_id,
-                upstream_paper_id=upstream_paper_id,
-                upstream_root=args.source,
-                task_dir=task_dir,
-                protocol=args.overview,
-                venue=None,
-            )
-        )
-    return _write_reports(args, reports, _determinism_lifesci_paperrecon)
+    return _run(args, LSPR_BENCHMARK, args.overview, _determinism_lifesci_paperrecon)
+
+
+def _audit_paperwritingbench(args: argparse.Namespace) -> int:
+    return _run(args, "PaperWritingBench", args.protocol, _determinism_paperwritingbench)
 
 
 def _determinism_lifesci_paperrecon(args: argparse.Namespace, summary: dict) -> None:
@@ -143,29 +113,6 @@ def _determinism_lifesci_paperrecon(args: argparse.Namespace, summary: dict) -> 
         summary["determinism_ok"] = (
             summary["determinism_tree_identical"] and summary["determinism_manifest_identical"]
         )
-
-
-def _audit_paperwritingbench(args: argparse.Namespace) -> int:
-    entries = _load_manifest(args.dataset)
-    reports = []
-    for entry in entries:
-        task_id = entry["task_id"]
-        upstream_paper_id = entry["upstream_paper_id"]
-        venue = entry.get("venue")
-        task_dir = args.dataset / task_id
-        if not task_dir.is_dir():
-            raise SystemExit(f"task dir missing: {task_dir}")
-        report = run_fidelity_audit(
-            benchmark="PaperWritingBench",
-            task_id=task_id,
-            upstream_paper_id=upstream_paper_id,
-            upstream_root=args.source,
-            task_dir=task_dir,
-            protocol=args.protocol,
-            venue=venue,
-        )
-        reports.append(report)
-    return _write_reports(args, reports, _determinism_paperwritingbench)
 
 
 def _determinism_paperwrite(args: argparse.Namespace, summary: dict) -> None:

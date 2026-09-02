@@ -13,6 +13,41 @@ from paperbench_harbor.adapters.paperwritingbench.converter import (
     PaperWritingBenchConversionConfig,
     convert_paperwritingbench,
 )
+from paperbench_harbor.fidelity.dataset import (
+    DatasetAuditError,
+    audit_dataset,
+    format_failures,
+)
+
+#: Shared help text, so the three commands describe the flag identically.
+_AUDIT_HELP = (
+    "Run the per-task fidelity audit against --source before reporting success. "
+    "Conversion that silently drops or rewrites upstream content is the failure "
+    "this catches, so it is on by default. Determinism is not checked here; that "
+    "costs two more full conversions and stays in scripts/audit_fidelity.py."
+)
+
+
+def _audit_or_exit(*, benchmark: str, source: Path, output_dir: Path, protocol: str) -> None:
+    """Audit a freshly converted dataset, and fail the command if it does not pass.
+
+    A conversion command that exits 0 on a tree the audit would reject is the
+    thing this prevents: the audit used to be a separate command an operator had
+    to remember to run, so a broken conversion looked exactly like a good one.
+    """
+    try:
+        reports = audit_dataset(
+            benchmark=benchmark, source=source, dataset=output_dir, protocol=protocol
+        )
+    except DatasetAuditError as exc:
+        typer.echo(f"fidelity audit could not run: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    failures = format_failures(reports)
+    if failures:
+        typer.echo(failures, err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Fidelity audit passed for {len(reports)} task(s).")
+
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -28,6 +63,7 @@ def paperwritingbench_command(
     protocol: Annotated[str, typer.Option()] = "sparse-plotoff",
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
+    audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
 ) -> None:
     """Convert PaperWritingBench samples into Harbor tasks."""
     if not upstream_revision.strip():
@@ -42,6 +78,13 @@ def paperwritingbench_command(
     )
     converted = convert_paperwritingbench(config)
     typer.echo(f"Converted {converted} PaperWritingBench task(s).")
+    if audit:
+        _audit_or_exit(
+            benchmark="PaperWritingBench",
+            source=source,
+            output_dir=output_dir,
+            protocol=protocol,
+        )
 
 
 @app.command("paperwrite-bench")
@@ -52,6 +95,7 @@ def paperwrite_bench_command(
     overview: Annotated[str, typer.Option()] = "short",
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
+    audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
 ) -> None:
     """Convert PaperWrite-Bench samples into Harbor tasks."""
     if not upstream_revision.strip():
@@ -66,6 +110,13 @@ def paperwrite_bench_command(
     )
     converted = convert_paperwrite_bench(config)
     typer.echo(f"Converted {converted} PaperWrite-Bench task(s).")
+    if audit:
+        _audit_or_exit(
+            benchmark="PaperWrite-Bench",
+            source=source,
+            output_dir=output_dir,
+            protocol=overview,
+        )
 
 
 @app.command("lifesci-paperrecon")
@@ -78,6 +129,7 @@ def lifesci_paperrecon_command(
     overview: Annotated[str, typer.Option()] = "short",
     limit: Annotated[int | None, typer.Option(min=1)] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
+    audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
 ) -> None:
     """Convert a LifeSci-PaperRecon source corpus into Harbor tasks.
 
@@ -101,6 +153,12 @@ def lifesci_paperrecon_command(
     )
     converted = convert_paperwrite_bench(config)
     typer.echo(f"Converted {converted} LifeSci-PaperRecon task(s).")
+    if audit:
+        from paperbench_harbor.adapters.lifesci_paperrecon.harbor import BENCHMARK
+
+        _audit_or_exit(
+            benchmark=BENCHMARK, source=source, output_dir=output_dir, protocol=overview
+        )
 
 
 if __name__ == "__main__":

@@ -35,6 +35,17 @@ uv run scripts/audit_fidelity.py paperwritingbench \
     --output reports/pwbw
 ```
 
+The converter runs the per-task half of this audit itself. Every
+`paperbench-harbor` conversion command audits the tree it just produced and
+exits non-zero if it does not pass, so a conversion that silently drops or
+rewrites upstream content can no longer look like a successful one. Pass
+`--no-audit` to skip it.
+
+The standalone command above remains the way to get written reports and the
+dataset-level determinism check. Determinism is deliberately not part of the
+conversion command: it is a property of the converter rather than of any task,
+and establishing it costs two further full conversions.
+
 The audit writes one `<task-id>.json` report per task plus a `summary.json`
 with the overall totals and the determinism result. The machine-readable
 source-to-Harbor transform declarations live in
