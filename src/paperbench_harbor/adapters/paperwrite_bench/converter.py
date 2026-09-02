@@ -55,6 +55,10 @@ _VENDOR_DIR = Path(__file__).resolve().parents[2] / "vendor"
 
 _PAPER_ORDER_RE = re.compile(r"(\d+)")
 
+#: Never copied into a generated task, from any tree. A `.git` directory or a
+#: bytecode cache records the machine that built the corpus, not the paper.
+_IGNORE_VCS_CACHES = shutil.ignore_patterns(".git", "__pycache__", "*.pyc")
+
 
 def _natural_sort_key(paper_id: str) -> tuple[object, ...]:
     return tuple(int(part) if part.isdigit() else part for part in _PAPER_ORDER_RE.split(paper_id))
@@ -215,7 +219,7 @@ def _copy_public_materials(
                 source,
                 destination,
                 symlinks=True,
-                ignore=shutil.ignore_patterns(".git", "__pycache__"),
+                ignore=_IGNORE_VCS_CACHES,
             )
             for path in destination.rglob("*"):
                 if path.is_file():
@@ -471,10 +475,20 @@ def _convert_paper(
         shutil.copy2(ground_truth, tests_private / "ground_truth.tex")
         private_files.append(tests_private / "ground_truth.tex")
         ground_truth_tree = tests_private / "ground_truth_sources"
-        shutil.copytree(original, ground_truth_tree, symlinks=True)
+        # Same exclusions as the public copy of `code/`. Without them, whether a
+        # generated task contains a `.git` tree depends on whether the corpus
+        # happened to be built from a clone -- build-environment state leaking
+        # into the task, the same class of defect as a copied `__pycache__`.
+        shutil.copytree(original, ground_truth_tree, symlinks=True, ignore=_IGNORE_VCS_CACHES)
         # Keep GT source dependencies and evaluation resources beside main.tex
         # so hallucination verification receives the same coherent root.
-        shutil.copytree(resources, ground_truth_tree, symlinks=True, dirs_exist_ok=True)
+        shutil.copytree(
+            resources,
+            ground_truth_tree,
+            symlinks=True,
+            dirs_exist_ok=True,
+            ignore=_IGNORE_VCS_CACHES,
+        )
         private_files.extend(path for path in ground_truth_tree.rglob("*") if path.is_file())
     for filename in ("figure_summary.txt", "table_summary.txt"):
         source = resources / filename
@@ -484,7 +498,15 @@ def _convert_paper(
             private_files.append(destination)
 
     if config.include_official_grader:
-        shutil.copytree(_VENDOR_DIR / "paper_recon", tests_dir / "vendor" / "paper_recon")
+        # Ignore bytecode caches: a .pyc embeds the source path and mtime of
+        # the machine that compiled it, so copying one makes the generated task
+        # depend on whether the build host happened to have imported the vendor
+        # tree. v0.3.1 shipped 348 of them.
+        shutil.copytree(
+            _VENDOR_DIR / "paper_recon",
+            tests_dir / "vendor" / "paper_recon",
+            ignore=_IGNORE_VCS_CACHES,
+        )
 
     audit_forbidden_names(
         environment_dir, FORBIDDEN_PUBLIC_NAMES, ignore_globs=("materials/code/**",)
@@ -512,6 +534,7 @@ def _convert_paper(
         upstream_revision=config.upstream_revision,
         public_files=public_files,
         private_files=private_files,
+        source_root=config.source,
         material_provenance=material_provenance,
         extra={
             "task_id": task_id,

@@ -249,6 +249,7 @@ def _convert_paper(
     task_id: str,
     protocol: str,
     upstream_revision: str | None,
+    source_root: Path,
 ) -> None:
     raw = paper_dir / "raw_materials"
     environment_dir = task_dir / "environment"
@@ -284,14 +285,21 @@ def _convert_paper(
         public_files.append(warning_path)
     private_files = _copy_private_materials(paper_dir, raw, solution_private, tests_private)
 
+    # Ignore bytecode caches: a .pyc embeds the source path and mtime of the
+    # machine that compiled it, so copying one makes the generated task depend
+    # on whether the build host happened to have imported the vendor tree.
+    # v0.3.1 shipped 348 of them.
+    _ignore_bytecode = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copytree(
         _VENDOR_DIR / "paper_orchestra",
         tests_dir / "vendor" / "paper_orchestra",
+        ignore=_ignore_bytecode,
     )
     # Ship the complete upstream PaperOrchestra pipeline with the writer environment.
     shutil.copytree(
         _VENDOR_DIR / "paper_orchestra" / "upstream_pipeline",
         environment_dir / "paper_orchestra",
+        ignore=_ignore_bytecode,
     )
     shutil.copy2(
         Path(__file__).resolve().parents[2] / "sidecar" / "server.py",
@@ -320,6 +328,7 @@ def _convert_paper(
         upstream_revision=upstream_revision,
         public_files=public_files,
         private_files=private_files,
+        source_root=source_root,
         material_provenance=material_provenance,
         extra={
             "task_id": task_id,
@@ -402,6 +411,7 @@ def convert_paperwritingbench(config: PaperWritingBenchConversionConfig) -> int:
             task_id=task_id,
             protocol=config.protocol,
             upstream_revision=config.upstream_revision,
+            source_root=config.source,
         )
 
         manifest[(task_id, metadata.paper_id)] = {

@@ -66,6 +66,24 @@ Harbor uses its own task cache and repository checkout internally. The
 immutable revision and task filter keep the run reproducible. `--dataset` is
 reserved for Harbor Hub packages; use `--repo` for this Hugging Face Git source.
 
+### Known defect in v0.3.1
+
+19 of the 22 `lifesci-paperrecon-short` tasks instruct the writing agent to
+read `/workspace/materials/tables/`, which those tasks do not ship. Only
+`lspr-0014`, `lspr-0019` and `lspr-0022` have that directory. Seven tasks also
+lack the `upstream_data_warnings.md` safeguard. `paperwrite-bench-short` is
+unaffected, because all 51 of its papers have tables.
+
+The cause is that this release was generated at converter revision
+`b0eee6a28295b0e00c33e58bbad6813fdb8ecd50`, which predates `024c1cd`. That
+commit made the instruction's tables/figures paragraphs conditional and added
+the release-blocking `missing_instruction_material` contract check. Regenerating
+this release from the current `main` therefore fails closed rather than
+re-emitting the defect.
+
+Anyone reproducing results from `v0.3.1` should know that its LifeSci
+instructions do not describe their own materials. Tracked in issue #37.
+
 ### v0.3.1
 
 - Hugging Face commit revision: `bfe2471c41f416d877e74bfa73cf0f29165c7567`;
