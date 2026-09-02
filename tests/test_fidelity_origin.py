@@ -196,9 +196,11 @@ def test_only_template_tex_may_be_rewritten(tmp_path: Path) -> None:
 def test_tree_copies_exclude_build_environment_residue(tmp_path: Path) -> None:
     """A `.git` or `__pycache__` in an upstream checkout is not task material.
 
-    The converters drop both; a spec that predicted them would report every
-    task as missing files it was never supposed to have. Found against the
-    published LifeSci corpus, two of whose papers carry one.
+    The converters drop both, so a spec that predicted them would report every
+    such task as missing files it was never supposed to have. No corpus in the
+    current release carries a `.git` -- this pins the agreement for the case
+    where one does, since upstream `code/` trees are third-party checkouts and
+    whether a given copy has one is an accident of how it was fetched.
     """
     source = _make_pwb_source(tmp_path)
     paper_dir = find_paper_dirs(pwb_spec.SPEC, source)[0]
