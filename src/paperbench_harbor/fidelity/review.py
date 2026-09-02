@@ -17,11 +17,33 @@ DEFAULT_CONVERSION_REVIEWER_MODEL = "apex-claude/claude-sonnet-5"
 VERDICT_FILENAME = "verdict.json"
 
 
+def _review_scratch_root() -> Path:
+    """Return a disposable review root that cannot inherit a repository's Git state.
+
+    Some controlled workers mount `/tmp` inside a repository-shaped sandbox.
+    `run_agent_session()` rightly rejects `--auto` there, but a semantic audit
+    must still be runnable. Keep the staged evidence under a dedicated cache
+    directory instead, or use an explicitly supplied, non-Git location.
+    """
+    configured = os.environ.get("PAPERBENCH_REVIEW_TMP", "").strip()
+    root = (
+        Path(configured) if configured else Path.home() / ".cache" / "paperbench-harbor" / "reviews"
+    )
+    root.mkdir(parents=True, exist_ok=True)
+    resolved = root.resolve()
+    for candidate in (resolved, *resolved.parents):
+        if (candidate / ".git").exists():
+            raise RuntimeError(
+                f"semantic review scratch root {resolved} is inside a Git working tree; "
+                "set PAPERBENCH_REVIEW_TMP to an isolated directory"
+            )
+    return resolved
+
+
 def default_conversion_reviewer_model() -> str:
     """Resolve the reviewer separately from the converter model."""
     return (
-        os.environ.get("CONVERSION_REVIEWER_MODEL", "").strip()
-        or DEFAULT_CONVERSION_REVIEWER_MODEL
+        os.environ.get("CONVERSION_REVIEWER_MODEL", "").strip() or DEFAULT_CONVERSION_REVIEWER_MODEL
     )
 
 
@@ -115,7 +137,9 @@ def run_conversion_review(
     dry_run: bool = False,
 ) -> ReviewVerdict:
     """Run one isolated reviewer and return a strictly parsed verdict."""
-    with tempfile.TemporaryDirectory(prefix="paperbench-conversion-review-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="paperbench-conversion-review-", dir=_review_scratch_root()
+    ) as temporary:
         review_dir = prepare_conversion_review_dir(paper_dir, task_dir, Path(temporary))
         prompt = build_conversion_review_prompt(review_dir, benchmark)
         try:

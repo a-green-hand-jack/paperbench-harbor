@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
@@ -54,7 +56,9 @@ def test_conversion_review_runs_in_a_throwaway_directory(tmp_path: Path, monkeyp
         calls.append(kwargs)
         workspace = Path(kwargs["workspace"])
         (workspace / "verdict.json").write_text(
-            json.dumps({"ok": True, "reasoning": "Checked protocol and materials.", "concerns": []}),
+            json.dumps(
+                {"ok": True, "reasoning": "Checked protocol and materials.", "concerns": []}
+            ),
             encoding="utf-8",
         )
         log_path = Path(kwargs["log_dir"]) / "paper_1.turn1.log"
@@ -71,6 +75,8 @@ def test_conversion_review_runs_in_a_throwaway_directory(tmp_path: Path, monkeyp
         )
 
     monkeypatch.setattr(review_module, "run_agent_session", fake_run_agent_session)
+    scratch_root = Path.home() / ".cache" / "paperbench-harbor" / tmp_path.name
+    monkeypatch.setenv("PAPERBENCH_REVIEW_TMP", str(scratch_root))
     verdict = run_conversion_review(
         benchmark="PaperWrite-Bench",
         paper_id="paper_1",
@@ -82,7 +88,19 @@ def test_conversion_review_runs_in_a_throwaway_directory(tmp_path: Path, monkeyp
     assert verdict.ok
     assert calls[0]["model"] == DEFAULT_CONVERSION_REVIEWER_MODEL
     assert not Path(calls[0]["workspace"]).is_relative_to(task_dir)
+    assert Path(calls[0]["workspace"]).is_relative_to(scratch_root)
     assert (task_dir / "solution" / "private" / "main.tex").is_file()
+
+
+def test_conversion_review_rejects_a_git_contaminated_scratch_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    contaminated = tmp_path / "git-root" / "reviews"
+    (tmp_path / "git-root" / ".git").mkdir(parents=True)
+    monkeypatch.setenv("PAPERBENCH_REVIEW_TMP", str(contaminated))
+
+    with pytest.raises(RuntimeError, match="inside a Git working tree"):
+        review_module._review_scratch_root()
 
 
 def test_semantic_rejection_fails_the_task_audit(tmp_path: Path, monkeypatch) -> None:
