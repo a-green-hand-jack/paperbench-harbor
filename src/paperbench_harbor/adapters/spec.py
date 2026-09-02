@@ -61,6 +61,17 @@ class CopyRule:
     #: `eval_points.json` in both `solution/private/` and `tests/private/`,
     #: because the oracle and the evaluator each need it.
     extra_targets: tuple[str, ...] = ()
+    #: Names never copied out of a `kind="tree"` source, matched per path
+    #: segment. Build-environment residue in a verbatim third-party checkout --
+    #: a `.git` directory, a bytecode cache -- describes the machine that
+    #: fetched the corpus, not the paper, and the converters drop it.
+    tree_excludes: tuple[str, ...] = (".git", "__pycache__")
+    #: The conversion may legitimately rewrite this file, so its bytes need not
+    #: match upstream. Only `template.tex`, whose `\includegraphics` of an
+    #: asset the corpus does not ship is stripped rather than left to fail the
+    #: oracle compile -- 4 of the 51 published PaperWrite-Bench tasks. A task
+    #: where it fired also ships `upstream_data_warnings.md` saying so.
+    may_be_rewritten: bool = False
 
     def targets(self) -> tuple[str, ...]:
         return (self.target, *self.extra_targets)
@@ -146,6 +157,20 @@ def _expand(paper_dir: Path, source: str) -> Iterable[Path]:
     return [candidate] if candidate.exists() else []
 
 
+def rewritable_targets(spec: UpstreamLayoutSpec) -> frozenset[str]:
+    """Targets a documented conversion safeguard is allowed to have rewritten.
+
+    Content-addressed auditing must not treat these as missing when their bytes
+    do not match upstream -- that is the safeguard working, not a defect.
+    """
+    return frozenset(
+        target
+        for rule in (*spec.public, *spec.private)
+        if rule.may_be_rewritten
+        for target in rule.targets()
+    )
+
+
 def predict_copies(
     spec: UpstreamLayoutSpec,
     paper_dir: Path,
@@ -172,9 +197,14 @@ def predict_copies(
                     if not match.is_dir() or not any(match.iterdir()):
                         continue
                     for item in sorted(match.rglob("*")):
-                        if item.is_file():
-                            rel = item.relative_to(match).as_posix()
-                            predicted[f"{target}/{rel}"] = item
+                        if not item.is_file():
+                            continue
+                        parts = item.relative_to(match).parts
+                        if any(part in rule.tree_excludes for part in parts):
+                            continue
+                        if item.suffix == ".pyc":
+                            continue
+                        predicted[f"{target}/{'/'.join(parts)}"] = item
                 elif match.is_file():
                     name = match.name if target.endswith("/") else None
                     predicted[f"{target}{name}" if name else target] = match

@@ -28,7 +28,12 @@ PUBLIC_RULES = (
     # The selected overview is renamed on the way in, so the writer cannot tell
     # which variant it received.
     CopyRule(VARIANT, "environment/materials/research_overview.md", required=True),
-    CopyRule("resources/template.tex", "environment/materials/template.tex", required=True),
+    CopyRule(
+        "resources/template.tex",
+        "environment/materials/template.tex",
+        required=True,
+        may_be_rewritten=True,
+    ),
     CopyRule("resources/references.bib", "environment/materials/references.bib"),
     CopyRule("resources/figure_summary.txt", "environment/materials/figure_summary.txt"),
     CopyRule("resources/table_summary.txt", "environment/materials/table_summary.txt"),
