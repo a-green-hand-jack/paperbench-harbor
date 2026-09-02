@@ -66,7 +66,7 @@ def _trial(tmp_path: Path) -> Path:
     trial = tmp_path / "trial"
     artifacts = trial / "artifacts"
     (artifacts / "workspace" / "submission").mkdir(parents=True)
-    (trial / "agent" / "paper-run").mkdir(parents=True)
+    (trial / "agent" / "writer").mkdir(parents=True)
     (trial / "verifier").mkdir(parents=True)
     result = {
         "id": "trial-0001",
@@ -90,7 +90,7 @@ def _trial(tmp_path: Path) -> Path:
     (artifacts / "workspace" / "submission" / "references.bib").write_text(
         "@article{example}\n", encoding="utf-8"
     )
-    (trial / "agent" / "paper-run" / "run.log").write_text(
+    (trial / "agent" / "writer" / "run.log").write_text(
         "stage completed\n", encoding="utf-8"
     )
     (trial / "agent" / "trajectory.json").write_text(
@@ -129,8 +129,8 @@ def test_export_trial_writes_record_manifest_and_archive(tmp_path: Path) -> None
     with tarfile.open(output / "artifacts" / "trial-0001.tar.gz", "r:gz") as archive:
         names = sorted(member.name for member in archive.getmembers())
     assert names == [
-        "agent/paper-run/run.log",
         "agent/trajectory.json",
+        "agent/writer/run.log",
         "artifacts/workspace/submission/main.tex",
         "artifacts/workspace/submission/references.bib",
         "harbor/result.json",
@@ -295,7 +295,7 @@ def test_export_trial_refuses_private_or_credential_files(tmp_path: Path, relati
 
 def test_export_trial_refuses_recognizable_secret(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
-    secret_log = trial / "agent" / "paper-run" / "secret.log"
+    secret_log = trial / "agent" / "writer" / "secret.log"
     secret_log.write_text("token=sk-abcdefghijklmnopqrstuvwxyz\n", encoding="utf-8")
 
     args = _args(trial, tmp_path / "export")
@@ -306,7 +306,7 @@ def test_export_trial_refuses_recognizable_secret(tmp_path: Path) -> None:
 
 def test_export_trial_allows_token_identifiers_in_code(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
-    (trial / "agent" / "paper-run" / "code.log").write_text(
+    (trial / "agent" / "writer" / "code.log").write_text(
         "in_token = list(new_output.prompt_token_ids)\n"
         "eos_token = tokenizer.eos_token\n",
         encoding="utf-8",
@@ -322,7 +322,7 @@ def test_export_trial_allows_token_identifiers_in_code(tmp_path: Path) -> None:
 
 def test_export_trial_allows_escaped_empty_secret_fields_in_code(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
-    (trial / "agent" / "paper-run" / "code.log").write_text(
+    (trial / "agent" / "writer" / "code.log").write_text(
         'export WANDB_API_KEY=\\"\\"\\n'
         'export WANDB_API_KEY=\\"null\\"\\n'
         "if not wandb.api.api_key:\\\\n",
@@ -365,7 +365,7 @@ def test_export_trial_rejects_shell_fallback_secret(tmp_path: Path) -> None:
 
 def test_export_trial_allows_bare_environment_reference(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
-    (trial / "agent" / "paper-run" / "config.log").write_text(
+    (trial / "agent" / "writer" / "config.log").write_text(
         "OPENAI_API_KEY=${OPENAI_API_KEY}\n",
         encoding="utf-8",
     )
@@ -463,7 +463,7 @@ def test_export_trial_allows_empty_aws_secret(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
     args = _args(trial, tmp_path / "export")
     _write_private_manifest(args)
-    (trial / "agent" / "paper-run" / "config.log").write_text(
+    (trial / "agent" / "writer" / "config.log").write_text(
         "aws_secret_access_key=\n",
         encoding="utf-8",
     )
@@ -692,7 +692,7 @@ def test_export_trial_refuses_secret_in_filename(tmp_path: Path) -> None:
 
 def test_export_trial_allows_escaped_redacted_secret_fields(tmp_path: Path) -> None:
     trial = _trial(tmp_path)
-    (trial / "agent" / "paper-run" / "config.log").write_text(
+    (trial / "agent" / "writer" / "config.log").write_text(
         'WANDB_API_KEY=\\"\\"\nWANDB_API_KEY=\\"null\\"\n', encoding="utf-8"
     )
     args = _args(trial, tmp_path / "export")
