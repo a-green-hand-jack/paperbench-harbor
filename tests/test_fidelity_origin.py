@@ -16,6 +16,7 @@ from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
 )
+from paperbench_harbor.adapters.paperwritingbench import spec as pwbw_spec
 from paperbench_harbor.adapters.spec import (
     find_paper_dirs,
     predict_copies,
@@ -209,3 +210,17 @@ def test_tree_copies_exclude_build_environment_residue(tmp_path: Path) -> None:
 
     predicted = predict_copies(pwb_spec.SPEC, paper_dir, "short")
     assert not [p for p in predicted if ".git" in p or "__pycache__" in p or p.endswith(".pyc")]
+
+
+def test_pwbw_declares_its_normalized_log_rewritable() -> None:
+    """`experimental_log.md` is rewritten on all 200 published tasks.
+
+    Upstream logs carry short alignment rows, bare pipes inside math, and
+    unlabeled columns; `normalize_markdown_tables` repairs the structure
+    without touching a result value. A spec that called it a plain copy would
+    report every PaperWritingBench task as defective -- which is exactly what
+    the content-addressed check reported before this was declared.
+    """
+    assert rewritable_targets(pwbw_spec.SPEC) == {
+        "environment/materials/experimental_log.md"
+    }
