@@ -146,6 +146,7 @@ def test_bio_manifest_records_the_new_benchmark_name(tmp_path: Path) -> None:
     assert manifest["extra"]["task_id"] == "lspr-0002"
     assert manifest["extra"]["paper_type"] == "computational"
     assert manifest["extra"]["conference"] == "arXiv q-bio.PE"
+    assert "source_archive_locator" in manifest["extra"]["release_provenance_requirements"]
 
 
 def test_bio_uses_biology_writing_instructions(tmp_path: Path) -> None:

@@ -192,6 +192,33 @@ def test_specs_agree_with_their_converters_forbidden_names() -> None:
     assert pwbw_spec.SPEC.forbidden_public_names == PWBW
 
 
+def test_specs_own_their_task_identity_render_defaults_and_style_mode() -> None:
+    """Onboarding gets one declarative source for non-path adapter facts too."""
+
+    assert pwb_spec.SPEC.identity.benchmark == "PaperWrite-Bench"
+    assert pwb_spec.SPEC.task_id_prefix == "pwb"
+    assert pwb_spec.SPEC.identity.agents_md_dir == "agents_md"
+    assert pwb_spec.SPEC.style_resolution == "package-scan"
+    assert pwb_spec.SPEC.render.grader_module == "grader_pwb"
+
+    assert pwbw_spec.SPEC.identity.benchmark == "PaperWritingBench"
+    assert pwbw_spec.SPEC.task_id_prefix == "pwbw"
+    assert pwbw_spec.SPEC.style_resolution == "venue-directory"
+    assert pwbw_spec.SPEC.render.num_page == "8"
+    assert pwbw_spec.SPEC.render.grader_module == "grader_pwbw"
+
+    assert LSPR_SPEC.identity.benchmark == "LifeSci-PaperRecon"
+    assert LSPR_SPEC.task_id_prefix == "lspr"
+    assert LSPR_SPEC.identity.agents_md_fallback == "AGENTS_computational.md"
+    assert LSPR_SPEC.render.grader_module == ""
+    assert LSPR_SPEC.material_completeness is not None
+    assert LSPR_SPEC.material_completeness.source_inventory == "resources/table_inventory.json"
+    assert LSPR_SPEC.material_completeness.public_inventory == (
+        "environment/materials/table_inventory.json"
+    )
+    assert "source_archive_locator" in LSPR_SPEC.provenance_requirements.registry_fields
+
+
 def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_and_provenance() -> None:
     assert LSPR_SPEC.public == pwb_spec.SPEC.public
     assert LSPR_SPEC.private == pwb_spec.SPEC.private

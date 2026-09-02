@@ -140,13 +140,13 @@ def test_limit_selects_first_papers(tmp_path: Path) -> None:
     assert not (tmp_path / "out" / "pwbw-0003").exists()
 
 
-def test_unimplemented_protocol_raises(tmp_path: Path) -> None:
+def test_unsupported_protocol_is_not_advertised_as_supported(tmp_path: Path) -> None:
     config = PaperWritingBenchConversionConfig(
         source=_make_source(tmp_path),
         output_dir=tmp_path / "out",
         protocol="dense-plotoff",
     )
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="Unsupported protocol"):
         convert_paperwritingbench(config)
 
 

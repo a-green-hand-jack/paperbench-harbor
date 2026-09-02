@@ -21,25 +21,37 @@ from paperbench_harbor.adapters.paperwrite_bench import spec as pwb_spec
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
 )
+from paperbench_harbor.adapters.spec import (
+    BenchmarkIdentity,
+    MaterialCompletenessContract,
+)
 
-BENCHMARK = "LifeSci-PaperRecon"
-TASK_ID_PREFIX = "lspr"
-CATEGORY = "research-writing"
-TAGS = (
-    "paper-writing",
-    "latex",
-    "scientific-writing",
-    "biology",
-    "life-sciences",
-    "lifesci-paperrecon",
+IDENTITY = BenchmarkIdentity(
+    benchmark="LifeSci-PaperRecon",
+    task_id_prefix="lspr",
+    tags=(
+        "paper-writing",
+        "latex",
+        "scientific-writing",
+        "biology",
+        "life-sciences",
+        "lifesci-paperrecon",
+    ),
+    relevant_experience=(
+        "Reconstructing a life-sciences research paper from a research overview, "
+        "figures, tables and the study's own analysis code, under a fixed "
+        "bibliography and LaTeX template."
+    ),
+    agents_md_dir="agents_md",
+    agents_md_fallback="AGENTS_computational.md",
 )
-RELEVANT_EXPERIENCE = (
-    "Reconstructing a life-sciences research paper from a research overview, "
-    "figures, tables and the study's own analysis code, under a fixed "
-    "bibliography and LaTeX template."
-)
-AGENTS_MD_DIR = Path(__file__).resolve().parent / "agents_md"
-AGENTS_MD_FALLBACK = "AGENTS_computational.md"
+BENCHMARK = IDENTITY.benchmark
+TASK_ID_PREFIX = IDENTITY.task_id_prefix
+CATEGORY = pwb_spec.SPEC.render.category
+TAGS = IDENTITY.tags
+RELEVANT_EXPERIENCE = IDENTITY.relevant_experience
+AGENTS_MD_DIR = Path(__file__).resolve().parent / IDENTITY.agents_md_dir
+AGENTS_MD_FALLBACK = IDENTITY.agents_md_fallback
 
 
 def lifesci_paperrecon_conversion_config(
@@ -66,13 +78,13 @@ def lifesci_paperrecon_conversion_config(
         limit=limit,
         overwrite=overwrite,
         upstream_revision=upstream_revision,
-        benchmark=BENCHMARK,
-        task_id_prefix=TASK_ID_PREFIX,
-        category=CATEGORY,
-        tags=TAGS,
-        relevant_experience=RELEVANT_EXPERIENCE,
-        agents_md_dir=AGENTS_MD_DIR,
-        agents_md_fallback=AGENTS_MD_FALLBACK,
+        benchmark=SPEC.benchmark,
+        task_id_prefix=SPEC.task_id_prefix,
+        category=SPEC.render.category,
+        tags=SPEC.identity.tags,
+        relevant_experience=SPEC.identity.relevant_experience,
+        agents_md_dir=Path(__file__).resolve().parent / SPEC.identity.agents_md_dir,
+        agents_md_fallback=SPEC.identity.agents_md_fallback,
         include_official_grader=False,
         layout_spec=SPEC,
     )
@@ -84,7 +96,12 @@ def lifesci_paperrecon_conversion_config(
 #: the construction agent claimed, which the writer must never see.
 SPEC = dataclasses.replace(
     pwb_spec.SPEC,
-    benchmark=BENCHMARK,
-    task_id_prefix=TASK_ID_PREFIX,
+    identity=IDENTITY,
     forbidden_public_names=pwb_spec.SPEC.forbidden_public_names | {"provenance.json"},
+    render=dataclasses.replace(pwb_spec.SPEC.render, grader_module=""),
+    material_completeness=MaterialCompletenessContract(
+        source_inventory="resources/table_inventory.json",
+        public_inventory="environment/materials/table_inventory.json",
+        public_material_root="environment/materials/tables",
+    ),
 )

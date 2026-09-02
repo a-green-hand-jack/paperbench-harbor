@@ -85,11 +85,68 @@ class CopyRule:
 
 
 @dataclass(frozen=True)
-class UpstreamLayoutSpec:
-    """Where one benchmark's material lives upstream, and where it lands."""
+class BenchmarkIdentity:
+    """Task identity that must travel with an upstream layout.
+
+    A new adapter should not need a second table for its task-id prefix, tags,
+    writing-instruction directory, or public benchmark name. These are all
+    stable facts about the benchmark, so the layout spec owns them alongside
+    the source mapping.
+    """
 
     benchmark: str
     task_id_prefix: str
+    tags: tuple[str, ...]
+    relevant_experience: str
+    agents_md_dir: str = ""
+    agents_md_fallback: str = ""
+
+
+@dataclass(frozen=True)
+class RenderDefaults:
+    """Stable template defaults supplied by an adapter's declarative spec."""
+
+    category: str = "research-writing"
+    num_page: str = ""
+    column: str = ""
+    grader_module: str = ""
+
+
+@dataclass(frozen=True)
+class MaterialCompletenessContract:
+    """A source inventory that must map to writer-visible evidence.
+
+    This is deliberately schema-neutral. A domain owns how it derives and
+    checks the inventory (for example, LifeSci inventories inline LaTeX tables),
+    while conversion and onboarding retain the stable paths that make the
+    contract visible and auditable rather than an undocumented prompt rule.
+    """
+
+    source_inventory: str
+    public_inventory: str
+    public_material_root: str
+
+
+@dataclass(frozen=True)
+class ProvenanceRequirements:
+    """Fields a future release registry/source archive must fix before publish."""
+
+    registry_fields: tuple[str, ...] = (
+        "task_id",
+        "dataset_revision",
+        "converter_revision",
+        "upstream_revision",
+        "source_archive_locator",
+        "source_archive_sha256",
+        "evaluator_revision",
+    )
+
+
+@dataclass(frozen=True)
+class UpstreamLayoutSpec:
+    """Where one benchmark's material lives upstream, and where it lands."""
+
+    identity: BenchmarkIdentity
     #: Glob, relative to the source root, that enumerates candidate paper dirs.
     paper_glob: str
     #: A candidate is a paper iff this relative path exists inside it. This is
@@ -118,6 +175,33 @@ class UpstreamLayoutSpec:
     #: the whole of it today: a record of upstream hashes, produced here rather
     #: than copied from anywhere.
     generated_private: tuple[str, ...] = ()
+    #: How this adapter locates its LaTex support files. The implementation is
+    #: deliberately a hook, but its mode is data so onboarding cannot silently
+    #: pick a different resolver from the one fidelity/regression evidence used.
+    style_resolution: str = "none"
+    #: Defaults supplied to the shared Harbor templates. Per-paper metadata may
+    #: override a value (for example PaperWrite-Bench reads the actual column
+    #: from its template), but the common baseline lives in the spec.
+    render: RenderDefaults = field(default_factory=RenderDefaults)
+    #: Optional exact material-inventory contract supplied by a domain-specific
+    #: deterministic checker. The generic converter stages the declared public
+    #: inventory like every other source material; it never asks an LLM to guess
+    #: whether evidence was omitted.
+    material_completeness: MaterialCompletenessContract | None = None
+    #: The data model #40 requires from future onboarding. Archive publication
+    #: is a separate product, but an adapter cannot claim its fields are
+    #: unknowable or defer them until after a task release has been cut.
+    provenance_requirements: ProvenanceRequirements = field(
+        default_factory=ProvenanceRequirements
+    )
+
+    @property
+    def benchmark(self) -> str:
+        return self.identity.benchmark
+
+    @property
+    def task_id_prefix(self) -> str:
+        return self.identity.task_id_prefix
 
     def protocols(self) -> tuple[str, ...]:
         return tuple(self.variant_sources) or ("",)

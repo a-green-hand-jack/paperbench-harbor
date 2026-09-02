@@ -12,7 +12,13 @@ converter.
 
 from __future__ import annotations
 
-from paperbench_harbor.adapters.spec import VARIANT, CopyRule, UpstreamLayoutSpec
+from paperbench_harbor.adapters.spec import (
+    VARIANT,
+    BenchmarkIdentity,
+    CopyRule,
+    RenderDefaults,
+    UpstreamLayoutSpec,
+)
 
 #: The upstream tree has no venue nesting: every immediate subdirectory that
 #: carries `resources/template.tex` is a paper.
@@ -37,6 +43,9 @@ PUBLIC_RULES = (
     CopyRule("resources/references.bib", "environment/materials/references.bib"),
     CopyRule("resources/figure_summary.txt", "environment/materials/figure_summary.txt"),
     CopyRule("resources/table_summary.txt", "environment/materials/table_summary.txt"),
+    # Optional on the historical corpus; required by LifeSci's source-table
+    # contract once a constructed sample declares it.
+    CopyRule("resources/table_inventory.json", "environment/materials/table_inventory.json"),
     CopyRule("resources/figures", "environment/materials/figures", kind="tree"),
     CopyRule("resources/tables", "environment/materials/tables", kind="tree"),
     CopyRule("resources/code", "environment/materials/code", kind="tree"),
@@ -72,8 +81,17 @@ PRIVATE_RULES = (
 )
 
 SPEC = UpstreamLayoutSpec(
-    benchmark="PaperWrite-Bench",
-    task_id_prefix="pwb",
+    identity=BenchmarkIdentity(
+        benchmark="PaperWrite-Bench",
+        task_id_prefix="pwb",
+        tags=("paper-writing", "latex", "scientific-writing", "paperwrite-bench"),
+        relevant_experience=(
+            "Benchmark adaptation of PaperWrite-Bench into the Harbor task format, "
+            "preserving the upstream writing-agent contract."
+        ),
+        agents_md_dir="agents_md",
+        agents_md_fallback="AGENTS_method.md",
+    ),
     paper_glob=PAPER_GLOB,
     discovery_marker=DISCOVERY_MARKER,
     variant_sources=VARIANT_SOURCES,
@@ -90,4 +108,6 @@ SPEC = UpstreamLayoutSpec(
         "environment/materials/upstream_data_warnings.md",
     ),
     generated_private=("tests/private/source_manifest.json",),
+    style_resolution="package-scan",
+    render=RenderDefaults(grader_module="grader_pwb"),
 )

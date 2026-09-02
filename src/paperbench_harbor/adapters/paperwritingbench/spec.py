@@ -10,7 +10,12 @@ files discovered from the LaTeX. Discovery itself is now data-driven through
 
 from __future__ import annotations
 
-from paperbench_harbor.adapters.spec import CopyRule, UpstreamLayoutSpec
+from paperbench_harbor.adapters.spec import (
+    BenchmarkIdentity,
+    CopyRule,
+    RenderDefaults,
+    UpstreamLayoutSpec,
+)
 
 PAPER_GLOB = "*/papers/*"
 DISCOVERY_MARKER = "raw_materials/idea_sparse.md"
@@ -54,8 +59,15 @@ PRIVATE_RULES = (
 )
 
 SPEC = UpstreamLayoutSpec(
-    benchmark="PaperWritingBench",
-    task_id_prefix="pwbw",
+    identity=BenchmarkIdentity(
+        benchmark="PaperWritingBench",
+        task_id_prefix="pwbw",
+        tags=("paper-writing", "latex", "scientific-writing", "paperwrite-bench"),
+        relevant_experience=(
+            "Benchmark adaptation of PaperWrite-Bench into the Harbor task format, "
+            "preserving the upstream writing-agent contract."
+        ),
+    ),
     paper_glob=PAPER_GLOB,
     discovery_marker=DISCOVERY_MARKER,
     public=PUBLIC_RULES,
@@ -74,4 +86,10 @@ SPEC = UpstreamLayoutSpec(
         "environment/paper_orchestra/",
     ),
     generated_private=("tests/private/source_manifest.json",),
+    style_resolution="venue-directory",
+    render=RenderDefaults(
+        num_page="8",
+        column="two-column",
+        grader_module="grader_pwbw",
+    ),
 )
