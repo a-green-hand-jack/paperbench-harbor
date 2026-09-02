@@ -104,9 +104,10 @@ RECOGNIZABLE_SECRET_RE = re.compile(
 JSON_UNICODE_ESCAPE_RE = re.compile(r"(?:\\u[0-9a-fA-F]{4})+")
 JSON_HEX_ESCAPE_RE = re.compile(r"(?:\\x[0-9a-fA-F]{2})+")
 STRUCTURED_SECRET_KEY_RE = re.compile(
-    r"(?i)^(?:[A-Z0-9]+[_-])?(?:API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|"
+    r"(?i)^(?:[A-Z0-9]+[_-])*(?:API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|"
     r"CLIENT[_-]?SECRET|PASSWORD|TOKEN|SECRET|CREDENTIALS?|SECRET[_-]?KEY|"
-    r"PRIVATE[_-]?KEY)$"
+    r"PRIVATE[_-]?KEY|AUTHORIZATION|COOKIE|SET[_-]?COOKIE|PROXY[_-]?AUTHORIZATION|"
+    r"X[_-]?(?:API[_-]?KEY|AUTH[_-]?TOKEN)|ID[_-]?TOKEN|OAUTH[_-]?TOKEN)$"
 )
 SAFE_ENV_REFERENCE_RE = re.compile(
     r"^(?:\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\})$"
@@ -315,6 +316,7 @@ def _check_secret_bytes(data: bytes, relative_path: Path) -> None:
                 decoded_text = decoded.decode("utf-8")
             except UnicodeDecodeError:
                 decoded_text = decoded.decode("latin1")
+            _check_json_values(decoded_text, relative_path)
             _check_secret_text(decoded_text, relative_path)
         if len(candidate) % 2 == 0 and re.fullmatch(rb"[0-9a-fA-F]+", candidate):
             try:
@@ -323,6 +325,7 @@ def _check_secret_bytes(data: bytes, relative_path: Path) -> None:
                 continue
             if RECOGNIZABLE_SECRET_RE.search(decoded):
                 raise _secret_error(relative_path)
+            _check_json_values(decoded.decode("latin1"), relative_path)
             _check_secret_text(decoded.decode("latin1"), relative_path)
 
 
@@ -377,8 +380,18 @@ def _check_json_values(text: str, relative_path: Path) -> None:
             for key, item in value.items():
                 if isinstance(key, str):
                     _check_secret_text(key, relative_path, check_assignments=False)
-                    if isinstance(item, str) and STRUCTURED_SECRET_KEY_RE.fullmatch(key):
-                        _check_secret_text(f"{key}={item}", relative_path)
+                    if (
+                        isinstance(item, str)
+                        and STRUCTURED_SECRET_KEY_RE.fullmatch(key)
+                        and item.lower() not in SAFE_SECRET_VALUES
+                        and not SAFE_ENV_REFERENCE_RE.fullmatch(item)
+                    ):
+                        raise _secret_error(relative_path)
+                    if (
+                        isinstance(item, (dict, list))
+                        and STRUCTURED_SECRET_KEY_RE.fullmatch(key)
+                    ):
+                        raise _secret_error(relative_path)
                 visit(item)
         elif isinstance(value, list):
             for item in value:
@@ -723,22 +736,36 @@ def _assert_no_symlink_components(path: Path, label: str) -> None:
 
 
 def _is_codex_session_log(relative: Path) -> bool:
-    return relative.parts[:2] == ("agent", "sessions") and relative.suffix.lower() == ".jsonl"
+    parts = relative.parts
+    return relative.suffix.lower() == ".jsonl" and (
+        parts[:2] == ("agent", "sessions")
+        or parts[:3] == ("logs", "agent", "sessions")
+        or len(parts) >= 4 and parts[0] == "steps" and parts[2:4] == ("agent", "sessions")
+    )
 
 
 def _redact_session_payload(value: Any) -> Any:
     if isinstance(value, dict):
         redacted: dict[Any, Any] = {}
         for key, item in value.items():
-            if isinstance(key, str) and key.lower() in {
-                "encrypted_content",
-                "api_key",
-                "access_token",
-                "refresh_token",
-                "client_secret",
+            normalized_key = key.lower().replace("_", "-") if isinstance(key, str) else ""
+            if normalized_key in {
+                "encrypted-content",
+                "api-key",
+                "access-token",
+                "refresh-token",
+                "client-secret",
                 "password",
                 "token",
                 "secret",
+                "authorization",
+                "cookie",
+                "set-cookie",
+                "proxy-authorization",
+                "x-api-key",
+                "x-auth-token",
+                "id-token",
+                "oauth-token",
             }:
                 redacted[key] = "REDACTED"
             else:
@@ -749,16 +776,23 @@ def _redact_session_payload(value: Any) -> Any:
     return value
 
 
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
 def _redact_codex_session_line(line: bytes, relative: Path) -> bytes:
     if len(line) > MAX_SESSION_JSONL_LINE_BYTES:
         raise TrialExportError(f"Codex session record is too large: {relative}")
     try:
-        payload = json.loads(line)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = json.loads(line, parse_constant=_reject_json_constant)
+    except (UnicodeDecodeError, ValueError) as exc:
         raise TrialExportError(f"invalid Codex session record: {relative}") from exc
-    return (json.dumps(_redact_session_payload(payload), ensure_ascii=False, separators=(",", ":")) + "\n").encode(
-        "utf-8"
-    )
+    return (
+        json.dumps(
+            _redact_session_payload(payload), ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def _open_source_file(root: Path, relative: Path) -> Any:
