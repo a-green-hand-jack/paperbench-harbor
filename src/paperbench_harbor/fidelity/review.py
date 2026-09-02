@@ -82,12 +82,18 @@ def prepare_conversion_review_dir(
     return review_dir
 
 
-def build_conversion_review_prompt(review_dir: Path, benchmark: str) -> str:
+def build_conversion_review_prompt(review_dir: Path, benchmark: str, protocol: str) -> str:
     """Ask a reviewer to judge fidelity without revealing implementation claims."""
     return f"""\
 You are independently reviewing one Harbor conversion for {benchmark}. You did
 not build it. Do not repair it. Read the actual upstream sample and the task
 evidence staged below, then write exactly one JSON verdict.
+
+The task uses the `{protocol}` protocol. A benchmark can preserve alternate
+protocol variants in its upstream sample; those variants are deliberately not
+writer-visible for this task. Do not report a source file as omitted merely
+because it belongs to a different protocol. Judge the selected protocol's
+instruction and materials instead.
 
 # Evidence
 
@@ -132,6 +138,7 @@ def run_conversion_review(
     paper_id: str,
     paper_dir: Path,
     task_dir: Path,
+    protocol: str,
     model: str | None = None,
     log_dir: Path,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
@@ -142,7 +149,7 @@ def run_conversion_review(
         prefix="paperbench-conversion-review-", dir=_review_scratch_root()
     ) as temporary:
         review_dir = prepare_conversion_review_dir(paper_dir, task_dir, Path(temporary))
-        prompt = build_conversion_review_prompt(review_dir, benchmark)
+        prompt = build_conversion_review_prompt(review_dir, benchmark, protocol)
         try:
             run = run_agent_session(
                 paper_id=paper_id,

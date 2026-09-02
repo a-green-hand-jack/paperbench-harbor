@@ -376,6 +376,7 @@ def run_fidelity_audit(
             paper_id=upstream_paper_id,
             paper_dir=paper_dir,
             task_dir=task_dir,
+            protocol=protocol,
             model=reviewer_model,
             log_dir=review_log_dir
             or Path(tempfile.gettempdir()) / "paperbench-harbor-fidelity-review-logs",
@@ -403,8 +404,7 @@ def summarize(reports: list[TaskReport]) -> dict[str, Any]:
         "contract_checks": sum(r.contract_checks for r in reports),
         "semantic_reviews": sum(r.semantic_reviewed for r in reports),
         "semantic_review_failures": sum(
-            r.semantic_reviewed and not (r.semantic_verdict or {}).get("ok", False)
-            for r in reports
+            r.semantic_reviewed and not (r.semantic_verdict or {}).get("ok", False) for r in reports
         ),
         "failed_tasks_detail": [
             {"task_id": r.task_id, "errors": r.errors} for r in reports if not r.ok
