@@ -26,8 +26,8 @@ dataset checkout is required:
 
 ```bash
 harbor run \
-  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
-  --include-task-name lspr-0001 \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/fac54a81702f62b38c765de9e85615b4eb31a470/hello-world" \
+  --include-task-name hello-world-0001 \
   --agent codex \
   --model <provider>/<model> \
   --yes --n-concurrent 1
@@ -40,9 +40,10 @@ Replace the configuration subdirectory and task name for another configuration:
 | PaperWrite-Bench | `paperwrite-bench-short` | `pwb-0001` |
 | PaperWritingBench | `paperwritingbench-sparse-plotoff` | `pwbw-0001` |
 | LifeSci-PaperRecon | `lifesci-paperrecon-short` | `lspr-0001` |
+| PaperBench Harbor smoke test | `hello-world` | `hello-world-0001` |
 
 The release commit is
-`bfe2471c41f416d877e74bfa73cf0f29165c7567`; use it for reproducibility, or
-verify that `v0.3.1` still resolves to that commit. In this command, `--repo`
+`fac54a81702f62b38c765de9e85615b4eb31a470`; use it for reproducibility, or
+verify that `v0.4.0` still resolves to that commit. In this command, `--repo`
 means a Git-repository dataset source; `--dataset` is reserved for Harbor Hub
 packages.
