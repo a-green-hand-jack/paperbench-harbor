@@ -99,7 +99,14 @@ SPEC = dataclasses.replace(
     pwb_spec.SPEC,
     identity=IDENTITY,
     public=tuple(
-        dataclasses.replace(rule, tree_exclude_globs=("*.tex", "README.md"))
+        dataclasses.replace(
+            rule,
+            tree_exclude_globs=(
+                "manuscript/**/*.tex",
+                "tex/minibwa.tex",
+                "./README.md",
+            ),
+        )
         if rule.source == "resources/code"
         else rule
         for rule in pwb_spec.SPEC.public

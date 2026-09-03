@@ -90,8 +90,12 @@ class CopyRule:
         return not self.protocols or protocol in self.protocols
 
     def excludes_tree_path(self, relative: Path) -> bool:
+        relative_name = relative.as_posix()
         return any(part in self.tree_excludes for part in relative.parts) or any(
-            relative.match(pattern) for pattern in self.tree_exclude_globs
+            relative_name == pattern.removeprefix("./")
+            if pattern.startswith("./")
+            else relative.match(pattern)
+            for pattern in self.tree_exclude_globs
         )
 
 

@@ -290,13 +290,16 @@ def test_conversion_recognizes_acmart_as_a_double_column_template(tmp_path: Path
     assert "suitable for a 9-page double-column paper" in instruction
 
 
-def test_conversion_preserves_template_required_limitations_section(tmp_path: Path) -> None:
+@pytest.mark.parametrize("heading", ("Limitations", "Availability and Future Directions"))
+def test_conversion_preserves_template_required_limitations_section(
+    tmp_path: Path, heading: str
+) -> None:
     source = _make_source(tmp_path)
     resources = source / "paper_1" / "resources"
     (resources / "template.tex").write_text(
         "\\documentclass{article}\n"
         "\\begin{document}\n"
-        "\\section{Limitations}\n"
+        f"\\section{{{heading}}}\n"
         "\\end{document}\n",
         encoding="utf-8",
     )

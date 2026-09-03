@@ -68,7 +68,7 @@ _PRESERVE_ACKNOWLEDGEMENT_INSTRUCTION = (
     "supplied template; preserve an existing heading without adding new content."
 )
 _LIMITATIONS_OR_FUTURE_WORK_HEADING_RE = re.compile(
-    r"\\(?:sub)?section\*?\{[^}\n]*(?:limitation|future\s+work)[^}\n]*\}",
+    r"\\(?:sub)?section\*?\{[^}\n]*(?:limitation|future\s+(?:work|directions?))[^}\n]*\}",
     re.IGNORECASE,
 )
 _LIMITATIONS_OR_FUTURE_WORK_INSTRUCTION = (
@@ -292,9 +292,15 @@ def _redact_lifesci_source_pointers(
     original = code_readme.read_text(encoding="utf-8", errors="replace")
     escaped_id = re.escape(arxiv_id)
     redacted = re.sub(
-        rf"https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/{escaped_id}(?:v\d+)?(?:\.pdf)?",
+        rf"https?://(?:dx\.)?doi\.org/10\.48550/arXiv\.{escaped_id}(?:v\d+)?",
         "source-paper-url-withheld",
         original,
+        flags=re.IGNORECASE,
+    )
+    redacted = re.sub(
+        rf"https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/{escaped_id}(?:v\d+)?(?:\.pdf)?",
+        "source-paper-url-withheld",
+        redacted,
         flags=re.IGNORECASE,
     )
     redacted = re.sub(

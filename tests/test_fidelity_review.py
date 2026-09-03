@@ -90,6 +90,7 @@ def test_conversion_review_runs_in_a_throwaway_directory(tmp_path: Path, monkeyp
     assert verdict.ok
     assert calls[0]["model"] == DEFAULT_CONVERSION_REVIEWER_MODEL
     assert "The task uses the `short` protocol" in calls[0]["prompt"]
+    assert "Before reporting that a concrete file is missing" in calls[0]["prompt"]
     assert not Path(calls[0]["workspace"]).is_relative_to(task_dir)
     assert Path(calls[0]["workspace"]).is_relative_to(scratch_root)
     assert (task_dir / "solution" / "private" / "main.tex").is_file()

@@ -113,6 +113,10 @@ writing protocol, the writer-visible materials correspond to the upstream
 public inputs, and the task does not hand over private ground truth or omit
 material that the protocol requires. Name concrete source and task paths for
 every concern. A clean structural audit is not evidence of semantic fidelity.
+Before reporting that a concrete file is missing, directly check that exact
+path under both staged trees. A filename mentioned by another document is not
+missing when the named task path exists; do not infer absence from a partial
+directory listing.
 
 # Output
 
