@@ -48,6 +48,13 @@ template structure active. For `pwb-0044`, that preserves the required
 `\\title{...}` line. This is a task-material correctness repair verified by the
 independent semantic audit, not an unreviewed exclusion.
 
+The writer-visible code README for `pwb-0042` is also a declared fidelity
+repair. Its heading and citation block linked directly to the target paper and
+included its arXiv identifier; the converter now withholds only those
+answer-disclosing parts while preserving the repository's data-preparation and
+model-training guidance. The semantic audit is the release gate for this
+exception.
+
 ## PaperWritingBench
 
 The allowed comparison keeps every path outside three reviewed fidelity repairs

@@ -135,6 +135,32 @@ def test_conversion_is_idempotent(tmp_path: Path) -> None:
     )
 
 
+def test_conversion_redacts_declared_source_pointers_from_code_readme(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _make_paper(source, "paper_42")
+    readme = source / "paper_42" / "resources" / "code" / "README.md"
+    readme.write_text(
+        "# AIM-Fair: Advancing Algorithmic Fairness\n\n"
+        "[arXiv](https://arxiv.org/abs/2503.05665)\n\n"
+        "*Zengqun Zhao et al., AIM-Fair, CVPR 2025*\n\n"
+        "## Data Preparation\n\nKeep this implementation guidance.\n\n"
+        "## Citation\n\n@misc{zhao2025aimfair, eprint={2503.05665}}\n",
+        encoding="utf-8",
+    )
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+    )
+
+    writer_readme = (
+        tmp_path / "out" / "pwb-0001" / "environment" / "materials" / "code" / "README.md"
+    ).read_text(encoding="utf-8")
+    assert "2503.05665" not in writer_readme
+    assert "AIM-Fair" not in writer_readme
+    assert "Zengqun Zhao" not in writer_readme
+    assert "Keep this implementation guidance." in writer_readme
+    assert "Source-paper citation withheld." in writer_readme
+
+
 def test_conversion_rejects_a_source_tree_that_changes_mid_run(tmp_path: Path, monkeypatch) -> None:
     source = _make_source(tmp_path)
 

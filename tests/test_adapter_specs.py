@@ -242,9 +242,8 @@ def test_lifesci_spec_redacts_paper_sources_from_linked_code_checkouts() -> None
 
 
 def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_provenance_and_leakage_policy() -> None:
-    assert tuple(rule.source for rule in LSPR_SPEC.public) == (
-        *(rule.source for rule in pwb_spec.SPEC.public),
-        "resources/code/README.md",
+    assert tuple(rule.source for rule in LSPR_SPEC.public) == tuple(
+        rule.source for rule in pwb_spec.SPEC.public
     )
     assert LSPR_SPEC.private == pwb_spec.SPEC.private
     assert LSPR_SPEC.benchmark == "LifeSci-PaperRecon"

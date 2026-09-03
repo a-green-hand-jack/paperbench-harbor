@@ -23,7 +23,6 @@ from paperbench_harbor.adapters.paperwrite_bench.converter import (
 )
 from paperbench_harbor.adapters.spec import (
     BenchmarkIdentity,
-    CopyRule,
     MaterialCompletenessContract,
 )
 
@@ -111,13 +110,6 @@ SPEC = dataclasses.replace(
         if rule.source == "resources/code"
         else rule
         for rule in pwb_spec.SPEC.public
-    )
-    + (
-        CopyRule(
-            "resources/code/README.md",
-            "environment/materials/code/README.md",
-            may_be_rewritten=True,
-        ),
     ),
     forbidden_public_names=pwb_spec.SPEC.forbidden_public_names | {"provenance.json"},
     render=dataclasses.replace(pwb_spec.SPEC.render, grader_module=""),

@@ -48,7 +48,19 @@ PUBLIC_RULES = (
     CopyRule("resources/table_inventory.json", "environment/materials/table_inventory.json"),
     CopyRule("resources/figures", "environment/materials/figures", kind="tree"),
     CopyRule("resources/tables", "environment/materials/tables", kind="tree"),
-    CopyRule("resources/code", "environment/materials/code", kind="tree"),
+    # README files can contain a direct locator for the source paper. Stage it
+    # separately so the converter can redact only declared exceptions.
+    CopyRule(
+        "resources/code",
+        "environment/materials/code",
+        kind="tree",
+        tree_exclude_globs=("./README.md",),
+    ),
+    CopyRule(
+        "resources/code/README.md",
+        "environment/materials/code/README.md",
+        may_be_rewritten=True,
+    ),
 )
 
 PRIVATE_RULES = (
@@ -109,5 +121,6 @@ SPEC = UpstreamLayoutSpec(
     ),
     generated_private=("tests/private/source_manifest.json",),
     style_resolution="package-scan",
+    redact_source_paper_references=True,
     render=RenderDefaults(grader_module="grader_pwb"),
 )
