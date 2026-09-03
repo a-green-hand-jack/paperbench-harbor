@@ -185,6 +185,41 @@ For judge-backed official metrics, pass verifier variables explicitly with
 Harbor's `--verifier-env` flags. Keep their values in a private environment
 file and never place them in a task, image, command log, or trial archive.
 
+## Fast End-to-End Smoke Test
+
+After changing the benchmark, run the generated Hello World task before a
+long representative-task evaluation. It uses the normal Harbor task layout,
+workspace, Codex agent and isolated verifier, but its deterministic writing
+brief is intentionally small. Generate it from the checked-out integration
+code, then run the exact Codex configuration used for the smoke gate:
+
+```bash
+SMOKE_ROOT=/tmp/paperbench-harbor-smoke
+JOB_ROOT=/path/to/harbor-jobs
+
+uv run paperbench-harbor hello-world --output-dir "$SMOKE_ROOT"
+# For a local Codex OAuth login, use the existing auth file only at runtime.
+# With an API key, omit this prefix and export OPENAI_API_KEY instead.
+CODEX_FORCE_AUTH_JSON=1 uv run --extra harbor harbor run \
+  --jobs-dir "$JOB_ROOT" \
+  --path "$SMOKE_ROOT/hello-world/hello-world-0001" \
+  --agent codex \
+  --model openai/gpt-5.6-terra \
+  --ak reasoning_effort=medium \
+  --yes --n-concurrent 1 \
+  --job-name paperbench-hello-world-terra-medium
+```
+
+A successful run has binary reward `1` and records the Codex model and
+reasoning configuration in the job metadata. The task also checks that the
+agent consumed its mounted brief, rather than accepting arbitrary compilable
+LaTeX. It is a fast integration signal, not a substitute for contract,
+fidelity, determinism or representative real-task validation. See
+[`docs/hello-world-smoke.md`](docs/hello-world-smoke.md) for the release and
+verification procedure. The OAuth credential is injected only into the
+ephemeral agent container; never place `auth.json` or API keys in a task,
+image, repository, or job archive.
+
 ## Submission contract
 
 Every task in every protocol grades the same deliverable: a complete LaTeX
