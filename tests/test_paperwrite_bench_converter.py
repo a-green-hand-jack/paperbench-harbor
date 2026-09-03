@@ -114,6 +114,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         assert f'"upstream_id": "{paper_id}"' in manifest.read_text(encoding="utf-8")
         instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
         assert "double-column paper" in instruction
+        assert "NeurIPS25 target" in instruction
         assert not (task_dir / "environment" / "materials" / "upstream_data_warnings.md").exists()
 
     dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
@@ -313,7 +314,7 @@ def test_conversion_recognizes_acmart_as_a_double_column_template(tmp_path: Path
     instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(
         encoding="utf-8"
     )
-    assert "suitable for a 9-page double-column paper" in instruction
+    assert "suitable for the NeurIPS25 target as a 9-page double-column paper" in instruction
 
 
 @pytest.mark.parametrize("heading", ("Limitations", "Availability and Future Directions"))

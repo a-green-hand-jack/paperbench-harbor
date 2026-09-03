@@ -436,6 +436,7 @@ def _render_templates(
         "num_page": metadata.num_page,
         "column": metadata.column,
         "column_type": column_type,
+        "conference": metadata.conference,
         "has_code": has_code,
         "has_figures": has_figures,
         "has_tables": has_tables,

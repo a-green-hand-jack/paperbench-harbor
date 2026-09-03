@@ -55,6 +55,12 @@ answer-disclosing parts while preserving the repository's data-preparation and
 model-training guidance. The semantic audit is the release gate for this
 exception.
 
+The generated instruction now names each upstream target venue from
+`original/config.yaml` rather than describing it generically. This preserves
+the venue-specific writing protocol, including the ACMMM25 requirement for
+`pwb-0014`; it is a generated-contract correction covered by the semantic
+audit.
+
 ## PaperWritingBench
 
 The allowed comparison keeps every path outside three reviewed fidelity repairs
