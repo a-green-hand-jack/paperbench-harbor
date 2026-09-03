@@ -235,6 +235,7 @@ def test_bio_redacts_direct_paper_pointers_but_keeps_local_style_bytes(tmp_path:
     assert "2606.27607" not in readme
     assert "arxiv.org/abs" not in readme
     assert "doi.org/10.48550" not in readme
+    assert "10.48550/arXiv" not in readme
     assert "source-paper-url-withheld" in readme
     assert (task / "environment" / "materials" / "code" / "nested" / "README.md").is_file()
 

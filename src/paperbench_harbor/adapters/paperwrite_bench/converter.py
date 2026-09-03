@@ -314,6 +314,7 @@ def _redact_lifesci_source_pointers(
         "source-paper-identifier-withheld",
         redacted,
     )
+    redacted = redacted.replace(arxiv_id, "source-paper-identifier-withheld")
     if redacted == original:
         return []
     code_readme.write_text(redacted, encoding="utf-8")
