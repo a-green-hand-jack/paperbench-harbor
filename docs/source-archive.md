@@ -23,10 +23,11 @@ byte count, SHA-256, and one of two treatments:
 - `locator-only`: retain its immutable locator, byte count, hash, and a
   concrete redistribution-exclusion explanation without copying it.
 
-Every paper must account for its e-print source, PDF, and extracted source-tree
-manifest. A paper with a code repository must also account for its code
-snapshot. Missing mappings, movable revisions, bad hashes, or a silent
-redistribution exclusion fail before an archive is created.
+Every arXiv paper must account for its e-print source, PDF, and extracted
+source-tree manifest. A venue-only paper must explicitly mark its arXiv fields
+as not applicable and explain why. A paper with a code repository must also
+account for its code snapshot. Missing mappings, movable revisions, bad hashes,
+or a silent redistribution exclusion fail before an archive is created.
 
 ## Release Procedure
 
