@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+import pytest
+
 from paperbench_harbor.fidelity.audit import TaskReport
 from scripts import audit_fidelity
 
@@ -55,3 +57,40 @@ def test_audit_report_captures_pinned_and_semantic_evidence(
         "reviewer_model": "reviewer/model",
     }
     assert '"semantic_reviews": 1' in capsys.readouterr().out
+
+
+def test_audit_discards_evidence_when_the_source_changes(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    dataset = tmp_path / "dataset"
+    source.mkdir()
+    dataset.mkdir()
+    (source / "paper.txt").write_text("before", encoding="utf-8")
+    args = argparse.Namespace(
+        output=tmp_path / "report",
+        source=source,
+        dataset=dataset,
+        upstream_revision="upstream-rev",
+        semantic_review=True,
+        reviewer_model="reviewer/model",
+    )
+    report = TaskReport(
+        benchmark="PaperWrite-Bench",
+        task_id="pwb-0001",
+        upstream_paper_id="paper-1",
+        ok=True,
+    )
+    original_digest = audit_fidelity._tree_digest(source)
+
+    def mutate_source(_args, summary) -> None:
+        (source / "paper.txt").write_text("after", encoding="utf-8")
+        summary.update(determinism_ok=True)
+
+    with pytest.raises(RuntimeError, match="source tree changed during fidelity audit"):
+        audit_fidelity._write_reports(
+            args,
+            [report],
+            mutate_source,
+            source_tree_sha256=original_digest,
+        )
+    assert not (args.output / "pwb-0001.json").exists()
+    assert not (args.output / "summary.json").exists()

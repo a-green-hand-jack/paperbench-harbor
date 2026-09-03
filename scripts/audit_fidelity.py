@@ -74,6 +74,7 @@ def _code_revision() -> str | None:
 
 
 def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn) -> int:
+    source_tree_sha256 = _tree_digest(args.source)
     try:
         reports = audit_dataset(
             benchmark=benchmark,
@@ -86,7 +87,12 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
         )
     except DatasetAuditError as exc:
         raise SystemExit(str(exc)) from exc
-    return _write_reports(args, reports, determinism_fn)
+    return _write_reports(
+        args,
+        reports,
+        determinism_fn,
+        source_tree_sha256=source_tree_sha256,
+    )
 
 
 def _audit_paperwrite(args: argparse.Namespace) -> int:
@@ -183,20 +189,32 @@ def _determinism_paperwritingbench(args: argparse.Namespace, summary: dict) -> N
         )
 
 
-def _write_reports(args: argparse.Namespace, reports, determinism_fn) -> int:
+def _write_reports(
+    args: argparse.Namespace,
+    reports,
+    determinism_fn,
+    *,
+    source_tree_sha256: str | None = None,
+) -> int:
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
+    summary = summarize(reports)
+    determinism_fn(args, summary)
+    final_source_tree_sha256 = _tree_digest(args.source)
+    if source_tree_sha256 is not None and final_source_tree_sha256 != source_tree_sha256:
+        raise RuntimeError(
+            "source tree changed during fidelity audit; discard the generated evidence and retry "
+            "from an immutable input snapshot"
+        )
     for report in reports:
         (output_dir / f"{report.task_id}.json").write_text(
             json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8"
         )
-    summary = summarize(reports)
-    determinism_fn(args, summary)
     summary["evidence"] = {
         "schema_version": 1,
         "benchmark": reports[0].benchmark if reports else None,
         "upstream_revision": args.upstream_revision,
-        "upstream_tree_sha256": _tree_digest(args.source),
+        "upstream_tree_sha256": source_tree_sha256 or final_source_tree_sha256,
         "dataset_tree_sha256": _tree_digest(args.dataset),
         "converter_revision": _code_revision(),
         "semantic_review_required": args.semantic_review,
