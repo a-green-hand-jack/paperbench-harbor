@@ -354,6 +354,7 @@ def run_fidelity_audit(
     semantic_review: bool = False,
     reviewer_model: str | None = None,
     review_log_dir: Path | None = None,
+    layout_spec: UpstreamLayoutSpec | None = None,
 ) -> TaskReport:
     """Run the full fidelity audit for a single task."""
     report = TaskReport(
@@ -364,7 +365,11 @@ def run_fidelity_audit(
     )
 
     del venue  # Layout specs identify the source paper without a benchmark dispatch chain.
-    spec = _layout_spec(benchmark)
+    spec = layout_spec or _layout_spec(benchmark)
+    if spec.benchmark != benchmark:
+        raise FidelityError(
+            f"layout spec benchmark {spec.benchmark!r} does not match audit benchmark {benchmark!r}"
+        )
     paper_dir = _paper_dir(spec, upstream_root, upstream_paper_id)
     _audit_writer_surface(task_dir, paper_dir, spec, protocol, report)
     _audit_verifier(task_dir, paper_dir, spec, protocol, report)

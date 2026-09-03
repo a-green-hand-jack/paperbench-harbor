@@ -67,11 +67,14 @@ where the temporary proposal may be written.
    license, hashes the public sample manifest, and checks the claimed sample
    count. Relay failures exactly; never repair a rejected candidate by editing
    its JSON.
-4. Propose a `UpstreamLayoutSpec` only in the external scratch area. It must
-   declare discovery, public/private copy rules, generated paths, forbidden
-   names, identity, render defaults, style resolver, material-completeness
-   contract, and fixed source/archive fields. Do not create the repository
-   adapter yourself.
+4. Propose the schema-v1 generic layout JSON only in the external scratch
+   area. It must bind `candidate_id`, identity, paper discovery, public/private
+   copy rules, writer instructions, forbidden writer-visible names, and render
+   defaults. It must route the required public overview, template, and
+   bibliography plus the private ground-truth `main.tex`; the generic
+   converter rejects a partial protocol. Name an explicit adapter hook instead
+   when a source needs a real parser or a non-generic normalization. Do not
+   create the repository adapter yourself.
 5. Stop for human review. The human must create an approval JSON with
    `schema_version`, `candidate_sha256`, `layout_spec_sha256`, and `reviewer`.
    Only then run `verify_benchmark_candidate.py` again with `--layout-spec` and
@@ -82,12 +85,17 @@ where the temporary proposal may be written.
    conversion, fidelity, semantic review, or release success until a separate
    implementation and mandatory audit run have actually completed.
 
-The implementation path after approval is fixed: add the reviewed spec and its
-explicit hooks, produce a source-archive plan that maps every new task to fixed
-paper identity and construction inputs, run conversion without `--no-audit` or
-`--no-semantic-review`, run deterministic `audit_fidelity.py`, validate the
-separate source archive, and retain version-bound evidence in the release
-documentation. The source archive is release provenance only: no adapter or
-task may read it, and no archive path may be copied into a task directory.
-Those commands are available only for reporting a verified implementation; they
-do not turn this agent into the approver.
+The implementation path after approval is fixed. A normal release operator
+runs `scripts/materialize_onboarded_benchmark.py` with the approved candidate,
+layout, source checkout, and evidence directories. That command reruns public
+candidate verification, requires the SHA-bound approval, checks that the local
+checkout is exactly the approved commit and that discovery count equals the
+verified manifest count, then rejects any structural or semantic fidelity
+failure. It also performs two deterministic reconstructions and writes the
+candidate/layout approval digests, source and task-tree hashes, reviewer model,
+and verdicts outside the runnable task tree. The next release also needs a
+source-archive plan mapping every admitted task to fixed paper identity and
+construction inputs, then must validate the separate archive before publish.
+The source archive is release provenance only: no adapter or task may read it,
+and no archive path may be copied into a task directory. These commands do not
+turn this agent into the approver.

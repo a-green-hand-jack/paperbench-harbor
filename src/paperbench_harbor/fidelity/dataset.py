@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from paperbench_harbor.adapters.spec import UpstreamLayoutSpec
 from paperbench_harbor.fidelity.audit import TaskReport, run_fidelity_audit
 
 
@@ -51,6 +52,7 @@ def audit_dataset(
     semantic_review: bool = False,
     reviewer_model: str | None = None,
     review_log_dir: Path | None = None,
+    layout_spec: UpstreamLayoutSpec | None = None,
 ) -> list[TaskReport]:
     """Run the per-task fidelity audit across one generated dataset.
 
@@ -76,6 +78,7 @@ def audit_dataset(
                 semantic_review=semantic_review,
                 reviewer_model=reviewer_model,
                 review_log_dir=review_log_dir,
+                layout_spec=layout_spec,
             )
         )
     return reports

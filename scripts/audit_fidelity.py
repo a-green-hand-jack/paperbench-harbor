@@ -222,7 +222,11 @@ def _write_reports(
         "dataset_tree_sha256": _tree_digest(args.dataset),
         "converter_revision": _code_revision(),
         "semantic_review_required": args.semantic_review,
-        "reviewer_model": reviewer_model,
+        "reviewer_model": (
+            reviewer_model
+            if reviewer_model is not None
+            else getattr(args, "reviewer_model", None)
+        ),
     }
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"

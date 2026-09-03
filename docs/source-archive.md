@@ -49,3 +49,14 @@ or a silent redistribution exclusion fail before an archive is created.
 The archive builder hashes the entire local task tree before and after it
 writes. An archive refresh that changes a task byte is a failure, rather than a
 new benchmark release.
+
+## Current Scope
+
+The source archive being added in the PR #42 release cycle covers the 22-task
+LifeSci-PaperRecon configuration. The repository owner explicitly decided not
+to backfill a source archive for the already published 51 PaperWrite-Bench or
+200 PaperWritingBench tasks. Those configurations remain subject to their
+conversion, regression, isolation, and semantic-audit gates, but are not task
+registrations in this LifeSci archive plan or release gate. A later decision to
+archive either legacy configuration must use a separate complete plan; it must
+not silently reuse or weaken the LifeSci registry.

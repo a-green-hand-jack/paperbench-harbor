@@ -176,4 +176,6 @@ def test_benchmark_onboard_policy_cannot_edit_or_bypass_required_audits() -> Non
     assert "screen_benchmark_candidate.py" in text
     assert "verify_benchmark_candidate.py" in text
     assert "human approval" in text
+    assert "materialize_onboarded_benchmark.py" in text
+    assert "semantic fidelity" in text
     assert "source-archive plan" in text
