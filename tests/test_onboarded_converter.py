@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from paperbench_harbor.onboarding import converter as converter_module
 from paperbench_harbor.onboarding.candidate import BenchmarkCandidate, OnboardingError
 from paperbench_harbor.onboarding.converter import (
     OnboardedConversionConfig,
@@ -91,11 +92,18 @@ def _source(root: Path) -> Path:
         "\\documentclass{article}\n\\begin{document}\nGround truth.\\end{document}\n",
         encoding="utf-8",
     )
+    for command in (
+        ["git", "init", "--quiet"],
+        ["git", "config", "user.email", "tests@example.invalid"],
+        ["git", "config", "user.name", "Tests"],
+        ["git", "add", "."],
+        ["git", "commit", "--quiet", "-m", "source"],
+    ):
+        subprocess.run(command, cwd=root, check=True, capture_output=True)
     return root
 
 
-def _approved(tmp_path: Path):
-    candidate = _candidate()
+def _approved(tmp_path: Path, candidate: BenchmarkCandidate):
     candidate_path = tmp_path / "candidate.json"
     candidate_path.write_text(json.dumps(candidate.as_dict(), sort_keys=True) + "\n", encoding="utf-8")
     layout_path = tmp_path / "layout.json"
@@ -115,22 +123,27 @@ def _approved(tmp_path: Path):
     return candidate, candidate_path, layout_path, approval
 
 
-def test_approved_layout_generates_and_audits_a_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    candidate, candidate_path, layout_path, approval = _approved(tmp_path)
+def test_approved_layout_generates_and_audits_a_task(tmp_path: Path) -> None:
+    source = _source(tmp_path / "source")
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=source,
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    ).stdout.strip()
+    candidate = replace(_candidate(), source_revision=revision)
+    candidate, candidate_path, layout_path, approval = _approved(tmp_path, candidate)
     approved = load_approved_layout(
         layout_path,
         candidate_path=candidate_path,
         approval_path=approval,
         candidate=candidate,
     )
-    source = _source(tmp_path / "source")
-    monkeypatch.setattr(converter_module, "_assert_pinned_source", lambda _: None)
     config = OnboardedConversionConfig(
         source=source,
         output_dir=tmp_path / "out",
-        upstream_revision="c" * 40,
+        upstream_revision=revision,
         candidate=candidate,
         approved_layout=approved,
     )

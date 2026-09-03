@@ -86,6 +86,7 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
             semantic_review=args.semantic_review,
             reviewer_model=reviewer_model,
             review_log_dir=args.output / "review-logs",
+            workers=args.workers,
         )
     except DatasetAuditError as exc:
         raise SystemExit(str(exc)) from exc
@@ -259,6 +260,12 @@ def _add_semantic_review_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--reviewer-model",
         help="override the isolated semantic reviewer model",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="concurrent per-task audits; reports remain in manifest order",
     )
 
 

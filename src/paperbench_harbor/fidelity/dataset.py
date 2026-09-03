@@ -16,6 +16,7 @@ tree does not re-convert it twice to check.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from paperbench_harbor.adapters.spec import UpstreamLayoutSpec
@@ -53,6 +54,7 @@ def audit_dataset(
     reviewer_model: str | None = None,
     review_log_dir: Path | None = None,
     layout_spec: UpstreamLayoutSpec | None = None,
+    workers: int = 1,
 ) -> list[TaskReport]:
     """Run the per-task fidelity audit across one generated dataset.
 
@@ -60,28 +62,33 @@ def audit_dataset(
     PaperWritingBench records one, and reading it per entry is what lets this
     loop be shared instead of branching on the benchmark.
     """
-    reports = []
-    for entry in load_dataset_manifest(dataset):
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
+    entries = load_dataset_manifest(dataset)
+
+    def audit_entry(entry: dict) -> TaskReport:
         task_id = entry["task_id"]
         task_dir = dataset / task_id
         if not task_dir.is_dir():
             raise DatasetAuditError(f"task dir missing: {task_dir}")
-        reports.append(
-            run_fidelity_audit(
-                benchmark=benchmark,
-                task_id=task_id,
-                upstream_paper_id=entry["upstream_paper_id"],
-                upstream_root=source,
-                task_dir=task_dir,
-                protocol=protocol,
-                venue=entry.get("venue"),
-                semantic_review=semantic_review,
-                reviewer_model=reviewer_model,
-                review_log_dir=review_log_dir,
-                layout_spec=layout_spec,
-            )
+        return run_fidelity_audit(
+            benchmark=benchmark,
+            task_id=task_id,
+            upstream_paper_id=entry["upstream_paper_id"],
+            upstream_root=source,
+            task_dir=task_dir,
+            protocol=protocol,
+            venue=entry.get("venue"),
+            semantic_review=semantic_review,
+            reviewer_model=reviewer_model,
+            review_log_dir=review_log_dir,
+            layout_spec=layout_spec,
         )
-    return reports
+
+    if workers == 1:
+        return [audit_entry(entry) for entry in entries]
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(audit_entry, entries))
 
 
 def format_failures(reports: list[TaskReport], *, limit: int = 5) -> str:

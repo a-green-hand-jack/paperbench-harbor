@@ -115,6 +115,45 @@ def test_dataset_audit_passes_an_explicit_review_log_directory(tmp_path: Path, m
     assert seen["review_log_dir"] == review_logs
 
 
+def test_dataset_audit_can_bound_concurrency_without_reordering_reports(
+    tmp_path: Path, monkeypatch
+) -> None:
+    dataset = tmp_path / "dataset"
+    entries = [
+        {"task_id": "pwb-0002", "upstream_paper_id": "paper_2"},
+        {"task_id": "pwb-0001", "upstream_paper_id": "paper_1"},
+    ]
+    _write_manifest(dataset, entries)
+    for entry in entries:
+        (dataset / entry["task_id"]).mkdir()
+
+    def _fake(**kwargs):
+        return TaskReport(
+            benchmark=kwargs["benchmark"],
+            task_id=kwargs["task_id"],
+            upstream_paper_id=kwargs["upstream_paper_id"],
+            ok=True,
+        )
+
+    monkeypatch.setattr("paperbench_harbor.fidelity.dataset.run_fidelity_audit", _fake)
+    reports = audit_dataset(
+        benchmark="PaperWrite-Bench",
+        source=tmp_path / "source",
+        dataset=dataset,
+        protocol="short",
+        workers=2,
+    )
+    assert [report.task_id for report in reports] == ["pwb-0002", "pwb-0001"]
+    with pytest.raises(ValueError, match="workers"):
+        audit_dataset(
+            benchmark="PaperWrite-Bench",
+            source=tmp_path / "source",
+            dataset=dataset,
+            protocol="short",
+            workers=0,
+        )
+
+
 def _report(task_id: str, errors: list[str]) -> TaskReport:
     return TaskReport(
         benchmark="PaperWrite-Bench",
