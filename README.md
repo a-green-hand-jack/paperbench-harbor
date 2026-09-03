@@ -175,7 +175,7 @@ uv run --all-extras python scripts/run_paperrecon_domain.py \
 
 The release operator then validates the staged task tree and source archive
 with the release workflow. The cross-domain publisher is the only command that
-uploads staged bytes: it first requires all four domains to have at least 20
+uploads staged bytes: it first requires Physics, Chemistry, and Mathematics to have at least 20
 passed, deterministic, semantically reviewed tasks, then records immutable
 tree digests on a candidate Hub revision. It never creates a public tag unless
 `--publish` is supplied.
@@ -195,7 +195,7 @@ uv run --all-extras python scripts/publish_paperrecon_release.py \
   --evidence <release-dir>/paperrecon-gate.json --publish
 ```
 
-The public `v0.1.0` tag is created only after the cross-domain gate passes;
+The public `v0.5.0` tag is created only after the cross-domain gate passes;
 candidate revisions are never silently promoted by a build command.
 
 ## Benchmark families

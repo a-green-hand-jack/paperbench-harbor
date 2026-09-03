@@ -173,7 +173,7 @@ def _parser() -> argparse.ArgumentParser:
         parser.add_argument(f"--{domain}-run", type=Path, required=(domain in DOMAINS))
     parser.add_argument("--task-repo", default="Jack-Jieke-Wu/Paper-Writing-Exam")
     parser.add_argument("--archive-repo", default="Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive")
-    parser.add_argument("--candidate-revision", default="paperrecon-v0.1.0-candidate")
+    parser.add_argument("--candidate-revision", default="paperrecon-v0.5.0-candidate")
     parser.add_argument("--release-tag", default="v0.5.0")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--publish", action="store_true", help="create the public release tag after upload")
