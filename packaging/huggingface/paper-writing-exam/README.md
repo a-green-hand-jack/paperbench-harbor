@@ -31,6 +31,7 @@ The current immutable task release is `v0.4.1` at
 
 Only this dataset is a Harbor task source. Trial and source-archive revisions
 are linked evidence, not substitutes for the task files selected for a run.
+The matching source archive is [`v0.1.0`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive/tree/v0.1.0).
 
 ## Task configurations and collection
 

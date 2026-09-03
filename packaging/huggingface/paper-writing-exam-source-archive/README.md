@@ -19,6 +19,9 @@ It stores the task-paper registry and the original workflow inputs used to
 construct a fixed task release. It is an archive product, not a runnable Harbor
 task dataset.
 
+The initial immutable archive release is [`v0.1.0`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive/tree/v0.1.0),
+target commit `328f2ca7ee8b68cbf2b5af60ad9ff1b85f47cce0`.
+
 ## Dataset relationship
 
 | Dataset | Purpose | May Harbor run it? |

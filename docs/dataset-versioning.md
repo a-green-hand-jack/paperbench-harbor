@@ -53,6 +53,15 @@ repair was generated with converter revision
 Task selection and execution instructions are normative in the
 [Paper-Writing-Exam dataset card](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam), not here.
 
+## Current source archive
+
+[`Paper-Writing-Exam-Source-Archive`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive)
+maps this task release at its immutable `v0.1.0` tag, target commit
+`328f2ca7ee8b68cbf2b5af60ad9ff1b85f47cce0`. Its registry has 274 task records,
+including 273 archived upstream source trees and the explicitly non-applicable
+first-party `hello-world` record. Its per-file manifest covers 14,388 source
+files.
+
 ## Historical releases
 
 - `v0.4.0` added the first-party `hello-world/hello-world-0001` integration
