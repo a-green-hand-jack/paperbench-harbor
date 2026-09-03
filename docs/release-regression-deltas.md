@@ -97,6 +97,13 @@ generated-file exclusions plus the following reviewed corrections:
   and `tests/texmf` for `lspr-0008`, `lspr-0009`, `lspr-0016`, and `lspr-0017`.
   These files are required by the supplied template or bibliography and make
   the writer and oracle compile contracts agree.
+- `lspr-0003` also stages the declared, byte-identical `arxiv.sty` support
+  file in both `environment/texmf` and `tests/texmf`, so the writer and
+  verifier use the style version in the pinned source corpus.
+- Six code-tree `README.md` files (`lspr-0004`, `0006`, `0016`, `0018`,
+  `0019`, and `0021`) redact embedded source-paper arXiv identifiers and
+  links. The code remains writer-visible evidence; only answer-disclosing
+  paper locators are withheld.
 
 The generic contract and instruction files change because this PR adds the
 release-blocking material and format checks. They are not treated as evidence
