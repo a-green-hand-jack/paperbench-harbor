@@ -29,22 +29,46 @@ as not applicable and explain why. A paper with a code repository must also
 account for its code snapshot. Missing mappings, movable revisions, bad hashes,
 or a silent redistribution exclusion fail before an archive is created.
 
-## Release Procedure
+## Release Workflow
 
-1. Materialize the intended task release and prepare the approved source
-   archive plan outside that task directory.
-2. Run `scripts/build_source_archive.py --plan ... --dataset-root ... --output
-   ...`; the output must be a separate empty directory.
-3. Run a deterministic, semantic `scripts/audit_fidelity.py` report for every
-   task configuration.
-4. Run `scripts/verify_release_provenance.py` with the plan, task release,
-   archive, and one `--audit-summary CONFIG=...` for each configuration. It
-   fails unless all tasks are registered, copied input hashes still match, and
-   every configuration has a fully passing deterministic semantic audit tied to
-   the planned converter revision.
-5. Upload the two immutable products, tag both releases, and put the final
-   runnable-dataset revision, source-archive revision, registry link, and gate
-   evidence in their Hugging Face dataset cards.
+The release workflow is executed by
+`scripts/run_release_workflow.py --spec ... --audit-output ...
+--archive-output ... --evidence-output ...`. Its strict schema-v1 JSON spec
+pins the task converter revision, the workflow revision, the semantic-review
+model, and every audit's source, task tree, upstream revision, protocol, and
+per-task worker count.
+
+It starts all declared configuration audits concurrently (bounded by the spec's
+`max_concurrent_audits`) and always passes `--semantic-review` with the named
+reviewer model. It verifies that every produced summary represents the exact
+task tree, has a pinned workflow revision, passes the two independent
+determinism rebuilds, and contains one successful semantic review per task.
+
+Only after those full audits pass does the workflow build the separate source
+archive, validate the registry and copied hashes, run the source-archive gate
+for the configurations covered by the archive plan, and write one
+machine-readable release-workflow evidence file. A failure leaves no successful
+gate evidence, so it cannot be used to create a release tag.
+
+The intended sequence is:
+
+1. Materialize candidate task trees and upload them only to an isolated
+   candidate Hugging Face revision. Its immutable commit is recorded in the
+   source-archive plan; it is not a public release tag.
+2. Prepare the human-approved archive plan and source inputs outside every
+   runnable task directory.
+3. Run the release workflow. It performs the complete deterministic and
+   semantic audit of every declared configuration in parallel, then builds and
+   verifies the archive and its provenance gate.
+4. Upload the source archive, create immutable tags for the verified runnable
+   candidate revision and its archive revision, then publish the workflow
+   evidence and links in both dataset cards.
+
+`scripts/build_source_archive.py` and
+`scripts/verify_release_provenance.py` remain useful independent verification
+commands, but a release workflow must use the orchestrator above rather than
+hand-compose a partial audit. This makes source-archive production a required
+part of each future release workflow, not an after-the-fact document.
 
 The archive builder hashes the entire local task tree before and after it
 writes. An archive refresh that changes a task byte is a failure, rather than a
