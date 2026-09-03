@@ -117,9 +117,11 @@ def _provenance(**overrides: object) -> dict:
         "license_url": "https://creativecommons.org/licenses/by/4.0/",
         "source_url": _SPEC.arxiv_eprint_url,
         "fetch_date": "2026-08-30",
+        "code_status": "available",
         "code_repo": _SPEC.code_repo,
         "code_commit": "0123456789abcdef0123456789abcdef01234567",
         "code_license": "MIT License",
+        "code_not_applicable_reason": "",
     }
     record.update(overrides)
     return record

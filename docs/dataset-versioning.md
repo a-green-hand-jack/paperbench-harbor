@@ -37,6 +37,19 @@ that has not been published at an immutable archive revision.
    relationship. GitHub documents the maintainer workflow, not a duplicate task
    user guide.
 
+## PaperRecon candidate-release gate
+
+New PaperRecon domains first publish reviewable candidate revisions, not public
+dataset tags. Candidate manifests record the construction revision, source
+archive revision, LKM discovery snapshot, independently verified provenance,
+and the SHA-256 of the human approval record that selected every paper.
+
+Physics, Chemistry, and Mathematics may receive their first public `v0.1.0`
+tags only when each domain has at least 20 human-approved tasks that have been
+fully rebuilt and pass task contracts, fidelity, deterministic regeneration,
+semantic review, and source-archive verification. LKM is a discovery input
+only; it cannot substitute for independent source or license verification.
+
 ## Current task release
 
 [`Jack-Jieke-Wu/Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam)

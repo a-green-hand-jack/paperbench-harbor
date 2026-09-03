@@ -37,6 +37,10 @@ from paperbench_harbor.adapters.lifesci_paperrecon.harbor import (
 from paperbench_harbor.adapters.lifesci_paperrecon.harbor import (
     lifesci_paperrecon_conversion_config,
 )
+from paperbench_harbor.adapters.paperrecon import (
+    get_paperrecon_adapter,
+    paperrecon_conversion_config,
+)
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
@@ -115,6 +119,16 @@ def _audit_lifesci_paperrecon(args: argparse.Namespace) -> int:
     return _run(args, LSPR_BENCHMARK, args.overview, _determinism_lifesci_paperrecon)
 
 
+def _audit_paperrecon(args: argparse.Namespace) -> int:
+    adapter = get_paperrecon_adapter(args.domain)
+    return _run(
+        args,
+        adapter.benchmark,
+        args.overview,
+        lambda options, summary: _determinism_paperrecon(options, summary, args.domain),
+    )
+
+
 def _audit_paperwritingbench(args: argparse.Namespace) -> int:
     return _run(args, "PaperWritingBench", args.protocol, _determinism_paperwritingbench)
 
@@ -130,6 +144,32 @@ def _determinism_lifesci_paperrecon(args: argparse.Namespace, summary: dict) -> 
                     run,
                     lambda out: convert_paperwrite_bench(
                         lifesci_paperrecon_conversion_config(
+                            source=args.source,
+                            output_dir=out,
+                            upstream_revision=args.upstream_revision,
+                            overview=args.overview,
+                            overwrite=True,
+                        )
+                    ),
+                )
+            )
+        _record_determinism_summary(summary, results)
+
+
+def _determinism_paperrecon(args: argparse.Namespace, summary: dict, domain: str) -> None:
+    """Rebuild any registered PaperRecon configuration twice from one corpus."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp)
+        results = []
+        for run in ("a", "b"):
+            results.append(
+                _capture_determinism_run(
+                    scratch,
+                    run,
+                    lambda out: convert_paperwrite_bench(
+                        paperrecon_conversion_config(
+                            domain,
                             source=args.source,
                             output_dir=out,
                             upstream_revision=args.upstream_revision,
@@ -309,6 +349,16 @@ def build_parser() -> argparse.ArgumentParser:
     bio.add_argument("--output", type=Path, required=True, help="report output directory")
     _add_semantic_review_options(bio)
     bio.set_defaults(func=_audit_lifesci_paperrecon)
+
+    paperrecon = sub.add_parser("paperrecon", help="Audit a registered PaperRecon dataset")
+    paperrecon.add_argument("--domain", choices=["lifesci", "physics", "chemistry", "mathematics"], required=True)
+    paperrecon.add_argument("--source", type=Path, required=True, help="generated source corpus root")
+    paperrecon.add_argument("--dataset", type=Path, required=True, help="Harbor dataset root")
+    paperrecon.add_argument("--upstream-revision", required=True, help="pinned construction-pipeline revision")
+    paperrecon.add_argument("--overview", default="short", choices=["short", "long"])
+    paperrecon.add_argument("--output", type=Path, required=True, help="report output directory")
+    _add_semantic_review_options(paperrecon)
+    paperrecon.set_defaults(func=_audit_paperrecon)
 
     pwbw = sub.add_parser("paperwritingbench", help="Audit PaperWritingBench dataset")
     pwbw.add_argument("--source", type=Path, required=True, help="upstream PaperWritingBench root")

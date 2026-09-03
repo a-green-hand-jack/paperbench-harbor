@@ -18,6 +18,7 @@ these expectations and fails the paper on any mismatch.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 #: Licenses that permit redistributing derived material (approved plan,
 #: Phase 0 filter). Anything else disqualifies a paper.
@@ -32,6 +33,9 @@ ACCEPTED_LICENSES = (
     "CC0 1.0",
 )
 
+CodeStatus = Literal["available", "not_applicable"]
+CODE_STATUSES: tuple[CodeStatus, ...] = ("available", "not_applicable")
+
 
 @dataclass(frozen=True)
 class PaperSpec:
@@ -43,11 +47,44 @@ class PaperSpec:
     #: `AGENTS_<type>.md` writing instructions the benchmark hands the writing
     #: agent, and it is a human decision.
     paper_type: str
-    code_repo: str
+    #: The repository is mandatory only when :attr:`code_status` is
+    #: ``"available"``.  A theoretical or proof-only paper may be selected
+    #: with ``"not_applicable"`` only when a reviewer recorded why code is not
+    #: a reconstruction input.
+    code_repo: str = ""
     expected_license: str = ""
     expected_version: str = ""
     expected_category: str = ""
     note: str = ""
+    code_status: CodeStatus = "available"
+    code_not_applicable_reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.code_status not in CODE_STATUSES:
+            raise ValueError(
+                f"code_status must be one of {CODE_STATUSES}, got {self.code_status!r}"
+            )
+        if self.code_status == "available":
+            if not self.code_repo.strip():
+                raise ValueError("code_repo is required when code_status='available'")
+            if self.code_not_applicable_reason.strip():
+                raise ValueError(
+                    "code_not_applicable_reason must be empty when code_status='available'"
+                )
+        else:
+            if self.code_repo.strip():
+                raise ValueError(
+                    "code_repo must be empty when code_status='not_applicable'"
+                )
+            if not self.code_not_applicable_reason.strip():
+                raise ValueError(
+                    "code_not_applicable_reason is required when "
+                    "code_status='not_applicable'"
+                )
+
+    @property
+    def requires_code(self) -> bool:
+        return self.code_status == "available"
 
     @property
     def arxiv_abs_url(self) -> str:

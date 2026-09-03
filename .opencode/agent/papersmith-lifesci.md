@@ -1,5 +1,5 @@
 ---
-description: "PaperSmith entry point for LifeSci-PaperRecon. It screens and independently verifies candidates, then waits for a human approval record before promotion, construction, Harbor wrapping, and mandatory fidelity review. Reports pipeline and task-design outcomes only."
+description: "PaperSmith entry point for LifeSci-PaperRecon. It uses Bohrium LKM for candidate discovery, independently verifies every eligibility claim, then waits for a human approval record before promotion, construction, Harbor wrapping, and mandatory fidelity review. Reports pipeline and task-design outcomes only."
 mode: primary
 permission:
   "*": deny
@@ -175,11 +175,20 @@ Extract three things, and state what you extracted before running anything:
 
 ### 2. Screen for candidates
 
+Candidate discovery is LKM-first. The screening command records the Bohrium LKM
+queries, client version, normalized results, and every fallback decision in the
+candidate snapshot. If LKM is unavailable, unauthenticated, times out, or emits
+invalid data, it records that failure and continues with arXiv and Semantic
+Scholar. LKM results are leads only: they do not prove an arXiv source license,
+code license, immutable code revision, or reconstructability. Those claims are
+still independently verified in step 3.
+
 ```
 uv run scripts/screen_lifesci_paperrecon_candidates.py \
     --build-root /home/user/lifesci-paperrecon-scratch/_screening \
     --target-count <N> \
     --output .cache/lifesci-paperrecon/candidates-lifesci.json \
+    --lkm-default \
     --extra-guidance "<the topical steering you extracted in step 1, or omit if none>"
 ```
 
@@ -189,8 +198,9 @@ rather than inventing a new one per request. `--output` is required to actually
 get a `candidates.json` you can hand to step 3 -- without it the proposal is
 only printed, not written to a path you can pass on.
 
-This writes a `candidates.json` proposal. Report the path it wrote and how many
-candidates it contains. `--extra-guidance` narrows which *qualifying* papers
+This writes a `candidates.json` proposal and its LKM discovery snapshot. Report
+the paths it wrote, the provider/fallback outcome, and how many candidates it
+contains. `--extra-guidance` narrows which *qualifying* papers
 the screener prefers; it never relaxes what qualifies, so do not use it to work
 around a rejection later in the pipeline.
 

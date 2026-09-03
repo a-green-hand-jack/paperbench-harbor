@@ -44,7 +44,7 @@ from paperbench_harbor.construction.core.opencode_agent import (
     run_agent_session,
     tail_log,
 )
-from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES
+from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, CODE_STATUSES
 
 #: Screening is proposing candidates, not grading generated content, so the
 #: same-model bias that forces :mod:`.review` onto a different vendor does not
@@ -63,9 +63,11 @@ CANDIDATES_FILENAME = "candidates.json"
 REQUIRED_CANDIDATE_FIELDS: tuple[str, ...] = (
     "arxiv_id",
     "expected_version",
+    "code_status",
     "code_repo",
     "expected_license",
     "code_license",
+    "code_not_applicable_reason",
     "expected_category",
     "paper_type",
     "note",
@@ -138,9 +140,11 @@ class Candidate:
 
     arxiv_id: str
     expected_version: str
+    code_status: str
     code_repo: str
     expected_license: str
     code_license: str
+    code_not_applicable_reason: str
     expected_category: str
     paper_type: str
     note: str
@@ -157,6 +161,7 @@ def build_screening_prompt(
     target_count: int,
     exclude_ids: tuple[str, ...] = (),
     extra_guidance: str = "",
+    discovery_context: str = "",
     output_path: Path,
 ) -> str:
     """The screening task for one domain.
@@ -229,6 +234,15 @@ so there is nothing to re-verify and you are searching from scratch. Find
         if extra_guidance
         else ""
     )
+    discovery = (
+        "\n## Discovery leads\n\n"
+        f"{discovery_context}\n\n"
+        "These are retrieval leads, not evidence. Independently verify every "
+        "paper against arXiv, its e-print bundle, and where applicable the "
+        "repository API before it may appear in the proposal.\n"
+        if discovery_context
+        else ""
+    )
 
     return f"""\
 You are screening candidate papers for a paper-reconstruction benchmark. Your
@@ -262,12 +276,16 @@ whole failed construction run to discover.
    build from.
 3. **A bibliography must be recoverable** from the bundle: a `.bib`, a `.bbl`,
    or inline `\\bibitem`s. Any of the three is fine.
-4. **A public code repository must exist and be checkable out.** Its *license*
-   is **not** a filter — an unlicensed repository is acceptable — but you must
-   record what you actually find. Call `GET /repos/{{owner}}/{{repo}}` and read
-   the `license` field rather than guessing from the presence of a file:
-   `license: null` means you record `"none declared"`, which is a valid and
-   expected answer.
+4. **Record one of two code-evidence branches.**
+   - `"available"`: a public code repository exists and is checkable out. Its
+     *license* is **not** a filter, but call `GET /repos/{{owner}}/{{repo}}`
+     and record the returned `license` field. `license: null` means
+     `"none declared"`, which is valid.
+   - `"not_applicable"`: code is genuinely not a reconstruction input, for
+     example a proof-only mathematics paper or an analytic theoretical result.
+     Record a concrete, human-reviewable reason. This is never a fallback for a
+     missing, private, broken, or unlicensed repository. If code should exist
+     but you cannot verify it, exclude the paper instead.
 5. **`expected_category` must be the submission's *primary* category**, the one
    arXiv cites it as (the `[cs.LG]` in the "Cite as:" line), read off the live
    abstract page or the API's `<arxiv:primary_category>` element. A cross-list
@@ -281,7 +299,7 @@ whole failed construction run to discover.
    look more in-scope than it is actually filed.
 6. **Exclude these arXiv IDs.** Samples have already been built from them:
 {exclude_block}
-{prior}{guidance}
+{prior}{guidance}{discovery}
 {seed_block}
 
 # Output
@@ -294,9 +312,11 @@ exactly these keys and string values (except where noted):
   {{
     "arxiv_id": "<the arXiv id, no version suffix>",
     "expected_version": "<the version you verified, e.g. v2>",
+    "code_status": "available",
     "code_repo": "https://github.com/owner/repo",
     "expected_license": "CC BY 4.0",
     "code_license": "MIT",
+    "code_not_applicable_reason": "",
     "expected_category": "<the arXiv category you verified>",
     "paper_type": "<one of the types below>",
     "note": "One line on what the paper is about.",
@@ -308,8 +328,12 @@ exactly these keys and string values (except where noted):
 - `expected_license` — the paper's license, verbatim from the arXiv page, and
   one of the accepted list above. A paper whose license is not on that list does
   not go in the file at all.
-- `code_license` — verbatim from the GitHub API's `license` field, or
-  `"none declared"`. Never blank, never guessed.
+- `code_status` — either `"available"` or `"not_applicable"`.
+- When `code_status` is `"available"`, `code_repo` and `code_license` are
+  required; `code_not_applicable_reason` must be empty.
+- When `code_status` is `"not_applicable"`, `code_repo` and `code_license`
+  must both be empty and `code_not_applicable_reason` must explain why code is
+  not an input. Do not label a paper this way because its code is unavailable.
 - `expected_category` — the submission's primary category, verbatim, per
   invariant 5. Not a cross-list.
 - `paper_type` — one of {types}. This is a guess a human will confirm; say in
@@ -358,6 +382,9 @@ def parse_candidates(
         if not isinstance(entry, dict):
             raise ScreeningError(f"{where} is not a JSON object")
         values: dict[str, str] = {}
+        unexpected = sorted(set(entry) - set(REQUIRED_CANDIDATE_FIELDS))
+        if unexpected:
+            raise ScreeningError(f"{where} has unexpected key(s): {', '.join(unexpected)}")
         for field_name in REQUIRED_CANDIDATE_FIELDS:
             if field_name not in entry:
                 raise ScreeningError(f"{where} is missing the {field_name!r} key")
@@ -368,10 +395,15 @@ def parse_candidates(
                 )
             values[field_name] = value.strip()
 
-        # `note` may be empty; nothing else may. An empty `code_license` is the
-        # exact failure the record-don't-block policy exists to prevent.
+        # `note` is optional. The code fields are checked below because their
+        # requiredness is the selected code-evidence branch, not a global rule.
         for field_name in REQUIRED_CANDIDATE_FIELDS:
-            if field_name != "note" and not values[field_name]:
+            if field_name not in {
+                "note",
+                "code_repo",
+                "code_license",
+                "code_not_applicable_reason",
+            } and not values[field_name]:
                 raise ScreeningError(f"{where} {field_name!r} is empty")
 
         arxiv_id = values["arxiv_id"]
@@ -388,6 +420,33 @@ def parse_candidates(
                 f"{where} license {values['expected_license']!r} is not "
                 f"redistribution-permissive (accepted: {', '.join(ACCEPTED_LICENSES)})"
             )
+        code_status = values["code_status"]
+        if code_status not in CODE_STATUSES:
+            raise ScreeningError(
+                f"{where} code_status {code_status!r} is not one of {CODE_STATUSES}"
+            )
+        if code_status == "available":
+            for field_name in ("code_repo", "code_license"):
+                if not values[field_name]:
+                    raise ScreeningError(
+                        f"{where} {field_name!r} is required when code_status='available'"
+                    )
+            if values["code_not_applicable_reason"]:
+                raise ScreeningError(
+                    f"{where} code_not_applicable_reason must be empty when "
+                    "code_status='available'"
+                )
+        else:
+            if values["code_repo"] or values["code_license"]:
+                raise ScreeningError(
+                    f"{where} code_repo and code_license must be empty when "
+                    "code_status='not_applicable'"
+                )
+            if not values["code_not_applicable_reason"]:
+                raise ScreeningError(
+                    f"{where} code_not_applicable_reason is required when "
+                    "code_status='not_applicable'"
+                )
         if policy is not None and values["paper_type"] not in policy.paper_types:
             raise ScreeningError(
                 f"{where} paper_type {values['paper_type']!r} is not one of "
@@ -407,6 +466,7 @@ def run_screening(
     target_count: int,
     exclude_ids: tuple[str, ...] = (),
     extra_guidance: str = "",
+    discovery_context: str = "",
     model: str = DEFAULT_SCREENING_MODEL,
     log_dir: Path,
     timeout: int = DEFAULT_SCREENING_TIMEOUT_SECONDS,
@@ -442,6 +502,7 @@ def run_screening(
         target_count=target_count,
         exclude_ids=exclude_ids,
         extra_guidance=extra_guidance,
+        discovery_context=discovery_context,
         output_path=output_path,
     )
 

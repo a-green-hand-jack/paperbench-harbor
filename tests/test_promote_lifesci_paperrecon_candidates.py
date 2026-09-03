@@ -98,9 +98,11 @@ def _candidate(**overrides: object) -> dict:
     record = {
         "arxiv_id": "2504.11111",
         "expected_version": "v1",
+        "code_status": "available",
         "code_repo": "https://github.com/owner/repo",
         "expected_license": "CC BY 4.0",
         "code_license": "MIT",
+        "code_not_applicable_reason": "",
         "expected_category": "q-bio.GN",
         "paper_type": "computational",
         "note": "A genomics method paper.",

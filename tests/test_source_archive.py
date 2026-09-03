@@ -179,3 +179,61 @@ def test_verification_rejects_tampered_archived_file(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="archive tree hash mismatch"):
         verify_source_archive(output)
+
+
+def test_archives_a_no_code_paperrecon_domain_with_its_reviewed_reason(tmp_path: Path) -> None:
+    release = tmp_path / "release"
+    _task(
+        release,
+        "mathematics-paperrecon-short",
+        "math-0001",
+        benchmark="Mathematics-PaperRecon",
+        upstream_id="paper_1",
+        protocol="short",
+    )
+    paperwrite, paperwritingbench, lifesci = _sources(tmp_path)
+    mathematics = tmp_path / "mathematics"
+    original = mathematics / "paper_1" / "original"
+    original.mkdir(parents=True)
+    (original / "main.tex").write_text("\\title{Proof source}\n", encoding="utf-8")
+    (original / "provenance.json").write_text(
+        json.dumps(
+            {
+                "title": "Proof source",
+                "arxiv_id": "2601.00002",
+                "arxiv_version": "v1",
+                "license_label": "CC BY 4.0",
+                "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                "source_url": "https://arxiv.org/e-print/2601.00002v1",
+                "fetch_date": "2026-09-03",
+                "code_status": "not_applicable",
+                "code_repo": "",
+                "code_commit": "",
+                "code_license": "",
+                "code_not_applicable_reason": "The theorem and proof have no code input.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "archive"
+    build_source_archive(
+        release_root=release,
+        output_dir=output,
+        dataset_repo="candidate/mathematics-paperrecon-short",
+        dataset_revision="candidate-revision",
+        converter_revision="converter-revision",
+        paperwrite_source=paperwrite,
+        paperwritingbench_source=paperwritingbench,
+        lifesci_source=lifesci,
+        paperrecon_sources={"mathematics": mathematics},
+    )
+    registry = json.loads(
+        (output / "registry" / REGISTRY_FILENAME).read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert registry["paper"]["code_status"] == "not_applicable"
+    assert registry["paper"]["code_not_applicable_reason"] == (
+        "The theorem and proof have no code input."
+    )
+    assert registry["source_archive"]["dataset_path"] == (
+        "sources/mathematics-paperrecon/paper_1/original"
+    )

@@ -42,6 +42,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from paperbench_harbor.construction.core.literature import discover_literature
 from paperbench_harbor.construction.core.opencode_agent import check_opencode_available
 from paperbench_harbor.construction.core.screen import (
     DEFAULT_SCREENING_MODEL,
@@ -138,6 +139,19 @@ def main() -> int:
         action="store_true",
         help="Print the prompt the agent would receive and exit.",
     )
+    parser.add_argument(
+        "--lkm-default",
+        dest="lkm_default",
+        action="store_true",
+        default=True,
+        help="Use Bohrium LKM discovery before independent screening (default).",
+    )
+    parser.add_argument(
+        "--no-lkm",
+        dest="lkm_default",
+        action="store_false",
+        help="Disable LKM discovery for an offline diagnostic run.",
+    )
     args = parser.parse_args()
 
     if args.target_count < 1:
@@ -146,6 +160,8 @@ def main() -> int:
     build_root = args.build_root.resolve()
     log_dir = (args.log_dir or build_root / "_logs").resolve()
     exclude_ids = tuple(LIFESCI_EXCLUDE_IDS) + tuple(args.exclude)
+    discovery_context = ""
+    discovery_path = build_root / "discovery-lifesci.json"
 
     if args.dry_run:
         print(
@@ -155,12 +171,29 @@ def main() -> int:
                 target_count=args.target_count,
                 exclude_ids=exclude_ids,
                 extra_guidance=args.extra_guidance,
+                discovery_context="Bohrium LKM discovery is enabled for a non-dry run.",
                 output_path=build_root / "screening-lifesci" / "candidates.json",
             )
         )
         return 0
 
     check_opencode_available(args.model)
+
+    if args.lkm_default:
+        queries = (
+            "life sciences arXiv papers with reproducible computational or experimental materials",
+            "biology research papers public LaTeX source figures analysis code",
+            "life science research paper reconstruction public source materials",
+        )
+        if args.extra_guidance:
+            queries += (args.extra_guidance,)
+        snapshot = discover_literature(queries)
+        snapshot.write(discovery_path)
+        discovery_context = snapshot.prompt_context()
+        _log(
+            f"LKM-first discovery -> {discovery_path} "
+            f"(fallback_used={snapshot.fallback_used})"
+        )
 
     _log(
         f"screening lifesci: target {args.target_count}, "
@@ -177,6 +210,7 @@ def main() -> int:
             target_count=args.target_count,
             exclude_ids=exclude_ids,
             extra_guidance=args.extra_guidance,
+            discovery_context=discovery_context,
             model=args.model,
             log_dir=log_dir,
             timeout=args.timeout,
@@ -193,6 +227,7 @@ def main() -> int:
         "target_count": args.target_count,
         "extra_guidance": args.extra_guidance,
         "excluded_arxiv_ids": list(exclude_ids),
+        "lkm_discovery": str(discovery_path) if args.lkm_default else None,
         "summary": summary,
         "candidates": [entry.as_dict() for entry in candidates],
     }

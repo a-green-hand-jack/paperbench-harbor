@@ -80,11 +80,9 @@ REQUIRED_RESOURCE_FILES = (
     "table_summary.txt",
 )
 
-#: `code/` is required, not optional: the approved plan makes a public
-#: redistribution-permissive repository a selection criterion for this
-#: benchmark (confirmed decision 3), so an empty `code/` means the paper should
-#: not have been selected.
-REQUIRED_RESOURCE_DIRS = ("figures", "code")
+#: Figures are universal public reconstruction material.  Code is conditional
+#: on the human-approved code-evidence branch in :class:`PaperSpec`.
+REQUIRED_RESOURCE_DIRS = ("figures",)
 
 #: Names that must never appear under `resources/`, which the converter copies
 #: wholesale into the writer-visible environment. `resources/code/` is exempt
@@ -101,13 +99,7 @@ REQUIRED_PROVENANCE_FIELDS = (
     "license_url",
     "source_url",
     "fetch_date",
-    "code_repo",
-    "code_commit",
-    # Required to be *recorded*, not to have any particular value. An
-    # unlicensed code repository no longer blocks construction (owner decision,
-    # 2026-08-31), so the only defence left against that fact getting lost is
-    # forcing it into provenance, where the Phase 5 dataset card reads it.
-    "code_license",
+    "code_status",
 )
 
 _SOURCE_COMMAND_RE = re.compile(
@@ -472,7 +464,7 @@ def _render_normalize_script(destination: Path) -> Path:
 # --------------------------------------------------------------------------- #
 
 
-def _check_layout(report: ValidationReport) -> None:
+def _check_layout(report: ValidationReport, spec: PaperSpec) -> None:
     original = report.paper_dir / "original"
     resources = report.paper_dir / "resources"
 
@@ -498,10 +490,25 @@ def _check_layout(report: ValidationReport) -> None:
             report.fail(
                 "missing-resource-dir",
                 f"resources/{dirname}/ is missing or empty",
-                "figures/ must hold the paper's extracted figure assets; code/ "
-                "must hold the paper's public analysis repository, which is a "
-                "selection criterion for this benchmark.",
+                "figures/ must hold the paper's extracted figure assets.",
             )
+
+    code_dir = resources / "code"
+    if spec.requires_code:
+        if not code_dir.is_dir() or not any(code_dir.rglob("*")):
+            report.fail(
+                "missing-resource-dir",
+                "resources/code/ is missing or empty",
+                "code_status='available' requires a non-empty checkout of the "
+                "approved public repository.",
+            )
+    elif code_dir.exists():
+        report.fail(
+            "unexpected-code-resource",
+            "resources/code/ exists for an approved no-code paper",
+            "Do not add code to a code_status='not_applicable' sample. Keep the "
+            "reviewed reason only in provenance.json.",
+        )
 
     if resources.is_dir():
         try:
@@ -597,6 +604,16 @@ def _check_provenance(report: ValidationReport, spec: PaperSpec) -> None:
                 "repository; do not copy it from the task prompt.",
             )
 
+    code_status = str(record.get("code_status", "")).strip()
+    if code_status != spec.code_status:
+        report.fail(
+            "provenance-mismatch",
+            f"provenance.json code_status={code_status!r} but the approved selection "
+            f"says {spec.code_status!r}",
+            "Keep the approved code-evidence branch. If the live source contradicts "
+            "it, stop and record a top-level blocked reason instead of changing it.",
+        )
+
     # Substitution guard. These are the facts a human approved, so a mismatch
     # stops the build rather than adjusting the expectation.
     checks = (
@@ -630,14 +647,49 @@ def _check_provenance(report: ValidationReport, spec: PaperSpec) -> None:
             "non-permissive license disqualifies it. Stop rather than proceed.",
         )
 
-    repo = str(record.get("code_repo", "")).strip().rstrip("/").removesuffix(".git")
-    expected_repo = spec.code_repo.rstrip("/").removesuffix(".git")
-    if repo and repo.lower() != expected_repo.lower():
-        report.fail(
-            "provenance-mismatch",
-            f"provenance.json code_repo={repo!r} but the approved selection "
-            f"says {expected_repo!r}",
-        )
+    code_fields = ("code_repo", "code_commit", "code_license")
+    if spec.requires_code:
+        for field_name in code_fields:
+            if not str(record.get(field_name, "")).strip():
+                report.fail(
+                    "provenance-field",
+                    f"provenance.json is missing a non-empty {field_name!r}",
+                    "Record the checked-out repository, immutable commit and observed "
+                    "license for a code_status='available' paper.",
+                )
+        if str(record.get("code_not_applicable_reason", "")).strip():
+            report.fail(
+                "provenance-code-status",
+                "code_not_applicable_reason must be empty when code_status='available'",
+            )
+        repo = str(record.get("code_repo", "")).strip().rstrip("/").removesuffix(".git")
+        expected_repo = spec.code_repo.rstrip("/").removesuffix(".git")
+        if repo and repo.lower() != expected_repo.lower():
+            report.fail(
+                "provenance-mismatch",
+                f"provenance.json code_repo={repo!r} but the approved selection "
+                f"says {expected_repo!r}",
+            )
+    else:
+        for field_name in code_fields:
+            if str(record.get(field_name, "")).strip():
+                report.fail(
+                    "provenance-code-status",
+                    f"{field_name} must be empty when code_status='not_applicable'",
+                )
+        reason = str(record.get("code_not_applicable_reason", "")).strip()
+        if not reason:
+            report.fail(
+                "provenance-field",
+                "provenance.json is missing non-empty 'code_not_applicable_reason'",
+                "Record the approved evidence that code is not a reconstruction input.",
+            )
+        elif reason != spec.code_not_applicable_reason:
+            report.fail(
+                "provenance-mismatch",
+                "provenance.json code_not_applicable_reason does not match the approved "
+                "selection",
+            )
 
     fetch_date = str(record.get("fetch_date", "")).strip()
     if fetch_date:
@@ -1115,7 +1167,7 @@ def validate_paper(
         report.fail("missing-paper", f"{paper_dir} does not exist")
         return report
 
-    _check_layout(report)
+    _check_layout(report, spec)
     _check_config(report, spec, plugin)
     _check_provenance(report, spec)
     _check_template(report)

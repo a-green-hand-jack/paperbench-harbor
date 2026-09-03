@@ -7,7 +7,7 @@ import json
 import os
 import re
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,12 @@ ARCHIVE_MANIFEST_FILENAME = "source-archive-manifest.jsonl"
 ARCHIVE_METADATA_FILENAME = "archive-metadata.json"
 
 _IGNORED_PARTS = {".git", ".cache", "__pycache__"}
+PAPERRECON_CONFIGS = {
+    "lifesci-paperrecon-short": "lifesci",
+    "physics-paperrecon-short": "physics",
+    "chemistry-paperrecon-short": "chemistry",
+    "mathematics-paperrecon-short": "mathematics",
+}
 
 
 @dataclass(frozen=True)
@@ -115,7 +121,7 @@ def _extract_latex_title(path: Path) -> str | None:
     return " ".join(match.group(1).split()) or None
 
 
-def _lifesci_provenance(source: Path) -> dict[str, Any]:
+def _paperrecon_provenance(source: Path) -> dict[str, Any]:
     path = source / "original" / "provenance.json"
     provenance = _read_json(path)
     return {
@@ -136,6 +142,8 @@ def _lifesci_provenance(source: Path) -> dict[str, Any]:
         "code_repository": provenance.get("code_repo"),
         "code_revision": provenance.get("code_commit"),
         "code_license": provenance.get("code_license"),
+        "code_status": provenance.get("code_status"),
+        "code_not_applicable_reason": provenance.get("code_not_applicable_reason"),
     }
 
 
@@ -147,6 +155,7 @@ def _source_location(
     paperwrite_source: Path,
     paperwritingbench_source: Path,
     lifesci_source: Path,
+    paperrecon_sources: Mapping[str, Path] | None = None,
 ) -> SourceLocation:
     upstream_id = source_manifest.get("upstream_id")
     if not isinstance(upstream_id, str) or not upstream_id:
@@ -190,13 +199,19 @@ def _source_location(
             },
         )
 
-    if config == "lifesci-paperrecon-short":
-        source = lifesci_source / upstream_id
-        provenance = _lifesci_provenance(source)
+    if config in PAPERRECON_CONFIGS:
+        domain = PAPERRECON_CONFIGS[config]
+        sources = {"lifesci": lifesci_source, **dict(paperrecon_sources or {})}
+        try:
+            source_root = sources[domain]
+        except KeyError as error:
+            raise ValueError(f"no PaperRecon source root provided for domain: {domain}") from error
+        source = source_root / upstream_id
+        provenance = _paperrecon_provenance(source)
         return SourceLocation(
             kind="arxiv_paper",
             source=source / "original",
-            archive_path=Path("sources") / "lifesci-paperrecon" / upstream_id / "original",
+            archive_path=Path("sources") / f"{domain}-paperrecon" / upstream_id / "original",
             provenance=provenance,
         )
 
@@ -251,6 +266,7 @@ def build_source_archive(
     paperwrite_source: Path,
     paperwritingbench_source: Path,
     lifesci_source: Path,
+    paperrecon_sources: Mapping[str, Path] | None = None,
     included_configs: set[str] | None = None,
 ) -> dict[str, int]:
     """Build a release-level registry and a source-only archive.
@@ -310,6 +326,7 @@ def build_source_archive(
             paperwrite_source=paperwrite_source,
             paperwritingbench_source=paperwritingbench_source,
             lifesci_source=lifesci_source,
+            paperrecon_sources=paperrecon_sources,
         )
         key = _archive_location_key(location)
         if key not in source_cache:
