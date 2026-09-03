@@ -46,6 +46,7 @@ from paperbench_harbor.adapters.paperwritingbench.converter import (
 )
 from paperbench_harbor.fidelity.audit import summarize
 from paperbench_harbor.fidelity.dataset import DatasetAuditError, audit_dataset
+from paperbench_harbor.fidelity.review import default_conversion_reviewer_model
 from paperbench_harbor.fidelity.transforms import sha256
 
 
@@ -75,6 +76,7 @@ def _code_revision() -> str | None:
 
 def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn) -> int:
     source_tree_sha256 = _tree_digest(args.source)
+    reviewer_model = args.reviewer_model or default_conversion_reviewer_model()
     try:
         reports = audit_dataset(
             benchmark=benchmark,
@@ -82,7 +84,7 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
             dataset=args.dataset,
             protocol=protocol,
             semantic_review=args.semantic_review,
-            reviewer_model=args.reviewer_model,
+            reviewer_model=reviewer_model,
             review_log_dir=args.output / "review-logs",
         )
     except DatasetAuditError as exc:
@@ -92,6 +94,7 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
         reports,
         determinism_fn,
         source_tree_sha256=source_tree_sha256,
+        reviewer_model=reviewer_model,
     )
 
 
@@ -195,6 +198,7 @@ def _write_reports(
     determinism_fn,
     *,
     source_tree_sha256: str | None = None,
+    reviewer_model: str | None = None,
 ) -> int:
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +222,7 @@ def _write_reports(
         "dataset_tree_sha256": _tree_digest(args.dataset),
         "converter_revision": _code_revision(),
         "semantic_review_required": args.semantic_review,
-        "reviewer_model": args.reviewer_model,
+        "reviewer_model": reviewer_model,
     }
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"

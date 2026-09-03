@@ -193,7 +193,7 @@ def test_no_audit_skips_it(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "Fidelity audit" not in result.output
+    assert "Fidelity audit skipped by explicit --no-audit." in result.output
 
 
 def test_conversion_fails_when_the_audit_fails(tmp_path: Path, monkeypatch) -> None:

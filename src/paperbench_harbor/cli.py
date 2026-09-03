@@ -116,6 +116,8 @@ def paperwritingbench_command(
             protocol=protocol,
             semantic_review=semantic_review,
         )
+    else:
+        typer.echo("Fidelity audit skipped by explicit --no-audit.")
 
 
 @app.command("paperwrite-bench")
@@ -150,6 +152,8 @@ def paperwrite_bench_command(
             protocol=overview,
             semantic_review=semantic_review,
         )
+    else:
+        typer.echo("Fidelity audit skipped by explicit --no-audit.")
 
 
 @app.command("lifesci-paperrecon")
@@ -197,6 +201,8 @@ def lifesci_paperrecon_command(
             protocol=overview,
             semantic_review=semantic_review,
         )
+    else:
+        typer.echo("Fidelity audit skipped by explicit --no-audit.")
 
 
 if __name__ == "__main__":
