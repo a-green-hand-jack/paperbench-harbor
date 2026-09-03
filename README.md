@@ -17,14 +17,14 @@ benchmark.
 | [`Paper-Writing-Exam-Trials`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Trials) | Public run archive | Sanitized agent trajectories, submissions, logs, scores, and complete trial archives |
 
 Trial publishing is opt-in. The following is the reproducible single-task
-example used by the current integration: benchmark release `v0.3.1`
-(`bfe2471c41f416d877e74bfa73cf0f29165c7567`), Harbor `v0.22.0`
+example used by the current integration: benchmark release `v0.4.1`
+(`367bbf67ea05d0ec3d580e062aadf5636b45fc65`), Harbor `v0.22.0`
 (`4407eb5227a2ff4f0d3f16b2eb48849382fdf276`), and Codex
 `openai/gpt-5.6-terra` with medium reasoning effort. Run it from a checkout of
 this repository after configuring the host's provider credentials:
 
 ```bash
-BENCHMARK_REVISION=bfe2471c41f416d877e74bfa73cf0f29165c7567
+BENCHMARK_REVISION=367bbf67ea05d0ec3d580e062aadf5636b45fc65
 BENCHMARK_DIR=/path/to/Paper-Writing-Exam
 hf download Jack-Jieke-Wu/Paper-Writing-Exam \
   --repo-type dataset --revision "$BENCHMARK_REVISION" \
@@ -87,12 +87,12 @@ The public release contains three protocols:
 
 Do not combine protocol names when reporting results. Sparse/dense inputs,
 plot settings, and overview variants are separate benchmark conditions.
-The current release is tagged `v0.3.1` at immutable revision
-`bfe2471c41f416d877e74bfa73cf0f29165c7567` and contains 273 tasks. It adds the
-22-task LifeSci-PaperRecon configuration while preserving the two existing
-configs. For reproducible runs, use that tag or the recorded immutable revision
-instead of the Hub default branch. The previous `v0.3.0` and `v0.2.0` releases
-remain available.
+The current release is tagged `v0.4.1` at immutable revision
+`367bbf67ea05d0ec3d580e062aadf5636b45fc65` and contains 274 tasks. It retains
+the existing 252 non-LifeSci tasks and repairs the 22-task LifeSci-PaperRecon
+configuration so the 144 source tables are represented by 144 writer-visible
+table fragments. For reproducible runs, use that tag or the recorded immutable
+revision instead of the Hub default branch. Earlier releases remain available.
 Dataset release details are recorded in `docs/dataset-versioning.md`.
 
 Run a task directly from the Hugging Face repository without maintaining a
@@ -101,7 +101,7 @@ manages its temporary task cache:
 
 ```bash
 harbor run \
-  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/367bbf67ea05d0ec3d580e062aadf5636b45fc65/lifesci-paperrecon-short" \
   --include-task-name lspr-0001 \
   --agent codex \
   --model <provider>/<model> \
@@ -139,13 +139,13 @@ change that binary reward.
 
 ## Run a task
 
-Install Harbor, then run a task directly from the reproducible `v0.3.1`
+Install Harbor, then run a task directly from the reproducible `v0.4.1`
 benchmark release. This is a complete single-task example for
 PaperWrite-Bench `short` task `pwb-0001`:
 
 ```bash
 harbor run \
-  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/paperwrite-bench-short" \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/367bbf67ea05d0ec3d580e062aadf5636b45fc65/paperwrite-bench-short" \
   --include-task-name pwb-0001 \
   --agent codex \
   --model openai/gpt-5.6-sol \
@@ -164,7 +164,7 @@ Other ready-to-run task examples are:
 ```bash
 # PaperWritingBench, sparse input with plots disabled
 harbor run \
-  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/paperwritingbench-sparse-plotoff" \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/367bbf67ea05d0ec3d580e062aadf5636b45fc65/paperwritingbench-sparse-plotoff" \
   --include-task-name pwbw-0001 \
   --agent codex \
   --model openai/gpt-5.6-sol \
@@ -173,7 +173,7 @@ harbor run \
 
 # LifeSci-PaperRecon, short protocol
 harbor run \
-  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/bfe2471c41f416d877e74bfa73cf0f29165c7567/lifesci-paperrecon-short" \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/367bbf67ea05d0ec3d580e062aadf5636b45fc65/lifesci-paperrecon-short" \
   --include-task-name lspr-0001 \
   --agent codex \
   --model openai/gpt-5.6-sol \
