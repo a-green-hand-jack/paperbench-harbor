@@ -6,6 +6,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,6 +74,34 @@ def test_screening_rejects_research_agent_candidate(tmp_path: Path) -> None:
     _write(proposal, _proposal(requires_code=True))
     with pytest.raises(OnboardingError, match="research agent"):
         parse_candidate(proposal)
+
+
+def test_request_screening_reports_a_clean_rejection_when_no_candidate_is_established(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(screen, "prepare_scratch", lambda *_: tmp_path / "screening")
+    monkeypatch.setattr(screen, "check_opencode_available", lambda *_: None)
+    monkeypatch.setattr(
+        screen,
+        "run_agent_session",
+        lambda **_: SimpleNamespace(ok=True, log_path=tmp_path / "screening.log"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "screen",
+            "--request",
+            "an unresolved benchmark",
+            "--scratch-root",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "benchmark_candidate.json"),
+        ],
+    )
+
+    assert screen.main() == 1
+    assert "REJECTED: screening did not establish" in capsys.readouterr().err
 
 
 def test_verifier_rederives_revision_license_manifest_and_count(

@@ -87,6 +87,10 @@ that require the agent to run experiments or write code. Read facts from the
 live source rather than memory. This is a proposal, not permission to build,
 modify a repository, or promote anything.
 
+If the request is out of scope or you cannot establish every required immutable
+fact, do not write a proposal file. State a concise rejection in your final
+response instead. Never use blank or guessed values to force a proposal through.
+
 Write exactly one JSON object to `{output_path}` with these exact keys and no
 others:
 
@@ -150,6 +154,13 @@ def main() -> int:
             if not run.ok:
                 print(f"ERROR: screening session failed; inspect {run.log_path}", file=sys.stderr)
                 return 1
+            if not proposal.is_file():
+                print(
+                    "REJECTED: screening did not establish a scope-qualified candidate with "
+                    "immutable source facts.",
+                    file=sys.stderr,
+                )
+                return 1
         except ScratchLocationError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 1
@@ -158,7 +169,8 @@ def main() -> int:
         candidate = parse_candidate(proposal)
         write_candidate(args.output, candidate)
     except OnboardingError as error:
-        print(f"ERROR: {error}", file=sys.stderr)
+        prefix = "REJECTED" if args.request is not None else "ERROR"
+        print(f"{prefix}: {error}", file=sys.stderr)
         return 1
     print(json.dumps(_summary(candidate), sort_keys=True))
     print(f"candidate proposal -> {args.output}")
