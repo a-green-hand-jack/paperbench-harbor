@@ -350,3 +350,28 @@ def test_existing_graphicspath_gets_consistent_guidance(tmp_path: Path) -> None:
     )
     instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(encoding="utf-8")
     assert "does not prepend `figures/` twice" in instruction
+
+
+def test_acknowledgement_instruction_only_changes_for_a_supplied_heading(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "without-heading", limit=1)
+    )
+    without_heading = (
+        tmp_path / "without-heading" / "pwb-0001" / "environment" / "materials" / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+    assert "Do not add `Acknowledgements` section to the paper." in without_heading
+
+    for paper_id in PAPERS:
+        (source / paper_id / "resources" / "template.tex").write_text(
+            "\\documentclass{article}\n\\begin{document}\n"
+            "\\section*{Acknowledgments}\n\\end{document}\n",
+            encoding="utf-8",
+        )
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "with-heading", limit=1)
+    )
+    with_heading = (
+        tmp_path / "with-heading" / "pwb-0001" / "environment" / "materials" / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+    assert "preserve an existing heading without adding new content" in with_heading
