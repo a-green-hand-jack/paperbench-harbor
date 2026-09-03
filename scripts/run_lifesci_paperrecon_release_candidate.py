@@ -51,7 +51,10 @@ def _parse_args() -> argparse.Namespace:
         "--run-root",
         type=Path,
         required=True,
-        help="New, empty, managed temporary directory for all rebuildable artifacts.",
+        help=(
+            "New managed temporary directory for all rebuildable artifacts; the "
+            "agent-workspace marker is the only pre-existing file allowed."
+        ),
     )
     parser.add_argument(
         "--dataset-repository",
@@ -66,8 +69,15 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     run_root = args.run_root.resolve()
-    if run_root.exists() and any(run_root.iterdir()):
-        raise SystemExit(f"--run-root must be new and empty: {run_root}")
+    existing = (
+        []
+        if not run_root.exists()
+        else [entry.name for entry in run_root.iterdir() if entry.name != ".agent-workspace.json"]
+    )
+    if existing:
+        raise SystemExit(
+            "--run-root must be new apart from .agent-workspace.json: " f"{run_root}"
+        )
     run_root.mkdir(parents=True, exist_ok=True)
 
     manifest_root = run_root / "published-manifest"

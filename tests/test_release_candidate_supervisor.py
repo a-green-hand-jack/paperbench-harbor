@@ -24,6 +24,9 @@ def _load_supervisor():
 def test_supervisor_runs_all_release_candidate_stages(monkeypatch, tmp_path: Path) -> None:
     supervisor = _load_supervisor()
     commands: list[list[str]] = []
+    run_root = tmp_path / "candidate"
+    run_root.mkdir()
+    (run_root / ".agent-workspace.json").write_text("{}\n")
 
     monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: "revision-123\n")
 
@@ -35,12 +38,12 @@ def test_supervisor_runs_all_release_candidate_stages(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         sys,
         "argv",
-        ["supervisor", "--run-root", str(tmp_path / "candidate")],
+        ["supervisor", "--run-root", str(run_root)],
     )
 
     assert supervisor.main() == 0
 
-    summary = json.loads((tmp_path / "candidate" / "run-summary.json").read_text())
+    summary = json.loads((run_root / "run-summary.json").read_text())
     assert summary["status"] == "passed"
     assert [stage["stage"] for stage in summary["stages"]] == [
         "download-published-manifest",
