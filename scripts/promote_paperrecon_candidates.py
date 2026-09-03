@@ -19,6 +19,7 @@ from scripts.promote_lifesci_paperrecon_candidates import (
     read_candidates,
     read_human_approval,
 )
+from scripts.verify_paperrecon_candidates import VerifierError, read_agent_approval
 
 
 def main() -> int:
@@ -26,7 +27,8 @@ def main() -> int:
     parser.add_argument("--domain", choices=("physics", "chemistry", "mathematics"), required=True)
     parser.add_argument("--candidates", type=Path, required=True)
     parser.add_argument("--approved-file", type=Path, required=True)
-    parser.add_argument("--human-approval", type=Path, required=True)
+    parser.add_argument("--human-approval", type=Path)
+    parser.add_argument("--agent-approval", type=Path)
     parser.add_argument("--promote", action="store_true")
     parser.add_argument("--minimum-approved", type=int, default=20)
     parser.add_argument("--report", type=Path)
@@ -38,27 +40,29 @@ def main() -> int:
         candidates = read_candidates(
             args.candidates, policy=domain.screening_policy, exclude_ids=domain.exclude_ids
         )
-        approval = read_human_approval(
-            args.human_approval,
-            candidates_path=args.candidates,
-            candidates=candidates,
-        )
+        if args.agent_approval:
+            approval = read_agent_approval(args.agent_approval, candidates_path=args.candidates, candidates=candidates)
+        elif args.human_approval:
+            legacy = read_human_approval(args.human_approval, candidates_path=args.candidates, candidates=candidates)
+            approval = {"candidate_sha256": legacy.candidate_sha256, "approved_arxiv_ids": legacy.approved_arxiv_ids, "reviewer": legacy.reviewer}
+        else:
+            raise VerifierError("--agent-approval is required (or use legacy --human-approval)")
         outcomes, written, summary = promote(
             candidates,
             approved_file=args.approved_file,
             promote_now=args.promote,
             limit=None,
-            approved_arxiv_ids=approval.approved_arxiv_ids,
-            human_reviewer=approval.reviewer,
+            approved_arxiv_ids=approval["approved_arxiv_ids"],
+            human_reviewer=approval["reviewer"],
             existing_specs=domain.approved_papers,
         )
-    except (PromotionError, ValueError) as error:
+    except (PromotionError, ValueError, VerifierError) as error:
         print(f"cannot promote: {error}")
         return 1
     _report(outcomes, summary, dry_run=not args.promote)
     summary["domain"] = domain.name
-    summary["candidate_sha256"] = approval.candidate_sha256
-    summary["approved_arxiv_ids"] = sorted(approval.approved_arxiv_ids)
+    summary["candidate_sha256"] = approval["candidate_sha256"]
+    summary["approved_arxiv_ids"] = sorted(approval["approved_arxiv_ids"])
     summary["minimum_approved"] = args.minimum_approved
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
