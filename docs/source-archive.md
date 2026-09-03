@@ -54,13 +54,13 @@ Physics, Chemistry, and Mathematics PaperRecon corpora are staged as candidate
 releases before any public tag is created. Each candidate task and its matching
 source-archive registry record identifies the exact candidate revision, the
 approved-candidate SHA-256, and the task's source-material status. A release
-may become public only after at least 20 human-approved, fully rebuilt tasks in
-each domain have passed construction, conversion, fidelity, determinism, and
-semantic review.
+may become public only after at least 20 independent-verifier-approved, fully
+rebuilt tasks in each domain have passed construction, conversion-correctness,
+fidelity, determinism, and semantic review.
 
 PaperRecon records distinguish `code_status: available` from
 `code_status: not_applicable`. The former records repository, immutable revision,
-license, and archived code material. The latter records the human-reviewed
+license, and archived code material. The latter records the verifier-reviewed
 reason that code is not required for reconstruction; it is not a synonym for
 missing or undiscovered code. Neither form permits a Harbor task to obtain
 archive-only material at runtime.
