@@ -96,6 +96,42 @@ def test_upload_uses_exact_files_and_returns_commit_sha(tmp_path: Path) -> None:
     assert calls[1][1]["parent_commit"] == "b" * 40
 
 
+def test_upload_treats_a_missing_remote_manifest_as_a_new_trial(tmp_path: Path) -> None:
+    from httpx import Request, Response
+    from huggingface_hub.errors import RemoteEntryNotFoundError
+
+    archive = tmp_path / "artifacts" / "trial.tar.gz"
+    _write_archive(archive)
+    artifact_hash = _sha256(archive)
+    manifest = tmp_path / "manifests" / "trial.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(_manifest("artifacts/trial.tar.gz", artifact_hash)), encoding="utf-8"
+    )
+    api = SimpleNamespace(
+        create_repo=lambda *args, **kwargs: None,
+        list_repo_files=lambda *args, **kwargs: [],
+        create_commit=lambda **kwargs: SimpleNamespace(oid="a" * 40),
+    )
+
+    def missing_manifest(*_args: object) -> None:
+        raise RemoteEntryNotFoundError(
+            "not found",
+            response=Response(404, request=Request("GET", "https://huggingface.co")),
+        )
+
+    assert (
+        upload_export(
+            tmp_path,
+            "my-org/my-trials",
+            ["artifacts/trial.tar.gz", "manifests/trial.json"],
+            api=api,
+            downloader=missing_manifest,
+        )
+        == "a" * 40
+    )
+
+
 def test_upload_rejects_missing_or_unsafe_file(tmp_path: Path) -> None:
     with pytest.raises(TrialUploadError, match="missing or unsafe"):
         upload_export(tmp_path, "my-org/my-trials", ["missing.tar.gz"], api=object())
