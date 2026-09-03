@@ -365,15 +365,26 @@ def stage_declared_copies(
                 if rule.kind == "tree":
                     if not source.is_dir() or not any(source.iterdir()):
                         continue
+
+                    def ignore_tree_entries(
+                        directory: str,
+                        names: list[str],
+                        rule: CopyRule = rule,
+                        source: Path = source,
+                    ) -> set[str]:
+                        current = Path(directory)
+                        return {
+                            name
+                            for name in names
+                            if rule.excludes_tree_path((current / name).relative_to(source))
+                            or name.endswith(".pyc")
+                        }
+
                     shutil.copytree(
                         source,
                         destination,
                         symlinks=True,
-                        ignore=shutil.ignore_patterns(
-                            *rule.tree_excludes,
-                            *rule.tree_exclude_globs,
-                            "*.pyc",
-                        ),
+                        ignore=ignore_tree_entries,
                         dirs_exist_ok=destination.exists(),
                     )
                     for upstream_file in sorted(source.rglob("*")):

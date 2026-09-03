@@ -102,7 +102,8 @@ SPEC = dataclasses.replace(
         dataclasses.replace(
             rule,
             tree_exclude_globs=(
-                "manuscript/**/*.tex",
+                "manuscript/*.tex",
+                "manuscript/*/*.tex",
                 "tex/minibwa.tex",
                 "./README.md",
             ),

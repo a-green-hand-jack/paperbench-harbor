@@ -222,7 +222,8 @@ def test_specs_own_their_task_identity_render_defaults_and_style_mode() -> None:
 def test_lifesci_spec_redacts_paper_sources_from_linked_code_checkouts() -> None:
     source_code_rule = next(rule for rule in LSPR_SPEC.public if rule.source == "resources/code")
     assert source_code_rule.tree_exclude_globs == (
-        "manuscript/**/*.tex",
+        "manuscript/*.tex",
+        "manuscript/*/*.tex",
         "tex/minibwa.tex",
         "./README.md",
     )

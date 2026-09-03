@@ -216,6 +216,18 @@ def test_bio_redacts_direct_paper_pointers_but_keeps_local_style_bytes(tmp_path:
     (resources / "code" / "nested" / "README.md").write_text(
         "Public implementation notes.\n", encoding="utf-8"
     )
+    (resources / "code" / "manuscript").mkdir()
+    (resources / "code" / "manuscript" / "answer.tex").write_text(
+        "Ground truth manuscript.\n", encoding="utf-8"
+    )
+    (resources / "code" / "tex").mkdir()
+    (resources / "code" / "tex" / "minibwa.tex").write_text(
+        "Ground truth manuscript.\n", encoding="utf-8"
+    )
+    (resources / "code" / "figures").mkdir()
+    (resources / "code" / "figures" / "table.tex").write_text(
+        "Public table.\n", encoding="utf-8"
+    )
 
     output = tmp_path / "out"
     convert_paperwrite_bench(
@@ -238,6 +250,9 @@ def test_bio_redacts_direct_paper_pointers_but_keeps_local_style_bytes(tmp_path:
     assert "10.48550/arXiv" not in readme
     assert "source-paper-url-withheld" in readme
     assert (task / "environment" / "materials" / "code" / "nested" / "README.md").is_file()
+    assert not (task / "environment" / "materials" / "code" / "manuscript" / "answer.tex").exists()
+    assert not (task / "environment" / "materials" / "code" / "tex" / "minibwa.tex").exists()
+    assert (task / "environment" / "materials" / "code" / "figures" / "table.tex").is_file()
 
 
 def test_bio_conversion_is_deterministic(tmp_path: Path) -> None:
