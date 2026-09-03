@@ -359,6 +359,9 @@ def test_rendered_instruction_declares_submission_workflow(tmp_path: Path) -> No
         in instruction
     )
     assert "write the completed document to `/workspace/submission/main.tex`" in instruction
+    assert "upstream code materials in `/workspace/materials/code/`" in instruction
+    assert "may\ncontain implementation files, documentation, or both" in instruction
+    assert "proposed method's code implementation" not in instruction
     assert (
         "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`"
         in instruction
