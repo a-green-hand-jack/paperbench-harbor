@@ -182,14 +182,14 @@ tree digests on a candidate Hub revision. It never creates a public tag unless
 
 ```bash
 uv run --all-extras python scripts/publish_paperrecon_release.py \
-  --lifesci-run <lifesci-run> --physics-run <physics-run> \
+  --physics-run <physics-run> \
   --chemistry-run <chemistry-run> --mathematics-run <mathematics-run> \
   --candidate-revision paperrecon-v0.1.0-candidate \
   --evidence <release-dir>/paperrecon-gate.json
 
 # After reviewing the immutable candidate revision:
 uv run --all-extras python scripts/publish_paperrecon_release.py \
-  --lifesci-run <lifesci-run> --physics-run <physics-run> \
+  --physics-run <physics-run> \
   --chemistry-run <chemistry-run> --mathematics-run <mathematics-run> \
   --candidate-revision paperrecon-v0.1.0-candidate \
   --evidence <release-dir>/paperrecon-gate.json --publish
