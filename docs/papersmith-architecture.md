@@ -47,26 +47,32 @@ The status propagates through candidate records, `PaperSpec`, validation,
 conversion provenance, and the source-archive registry.
 
 New domain corpora first stage reviewable candidate revisions. No public version
-tag is created until each has at least 20 human-approved tasks that pass
-construction, conversion, fidelity, deterministic regeneration, semantic
-review, and source-archive verification.
+tag is created until each has at least 20 independent-verifier-approved tasks
+that pass construction, conversion, fidelity, deterministic regeneration,
+semantic review, and source-archive verification.
 
-## The three stages
+## The PaperRecon domain-release workflow
 
-The deliverable is a pipeline, not a script. A paper travels through three
-stages, and each one is agent-driven for the same reason: its criteria are
-checkable but not enumerable, so a fixed script over the arXiv API or a regex
-over LaTeX would encode only the cases someone anticipated.
+The deliverable is a pipeline, not a script. The named workflow is
+`paperrecon-domain-release`: discover and screen papers, consolidate and
+independently approve candidates, reconstruct the complete paper, convert it to
+Harbor, review the conversion, publish an immutable candidate revision, and
+create a public dataset version only after the cross-domain gate passes. A
+paper travels through the capability stages below, while the release stages
+make the dataset and source archive reproducible.
 
 | Stage | Module | Agent asks | Output | Gate |
 |---|---|---|---|---|
-| 1. Screen | `core/screen.py` | Which papers *could* become samples? | `candidates.json` — a proposal | A human promotes entries into the domain's approved set |
-| 2. Construct | `core/prompt.py` + `core/validate.py` | Turn this paper into a sample | The `original/` + `resources/` tree | ~28 deterministic checks, plus an oracle-equivalent compile |
-| 3. Review | `core/review.py` | Is the overview faithful and sufficient? | `ReviewVerdict` | A failing verdict becomes a `ValidationIssue` and drives a retry turn |
+| 1. Screen | `core/screen.py` | Which papers *could* become samples? | `candidates.json` — a proposal | Live source checks; no promotion |
+| 2. Consolidate and approve | `scripts/consolidate_paperrecon_candidates.py`, `scripts/verify_paperrecon_candidates.py` | Is the exact candidate set independently supported? | SHA-bound `agent-approval.json` | Two distinct verifier models must agree |
+| 3. Construct | `core/prompt.py` + `core/validate.py` | Turn this paper into a complete sample | The `original/` + `resources/` tree | Structural checks, source boundaries, and oracle-equivalent compile |
+| 4. Review and convert | `core/review.py`, converter, `audit_fidelity.py` | Does the Harbor task preserve the paper? | Harbor task tree plus audit reports | Semantic, provenance, leakage, fidelity, and two deterministic rebuilds |
+| 5. Publish and version | release workflow plus HF CLI/API | Can this candidate revision become public? | Immutable task/archive revisions and, later, `v0.1.0` | Every required domain has at least 20 passed tasks |
 
-Stage 2's gate is the one that admits a paper to the corpus. Stages 1 and 3 sit
-on either side of it and answer the two questions it structurally cannot: which
-paper to build, and whether what got built actually means anything.
+The approval gate admits a paper to construction. The conversion-review gate
+then answers whether the generated Harbor task still means what the paper
+means. Publication is separate: a candidate revision may be uploaded for audit,
+but a public version tag requires the cross-domain count and all audit evidence.
 
 ### Stage 1 — screening (`core/screen.py`)
 
@@ -87,12 +93,9 @@ domain builds its policy from its plugin's tuple rather than restating it.
 
 **The output is a proposal, not a decision.** `run_screening()` writes
 `candidates.json` and stops; nothing appends to a domain's approved-papers
-module. That invariant is load-bearing rather than procedural: `validate.py`'s
-`provenance-mismatch` check works by comparing what the construction agent found
-against what a human approved, and it stops meaning anything the moment the
-approved list is itself machine-generated. A screening agent that could promote
-its own candidates would close that loop and remove the only check against a
-silently substituted paper.
+module. The independent verifier stage checks the exact candidate SHA before
+construction, so a screening agent cannot promote its own candidates or silently
+substitute a paper.
 
 The paper's own license remains a hard filter (`ACCEPTED_LICENSES`); the code
 repository's license is **recorded but never filters** (owner decision,
@@ -209,10 +212,11 @@ during step 1 — the `approved_scaleup.jsonl` loader in `papers.py` and
 that was actively editing those same files settled and merged. See "What was
 wired in step 2" below for what changed and how it was verified.
 
-The three stages above are capabilities, not a workflow. Growing the corpus still
-meant a human running four programs in order and hand-carrying candidate ids
-between them. `.opencode/agent/papersmith-lifesci.md` is the entry point that
-removes the hand-carrying: a `mode: primary` custom opencode agent, invoked as
+The capability stages above are not the complete release workflow. Growing the
+corpus used to mean running several programs in order and hand-carrying
+candidate ids between them. `.opencode/agent/papersmith-lifesci.md` is the
+entry point that removes that hand-carrying: a `mode: primary` custom opencode
+agent, invoked as
 
 ```
 opencode run --agent papersmith-lifesci "give me 10 more life-sciences papers about genomics with public code"
@@ -224,34 +228,38 @@ request, and a fixed `argparse` surface cannot take "about genomics with public
 code" as an argument. The free text steers the parameters; the procedure itself
 is fixed and runs identically every time.
 
-### The seven steps
+### The ten workflow steps
 
 | # | Step | Program |
 |---|---|---|
 | 1 | Parse the request for a target count, topical steering, and any explicit arXiv IDs | the agent itself |
-| 2 | Screen for candidates | `scripts/screen_lifesci_paperrecon_candidates.py` |
-| 3 | Verify every claim against live sources | `scripts/promote_lifesci_paperrecon_candidates.py --limit N` |
-| 4 | Human approves a byte-bound candidate subset, then promote | `scripts/promote_lifesci_paperrecon_candidates.py --human-approval <file> --promote --limit N` |
-| 5 | Build — construction plus reconstructability review | `scripts/build_lifesci_paperrecon_source.py --concurrency 3` |
-| 6 | Harbor-wrap the corpus | `paperbench-harbor lifesci-paperrecon --overwrite` |
-| 7 | Audit task fidelity and semantic material allocation | `scripts/audit_fidelity.py lifesci-paperrecon` |
-| 8 | Report candidates → human-approved/promoted → built → blocked → task count → audit result | the agent itself |
+| 2 | Discover and rank leads through the Harbor LKM adapter; save the snapshot | `scripts/run_paperrecon_domain.py` → `discovery.json` |
+| 3 | Screen and independently check candidate claims against authoritative sources | `core/screen.py` and the domain agent |
+| 4 | Merge iterative reports into one deterministic candidate set | `scripts/consolidate_paperrecon_candidates.py` |
+| 5 | Run two independent verifier agents and promote only their unanimous SHA-bound approval | `scripts/verify_paperrecon_candidates.py` and `scripts/promote_paperrecon_candidates.py` |
+| 6 | Build the complete paper source corpus and reconstructability review | `scripts/run_paperrecon_domain.py --build` |
+| 7 | Convert the corpus into complete Harbor tasks | `scripts/run_paperrecon_domain.py --convert` |
+| 8 | Review conversion correctness and run fidelity, leakage, semantic, provenance, and deterministic audits | `scripts/run_paperrecon_domain.py --audit` and `scripts/audit_fidelity.py` |
+| 9 | Build the matching source archive, then upload immutable candidate task/archive revisions | release operator plus `scripts/build_source_archive.py` |
+| 10 | After every required domain has at least 20 passed tasks, create the public dataset version and update cards | release operator; never implicit in the build |
 
-Only steps 1 and 7 are the agent's own judgment, and both are about reading a
-sentence and relaying output. Every step that decides anything is a program.
+The agent owns request interpretation and progress reporting. Candidate approval
+is performed by independent verifier models, while construction, conversion,
+and release gates remain deterministic programs with durable evidence.
 
 ### Why promotion is a separate deterministic program
 
 "One command starts the whole thing" appears to contradict the invariant stage 1
 rests on. Screening's output is *a proposal, not a decision* precisely because
 `validate.py`'s `provenance-mismatch` check works by comparing what the
-construction agent found against what a human approved — and it stops meaning
-anything the moment the approved list is itself machine-generated. A pipeline
-that auto-promotes has closed that loop.
+construction agent found against the immutable candidate set approved by the
+independent verifier stage — and it stops meaning anything the moment the
+approved list is silently machine-generated from the same screening output. A
+pipeline that auto-promotes has closed that loop.
 
 The resolution is not to trust the screening agent more, and not to let the
-orchestrating agent write the approved list. It is to put an **independent,
-deterministic verification stage between screening and promotion**:
+orchestrating agent write the approved list. It is to put an **independent
+verification stage between screening and promotion**:
 
 - `promote_lifesci_paperrecon_candidates.py` re-derives every claim in
   `candidates.json` from the live arXiv and GitHub APIs. There is no model call
@@ -267,10 +275,10 @@ deterministic verification stage between screening and promotion**:
   candidates this session reported a primary category from the model's prior
   rather than from the API, which is what motivated building this at all.
 - The default invocation is a **dry-run report**. Writing requires an explicit
-  `--promote` plus a human-created approval JSON record that names the reviewer,
-  selects candidate arXiv ids, and carries the SHA-256 of the exact candidate
-  proposal. A stale approval cannot be replayed against edited candidate bytes;
-  an eligible candidate not selected by the reviewer remains unpromoted.
+  `--promote` plus a verifier-created `agent-approval.json` that names two
+  distinct models, selects candidate arXiv ids, and carries the SHA-256 of the
+  exact candidate proposal. A stale approval cannot be replayed against edited
+  candidate bytes; a candidate not unanimously selected remains unpromoted.
   `--limit N` still caps one invocation.
 - Promotion writes **data, not code**: accepted candidates are appended to
   `src/paperbench_harbor/construction/lifesci_paperrecon/approved_scaleup.jsonl`,
@@ -439,7 +447,7 @@ validator **enforces** and what the prompt **prints**.
 |---|---|---|
 | `name` | `str` | Short machine name (`"lifesci"`). Logs and reports only. |
 | `domain_label` | `str` | The adjective the domain uses for itself in validator feedback (`"biology"` → "Use the biology overview skeleton: ..."). |
-| `paper_types` | `tuple[str, ...]` | The domain's replacement for PaperWrite-Bench's method/benchmark/both taxonomy. `_check_config` rejects a `config.yaml` whose `type` is not in this tuple, and separately rejects one that disagrees with the human-approved `PaperSpec.paper_type`. |
+| `paper_types` | `tuple[str, ...]` | The domain's replacement for PaperWrite-Bench's method/benchmark/both taxonomy. `_check_config` rejects a `config.yaml` whose `type` is not in this tuple, and separately rejects one that disagrees with the verifier-approved `PaperSpec.paper_type`. |
 | `overview_headings` | `tuple[tuple[str, ...], ...]` | Required overview sections as accepted *spellings*: each inner tuple is lowercase variants, any one of which satisfies that heading. Drives `_check_overviews`; a missing heading is an `overview-skeleton` failure. |
 | `overview_bounds` | `dict[str, tuple[int, int]]` | Per-overview-file `(floor, ceiling)` character bounds. Sanity bounds, not style rules: the floor catches a heading skeleton with no content, the ceiling catches an agent that pasted the paper in. |
 | `agents_md_dir` | `Path` | Where the domain's `AGENTS_<paper_type>.md` writing instructions live — its Harbor adapter's `AGENTS_MD_DIR`. `_check_config` verifies the file exists, because the converter silently falls back to a default type and would otherwise hand a paper the wrong writing instructions. |
@@ -524,7 +532,8 @@ until the gate has passed it.
   parsers are exercised rather than bypassed: a claim matching the live source is
   accepted, a mismatch on any one of license, category or code license is rejected
   with that field named, a dry run leaves the approved file untouched, `--limit`
-  caps eligible promotions, a human approval is required and byte-bound, and a
+  caps eligible promotions, an independent verifier approval is required and
+  byte-bound, and a
   second run over the same candidates is a no-op.
 
 ## Related documents

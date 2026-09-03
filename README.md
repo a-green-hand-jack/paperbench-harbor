@@ -71,7 +71,14 @@ flowchart TD
     archive --> publish([Manually publish immutable dataset and archive revisions])
 ```
 
-### Build tasks from papers
+### PaperRecon domain onboarding and release
+
+The paper-to-dataset workflow is named `paperrecon-domain-release`. It starts
+from a paper request and ends with an immutable Hugging Face candidate revision
+or, only after the release gate passes for all required domains, a public
+versioned dataset. `run_paperrecon_domain.py` implements the discovery through
+candidate-staging stages; publication and version tagging are deliberate release
+operator stages rather than implicit side effects of a build command.
 
 PaperSmith has four paper-to-task agents: `papersmith-lifesci`,
 `papersmith-physics`, `papersmith-chemistry`, and `papersmith-mathematics`.
@@ -102,12 +109,16 @@ flowchart TD
     consolidate --> agentapproval{Two independent verifier agents unanimously approve?}
     agentapproval -- not yet --> hold([Stop at the approval gate])
     agentapproval -- yes --> promote[Promote approved paper IDs and immutable approval SHA]
-    promote --> construct[Construct source corpus with one isolated OpenCode build and review session per paper]
-    construct --> convert[Convert the corpus to Harbor tasks]
-    convert --> fidelity[Fidelity, determinism, and semantic audits]
-    fidelity --> collectionpassed{All audits pass?}
+    promote --> construct[Construct full-paper source corpus with one isolated OpenCode build and review session per paper]
+    construct --> convert[Convert the corpus to complete Harbor tasks]
+    convert --> conversionreview[Review conversion correctness: contracts, provenance, leakage, fidelity, semantics, and two deterministic rebuilds]
+    conversionreview --> collectionpassed{All conversion audits pass?}
     collectionpassed -- no --> failed([Report evidence; do not publish])
-    collectionpassed -- yes --> collectionreport([Stage auditable candidate release evidence])
+    collectionpassed -- yes --> archive[Build and verify the matching source archive and task-paper registry]
+    archive --> candidatepublish[Publish an immutable candidate revision to the task and source-archive datasets]
+    candidatepublish --> releasegate{All required domains have >=20 passed tasks?}
+    releasegate -- no --> collectionreport([Retain candidate revision and audit evidence])
+    releasegate -- yes --> version[Create the public dataset version tag and update dataset cards]
 
     kind -- rebuild --> manifest[Download the current immutable published manifest]
     manifest --> supervisor[Run the release-candidate supervisor]
@@ -116,7 +127,7 @@ flowchart TD
     coverage --> coveragepassed{Coverage passes?}
     coveragepassed -- no --> failed
     coveragepassed -- yes --> reconvert[Convert the rebuilt corpus to Harbor tasks]
-    reconvert --> releaseaudit[Run the fidelity audit]
+    reconvert --> releaseaudit[Review conversion correctness and run the fidelity audit]
     releaseaudit --> releasepassed{run-summary.json is passed?}
     releasepassed -- no --> failed
     releasepassed -- yes --> releasereport([Produce release-candidate evidence])
@@ -150,6 +161,24 @@ uv run --all-extras python scripts/verify_paperrecon_candidates.py \
   --domain chemistry --candidates <run>/candidate-set.json \
   --run-root <run>/verifier --minimum-approved 20
 ```
+
+Once the approval manifest exists, the domain runner performs the remaining
+local stages and writes a candidate release report:
+
+```bash
+uv run --all-extras python scripts/run_paperrecon_domain.py \
+  --domain chemistry --run-root <run> \
+  --candidates <run>/candidate-set.json \
+  --agent-approval <run>/verifier/agent-approval.json \
+  --promote --build --convert --audit --stage-candidate
+```
+
+The release operator then validates the staged task tree and source archive
+with the release workflow, uploads both datasets at an immutable candidate
+revision, and records the exact revisions in their dataset cards. A public
+`v0.1.0` tag is created only after the cross-domain gate confirms at least 20
+fully audited tasks in every domain; candidate revisions are never silently
+promoted by a build command.
 
 ## Benchmark families
 
