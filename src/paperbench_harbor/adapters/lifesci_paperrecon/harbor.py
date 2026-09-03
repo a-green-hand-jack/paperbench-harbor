@@ -14,8 +14,10 @@ on *how* it was produced, only on the layout it lands in.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
+from paperbench_harbor.adapters.paperwrite_bench import spec as pwb_spec
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
 )
@@ -73,3 +75,15 @@ def lifesci_paperrecon_conversion_config(
         agents_md_fallback=AGENTS_MD_FALLBACK,
         include_official_grader=False,
     )
+
+
+#: The layout is PaperWrite-Bench's, by construction: the corpus is built into
+#: that shape, which is the whole reason this module is a shim rather than a
+#: converter. Only identity differs, and `provenance.json` -- a record of what
+#: the construction agent claimed, which the writer must never see.
+SPEC = dataclasses.replace(
+    pwb_spec.SPEC,
+    benchmark=BENCHMARK,
+    task_id_prefix=TASK_ID_PREFIX,
+    forbidden_public_names=pwb_spec.SPEC.forbidden_public_names | {"provenance.json"},
+)
