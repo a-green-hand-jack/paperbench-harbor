@@ -18,7 +18,7 @@ read off the API. Caught here it costs one HTTP request; missed here it costs a
 full construction run, which fails late as a `provenance-mismatch`.
 
 Promotion never edits `papers.py`. After independent verification, an explicit
-human approval record binds selected candidate ids to the exact proposal bytes
+verifier approval record binds selected candidate ids to the exact proposal bytes
 before anything can be appended to
 `approved_scaleup.jsonl` as `PaperSpec`-shaped records, one per line, deduplicated
 on `arxiv_id`. Keeping the hand-curated tuple in `papers.py` a hand-edited Python
@@ -88,6 +88,10 @@ ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 ABS_LICENSE_PATTERN = re.compile(
     r'<div class="abs-license">.*?<a[^>]+href="([^"]+)"', re.DOTALL | re.IGNORECASE
 )
+ABS_PRIMARY_PATTERN = re.compile(
+    r'<span class="primary-subject">.*?\(([^)]+)\)</span>', re.DOTALL | re.IGNORECASE
+)
+ABS_VERSION_PATTERN = re.compile(r'this version,\s*(v\d+)', re.IGNORECASE)
 
 #: `code_license` is recorded verbatim from GitHub's `license` object, but which
 #: of its several spellings a screening agent copied is not a fact about the
@@ -287,6 +291,26 @@ def _parse_abs_license(payload: str, arxiv_id: str) -> str:
     return license_name_from_url(match.group(1).strip())
 
 
+def _parse_abs_metadata(payload: str, arxiv_id: str) -> tuple[str, str]:
+    """Read primary category and latest version from the abstract HTML.
+
+    The Atom API is normally preferred, but arXiv rate-limits that endpoint more
+    aggressively than the abstract page. This fallback uses the same page already
+    required for the license and fails closed when either field is ambiguous.
+    """
+
+    category_matches = [
+        value.strip() for value in ABS_PRIMARY_PATTERN.findall(payload) if value.strip()
+    ]
+    categories = tuple(dict.fromkeys(category_matches))
+    if len(categories) != 1:
+        raise PromotionError(f"{arxiv_id}: abstract page has no unique primary category")
+    versions = tuple(dict.fromkeys(ABS_VERSION_PATTERN.findall(payload)))
+    if len(versions) != 1:
+        raise PromotionError(f"{arxiv_id}: abstract page has no unique latest version")
+    return categories[0], versions[0]
+
+
 def _repo_slug(code_repo: str, arxiv_id: str) -> str:
     parsed = urllib.parse.urlparse(code_repo.strip())
     if "github.com" not in parsed.netloc.lower():
@@ -337,12 +361,19 @@ def fetch_live_facts(candidate: Candidate) -> tuple[LiveFacts, tuple[str, ...]]:
     """
 
     query = urllib.parse.urlencode({"id_list": candidate.arxiv_id, "max_results": 1})
-    category, version = _parse_arxiv_atom(
-        _http_get(f"{ARXIV_API_URL}?{query}"), candidate.arxiv_id
-    )
-    license_name = _parse_abs_license(
-        _http_get(f"{ARXIV_ABS_URL}/{candidate.arxiv_id}"), candidate.arxiv_id
-    )
+    abs_payload: str | None = None
+    try:
+        category, version = _parse_arxiv_atom(
+            _http_get(f"{ARXIV_API_URL}?{query}"), candidate.arxiv_id
+        )
+    except urllib.error.HTTPError as error:
+        if error.code not in (403, 429):
+            raise
+        abs_payload = _http_get(f"{ARXIV_ABS_URL}/{candidate.arxiv_id}")
+        category, version = _parse_abs_metadata(abs_payload, candidate.arxiv_id)
+    if abs_payload is None:
+        abs_payload = _http_get(f"{ARXIV_ABS_URL}/{candidate.arxiv_id}")
+    license_name = _parse_abs_license(abs_payload, candidate.arxiv_id)
 
     if candidate.code_status == "available":
         headers = {"Accept": "application/vnd.github+json"}
