@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -121,76 +122,90 @@ def _audit_paperwritingbench(args: argparse.Namespace) -> int:
 def _determinism_lifesci_paperrecon(args: argparse.Namespace, summary: dict) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp)
-        digests = []
+        results = []
         for run in ("a", "b"):
-            out = scratch / run
-            convert_paperwrite_bench(
-                lifesci_paperrecon_conversion_config(
-                    source=args.source,
-                    output_dir=out,
-                    upstream_revision=args.upstream_revision,
-                    overview=args.overview,
-                    overwrite=True,
+            results.append(
+                _capture_determinism_run(
+                    scratch,
+                    run,
+                    lambda out: convert_paperwrite_bench(
+                        lifesci_paperrecon_conversion_config(
+                            source=args.source,
+                            output_dir=out,
+                            upstream_revision=args.upstream_revision,
+                            overview=args.overview,
+                            overwrite=True,
+                        )
+                    ),
                 )
             )
-            digests.append(_tree_digest(out))
-        manifest_a = (scratch / "a" / "dataset-manifest.jsonl").read_bytes()
-        manifest_b = (scratch / "b" / "dataset-manifest.jsonl").read_bytes()
-        summary["determinism_tree_identical"] = digests[0] == digests[1]
-        summary["determinism_manifest_identical"] = manifest_a == manifest_b
-        summary["determinism_ok"] = (
-            summary["determinism_tree_identical"] and summary["determinism_manifest_identical"]
-        )
+        _record_determinism_summary(summary, results)
+
+
+def _capture_determinism_run(scratch: Path, run: str, convert) -> tuple[str, bytes]:
+    """Capture one rebuild, then free it before running the next one."""
+    out = scratch / run
+    convert(out)
+    digest = _tree_digest(out)
+    manifest = (out / "dataset-manifest.jsonl").read_bytes()
+    shutil.rmtree(out)
+    return digest, manifest
+
+
+def _record_determinism_summary(summary: dict, results: list[tuple[str, bytes]]) -> None:
+    tree_a, manifest_a = results[0]
+    tree_b, manifest_b = results[1]
+    summary["determinism_tree_identical"] = tree_a == tree_b
+    summary["determinism_manifest_identical"] = manifest_a == manifest_b
+    summary["determinism_ok"] = (
+        summary["determinism_tree_identical"] and summary["determinism_manifest_identical"]
+    )
 
 
 def _determinism_paperwrite(args: argparse.Namespace, summary: dict) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp)
-        digests = []
+        results = []
         for run in ("a", "b"):
-            out = scratch / run
-            convert_paperwrite_bench(
-                PaperWriteBenchConversionConfig(
-                    source=args.source,
-                    output_dir=out,
-                    overview=args.overview,
-                    overwrite=True,
-                    upstream_revision=args.upstream_revision,
+            results.append(
+                _capture_determinism_run(
+                    scratch,
+                    run,
+                    lambda out: convert_paperwrite_bench(
+                        PaperWriteBenchConversionConfig(
+                            source=args.source,
+                            output_dir=out,
+                            overview=args.overview,
+                            overwrite=True,
+                            upstream_revision=args.upstream_revision,
+                        )
+                    ),
                 )
             )
-            digests.append(_tree_digest(out))
-        manifest_a = (scratch / "a" / "dataset-manifest.jsonl").read_bytes()
-        manifest_b = (scratch / "b" / "dataset-manifest.jsonl").read_bytes()
-        summary["determinism_tree_identical"] = digests[0] == digests[1]
-        summary["determinism_manifest_identical"] = manifest_a == manifest_b
-        summary["determinism_ok"] = (
-            summary["determinism_tree_identical"] and summary["determinism_manifest_identical"]
-        )
+        _record_determinism_summary(summary, results)
 
 
 def _determinism_paperwritingbench(args: argparse.Namespace, summary: dict) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp)
-        digests = []
+        results = []
         for run in ("a", "b"):
-            out = scratch / run
-            convert_paperwritingbench(
-                PaperWritingBenchConversionConfig(
-                    source=args.source,
-                    output_dir=out,
-                    protocol=args.protocol,
-                    overwrite=True,
-                    upstream_revision=args.upstream_revision,
+            results.append(
+                _capture_determinism_run(
+                    scratch,
+                    run,
+                    lambda out: convert_paperwritingbench(
+                        PaperWritingBenchConversionConfig(
+                            source=args.source,
+                            output_dir=out,
+                            protocol=args.protocol,
+                            overwrite=True,
+                            upstream_revision=args.upstream_revision,
+                        )
+                    ),
                 )
             )
-            digests.append(_tree_digest(out))
-        manifest_a = (scratch / "a" / "dataset-manifest.jsonl").read_bytes()
-        manifest_b = (scratch / "b" / "dataset-manifest.jsonl").read_bytes()
-        summary["determinism_tree_identical"] = digests[0] == digests[1]
-        summary["determinism_manifest_identical"] = manifest_a == manifest_b
-        summary["determinism_ok"] = (
-            summary["determinism_tree_identical"] and summary["determinism_manifest_identical"]
-        )
+        _record_determinism_summary(summary, results)
 
 
 def _write_reports(

@@ -94,3 +94,36 @@ def test_audit_discards_evidence_when_the_source_changes(tmp_path: Path) -> None
         )
     assert not (args.output / "pwb-0001.json").exists()
     assert not (args.output / "summary.json").exists()
+
+
+def test_pwbw_determinism_releases_the_first_rebuild_before_the_second(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    calls: list[Path] = []
+
+    def fake_convert(config) -> int:
+        output = config.output_dir
+        if calls:
+            assert not (output.parent / "a").exists()
+        output.mkdir()
+        (output / "dataset-manifest.jsonl").write_text("manifest\n", encoding="utf-8")
+        (output / "task.txt").write_text("task\n", encoding="utf-8")
+        calls.append(output)
+        return 1
+
+    monkeypatch.setattr(audit_fidelity, "convert_paperwritingbench", fake_convert)
+    summary: dict = {}
+
+    audit_fidelity._determinism_paperwritingbench(
+        argparse.Namespace(source=source, protocol="sparse-plotoff", upstream_revision="pinned"),
+        summary,
+    )
+
+    assert len(calls) == 2
+    assert summary == {
+        "determinism_tree_identical": True,
+        "determinism_manifest_identical": True,
+        "determinism_ok": True,
+    }
