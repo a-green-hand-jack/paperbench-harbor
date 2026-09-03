@@ -22,6 +22,7 @@ permission:
     "uv run scripts/promote_lifesci_paperrecon_candidates.py *": allow
     "python scripts/promote_lifesci_paperrecon_candidates.py *": allow
     "uv run scripts/build_lifesci_paperrecon_source.py *": allow
+    "uv run scripts/run_lifesci_paperrecon_release_candidate.py *": allow
     "python scripts/build_lifesci_paperrecon_source.py *": allow
     "uv run scripts/audit_fidelity.py lifesci-paperrecon *": allow
     "uv run scripts/audit_lifesci_table_coverage.py *": allow
@@ -100,60 +101,53 @@ candidate**, or otherwise asks to regenerate existing published papers, use this
 path instead of steps 1--3 below. It is the only permitted way to repair an
 existing task: never edit a corpus or generated Harbor task by hand.
 
-1. Read the actual current revision with `git rev-parse HEAD`, and download the
-   current immutable published task selection into the new run root. The
-   run root must be new and empty because `--fresh` clears agent workspaces but
-   intentionally does not delete a prior corpus. The manifest's `upstream_paper_id` records are the rebuild scope; do not replace
-   them with a hand-written list or the wider set of merely approved papers:
+1. Read the actual current revision with `git rev-parse HEAD`. The supervisor
+   downloads the current immutable published task selection into its new run
+   root before it builds anything. Its manifest's `upstream_paper_id` records
+   are the rebuild scope; do not replace them with a hand-written list or the
+   wider set of merely approved papers.
+
+2. Run the construction/review loop, source-table gate, conversion, and task
+   fidelity audit through the direct release-candidate supervisor. It always
+   uses `--fresh`, never skips review, and preserves its report and logs:
 
    ```
-   hf download Jack-Jieke-Wu/Paper-Writing-Exam \\
-       lifesci-paperrecon-short/dataset-manifest.jsonl \\
-       --repo-type dataset \\
-       --local-dir .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest
-   ```
-
-2. Run the construction/review loop for every task selected by that manifest.
-   Keep `--fresh`, do not use `--skip-review`, and preserve the report and logs:
-
-   ```
-   uv run scripts/build_lifesci_paperrecon_source.py \\
-       --scratch-root /home/user/lifesci-paperrecon-scratch/issue37-<short-revision> \\
-       --corpus-root .cache/lifesci-paperrecon/issue37-<short-revision>/corpus \\
-       --build-root /home/user/lifesci-paperrecon-scratch/issue37-<short-revision>/build \\
-       --log-dir /home/user/lifesci-paperrecon-scratch/issue37-<short-revision>/logs \\
-       --published-manifest .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest/lifesci-paperrecon-short/dataset-manifest.jsonl \\
+   uv run scripts/run_lifesci_paperrecon_release_candidate.py \\
+       --run-root /home/user/orca/tmp/<managed-release-candidate-run> \\
        --model openai/gpt-5.6-sol \\
-       --reviewer-model openai/gpt-5.5 \\
-       --concurrency 1 \\
-       --fresh \\
-       --report .cache/lifesci-paperrecon/issue37-<short-revision>/build-report.json
+       --reviewer-model openai/gpt-5.5
    ```
 
-3. Require a complete table-coverage report before conversion. This traverses
+   Create the run root with `agent-workspace tmp create` before starting. Run
+   this command as a direct long-lived CLI process, **not** through a foreground
+   `opencode run --agent` Bash tool call: the construction loop can take hours,
+   while the latter has a one-hour tool timeout and would restart a `--fresh`
+   build from the beginning. The supervisor snapshots the published manifest at
+   its first stage and writes `run-summary.json` after every stage, so a failed
+   or interrupted run is visible and cannot be confused with a release
+   candidate.
+
+3. Require the supervisor's `run-summary.json` to be `"status": "passed"`
+   before publishing. Its source table-coverage stage recursively traverses
    every `main.tex` and reachable `input`/`include` file, then compares the
    source inventory, public fragments and summaries. It exits non-zero for any
-   discrepancy:
+   discrepancy and prevents conversion or fidelity audit from running:
 
    ```
-   uv run scripts/audit_lifesci_table_coverage.py \\
-       --source .cache/lifesci-paperrecon/issue37-<short-revision>/corpus \\
-       --published-manifest .cache/lifesci-paperrecon/issue37-<short-revision>/published-manifest/lifesci-paperrecon-short/dataset-manifest.jsonl \\
-       --output reports/lspr/issue37-<short-revision>-table-coverage.json
+   cat /home/user/orca/tmp/<managed-release-candidate-run>/run-summary.json
    ```
 
-4. Only after that report passes, run steps 5 and 6 below against this new
-   corpus and new candidate dataset directory. Use the same exact Git revision
-   for conversion and fidelity audit. Report every failed or blocked paper; a
-   partial corpus is not a release candidate.
+4. The supervisor converts only after the coverage report passes and then runs
+   the fidelity audit with the same exact Git revision. Report every failed or
+   blocked paper; a partial corpus is not a release candidate.
 
 This path deliberately still starts one isolated opencode session per paper.
 Use the explicitly pinned `gpt-5.6-sol` worker, the distinct `gpt-5.5`
 reviewer, and one worker at a time: a published-corpus rebuild is a long
 autonomous job, and this avoids losing a batch of independent starts to a
 provider's per-model usage ceiling while keeping construction and review
-independent. It may run for hours, but every session is restartable from its
-saved logs and the deterministic gates decide admission. No manual repair path
+independent. It may run for hours. The direct supervisor retains its stage
+record and the deterministic gates decide admission; no manual repair path
 exists.
 
 ## The fixed procedure
