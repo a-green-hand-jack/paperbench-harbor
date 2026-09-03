@@ -23,7 +23,15 @@ PUBLIC_RULES = (
         "environment/materials/idea_sparse.md",
         required=True,
     ),
-    CopyRule("raw_materials/experimental_log.md", "environment/materials/experimental_log.md"),
+    # Rewritten on every one of the 200 published tasks: upstream logs carry
+    # short alignment rows, bare pipes inside math, and unlabeled columns, and
+    # `normalize_markdown_tables` repairs the structure without touching any
+    # result value, recording each correction in `upstream_data_warnings.md`.
+    CopyRule(
+        "raw_materials/experimental_log.md",
+        "environment/materials/experimental_log.md",
+        may_be_rewritten=True,
+    ),
     CopyRule("raw_materials/figures", "environment/materials/figures", kind="tree"),
 )
 
