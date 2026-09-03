@@ -36,6 +36,14 @@ _CONFERENCE_TEMPLATES_DIR = (
 )
 _VENDOR_DIR = Path(__file__).resolve().parents[2] / "vendor"
 _CITATION_CACHE_PATTERN = re.compile(r"^original_paper_gt_citations_.+\.json$")
+_SIDECAR_RUNTIME_FILES = (
+    "LICENSE",
+    "methods/agents/literature_review_agent.py",
+    "methods/prompts/literature_review_agent.py",
+    "utils/gemini_utils.py",
+    "utils/prompt_utils.py",
+    "utils/scholar_utils.py",
+)
 
 _PAPER_ORDER_RE = re.compile(r"(\d+)")
 
@@ -117,6 +125,17 @@ def _copy_public_materials(
             provenance[path] = ("harbor_conference_template", template_dir / path.relative_to(destination))
 
     return copied, provenance
+
+
+def _copy_sidecar_runtime(destination: Path) -> None:
+    source_root = _VENDOR_DIR / "paper_orchestra" / "upstream_pipeline"
+    for relative in _SIDECAR_RUNTIME_FILES:
+        source = source_root / relative
+        if not source.is_file():
+            raise FileNotFoundError(f"PaperOrchestra sidecar dependency missing: {source}")
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _render_templates(
@@ -221,14 +240,9 @@ def _convert_paper(
         tests_dir / "vendor" / "paper_orchestra",
         ignore=_ignore_bytecode,
     )
-    # The frontend's bundled demonstration describes a real benchmark paper;
-    # it is not runtime support and would disclose ground truth to the writer.
-    _ignore_writer_examples = shutil.ignore_patterns("__pycache__", "*.pyc", "examples")
-    shutil.copytree(
-        _VENDOR_DIR / "paper_orchestra" / "upstream_pipeline",
-        environment_dir / "paper_orchestra",
-        ignore=_ignore_writer_examples,
-    )
+    # The writer receives only the sidecar's runtime dependency closure, not
+    # PaperOrchestra demos, evaluation code, or pipeline commands.
+    _copy_sidecar_runtime(environment_dir / "paper_orchestra")
     shutil.copy2(
         Path(__file__).resolve().parents[2] / "sidecar" / "server.py",
         environment_dir / "paper_orchestra_sidecar.py",

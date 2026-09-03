@@ -1,6 +1,9 @@
 import json
+import shutil
+import sys
 from pathlib import Path
 
+from paperbench_harbor.sidecar import server
 from paperbench_harbor.sidecar.server import serve
 
 
@@ -21,3 +24,17 @@ def test_sidecar_declares_credential_free_discovery_fallback() -> None:
     assert "def _semantic_scholar_discover" in source
     assert "semantic-scholar-fallback" in source
     assert "PAPER_ORCHESTRA_RESEARCH_CUTOFF" in source
+    assert "def _load_semantic_scholar_search" in source
+    assert "def _load_gemini_literature_agent" in source
+
+
+def test_semantic_scholar_loader_needs_only_the_runtime_subset(tmp_path: Path, monkeypatch) -> None:
+    runtime = tmp_path / "paper_orchestra" / "utils"
+    runtime.mkdir(parents=True)
+    source = Path("src/paperbench_harbor/vendor/paper_orchestra/upstream_pipeline/utils/scholar_utils.py")
+    shutil.copy2(source, runtime / "scholar_utils.py")
+    monkeypatch.setenv("PAPER_ORCHESTRA_ROOT", str(runtime.parent))
+    sys.modules.pop("utils", None)
+    sys.modules.pop("utils.scholar_utils", None)
+
+    assert callable(server._load_semantic_scholar_search())
