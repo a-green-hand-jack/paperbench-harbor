@@ -84,5 +84,5 @@ Ensure proper citation usage:
 
 - The paper should make clear what problem is being solved and why the proposed method is effective.
 - Do not include formatted mathematical formulas or equations in the Abstract. However, including key numerical results (e.g., "an accuracy of 92.5%") and mentioning mathematical concepts by name is perfectly acceptable.
-- Preserve and complete any Limitation or Future Work sections required by the supplied template; do not invent optional sections outside the supplied protocol.
+- Do not include Limitation sections and Future Work sections.
 - Use `\%` to display a literal percent sign, as a standard `%` will be treated as a comment.

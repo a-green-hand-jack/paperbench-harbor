@@ -67,6 +67,17 @@ _PRESERVE_ACKNOWLEDGEMENT_INSTRUCTION = (
     "- Do not add an `Acknowledgements` section unless it is already present in the "
     "supplied template; preserve an existing heading without adding new content."
 )
+_LIMITATIONS_OR_FUTURE_WORK_HEADING_RE = re.compile(
+    r"\\(?:sub)?section\*?\{[^}\n]*(?:limitation|future\s+work)[^}\n]*\}",
+    re.IGNORECASE,
+)
+_LIMITATIONS_OR_FUTURE_WORK_INSTRUCTION = (
+    "- Do not include Limitation sections and Future Work sections."
+)
+_PRESERVE_LIMITATIONS_OR_FUTURE_WORK_INSTRUCTION = (
+    "- Preserve and complete any Limitation or Future Work sections required by the "
+    "supplied template; do not invent optional sections outside the supplied protocol."
+)
 
 #: Never copied into a generated task, from any tree. A `.git` directory or a
 #: bytecode cache records the machine that built the corpus, not the paper.
@@ -354,15 +365,20 @@ def _resource_conditional_agents_md(agents_md: str, has_figures: bool) -> str:
 
 
 def _preserve_existing_acknowledgement_heading(agents_md: str, template_tex: Path) -> str:
-    """Allow a supplied acknowledgement heading without broadening the writer brief."""
+    """Let supplied section headings override otherwise-prescriptive boilerplate."""
 
     template = template_tex.read_text(encoding="utf-8", errors="replace")
-    if not _ACKNOWLEDGEMENT_HEADING_RE.search(template):
-        return agents_md
-    return agents_md.replace(
-        _ACKNOWLEDGEMENT_INSTRUCTION,
-        _PRESERVE_ACKNOWLEDGEMENT_INSTRUCTION,
-    )
+    if _ACKNOWLEDGEMENT_HEADING_RE.search(template):
+        agents_md = agents_md.replace(
+            _ACKNOWLEDGEMENT_INSTRUCTION,
+            _PRESERVE_ACKNOWLEDGEMENT_INSTRUCTION,
+        )
+    if _LIMITATIONS_OR_FUTURE_WORK_HEADING_RE.search(template):
+        agents_md = agents_md.replace(
+            _LIMITATIONS_OR_FUTURE_WORK_INSTRUCTION,
+            _PRESERVE_LIMITATIONS_OR_FUTURE_WORK_INSTRUCTION,
+        )
+    return agents_md
 
 
 def _convert_paper(

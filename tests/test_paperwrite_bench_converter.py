@@ -263,6 +263,32 @@ def test_conversion_recognizes_acmart_as_a_double_column_template(tmp_path: Path
     assert "suitable for a 9-page double-column paper" in instruction
 
 
+def test_conversion_preserves_template_required_limitations_section(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "\\section{Limitations}\n"
+        "\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    agents = (tmp_path / "out" / "pwb-0001" / "environment" / "materials" / "AGENTS.md")
+    assert "Preserve and complete any Limitation or Future Work sections" in agents.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_unsupported_overview_raises(tmp_path: Path) -> None:
     config = PaperWriteBenchConversionConfig(
         source=_make_source(tmp_path), output_dir=tmp_path / "out", overview="medium"

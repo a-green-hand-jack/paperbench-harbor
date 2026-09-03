@@ -84,7 +84,7 @@ Ensure proper citation usage:
 ## Notes
 
 - Do not include formatted mathematical formulas or equations in the Abstract.
-- Preserve and complete any Limitation or Future Work sections required by the supplied template; do not invent optional sections outside the supplied protocol.
+- Do not include Limitation sections and Future Work sections.
 - Use `\%` to display a literal percent sign, as a standard `%` will be treated as a comment.
 - Clearly separate the method contribution from the benchmark contribution in the paper structure.
 - The benchmark must be justified, not merely presented.
