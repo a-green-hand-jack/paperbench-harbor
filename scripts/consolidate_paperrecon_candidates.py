@@ -27,6 +27,19 @@ class ConsolidationError(RuntimeError):
     """The reports cannot be merged without losing auditability."""
 
 
+_IDENTITY_FIELDS = (
+    "arxiv_id",
+    "expected_version",
+    "code_status",
+    "code_repo",
+    "expected_license",
+    "code_license",
+    "code_not_applicable_reason",
+    "expected_category",
+    "paper_type",
+)
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -70,9 +83,18 @@ def consolidate(
         for record in records:
             arxiv_id = record["arxiv_id"]
             previous = merged.get(arxiv_id)
-            if previous is not None and previous != record:
-                raise ConsolidationError(f"conflicting records for arxiv_id {arxiv_id}")
-            merged[arxiv_id] = record
+            if previous is not None:
+                if any(previous[field] != record[field] for field in _IDENTITY_FIELDS):
+                    raise ConsolidationError(f"conflicting records for arxiv_id {arxiv_id}")
+                # Notes and rationales are narrative evidence, not identity.
+                # Pick one canonically so rerun wording cannot block a merge.
+                merged[arxiv_id] = min(
+                    previous,
+                    record,
+                    key=lambda value: json.dumps(value, sort_keys=True, separators=(",", ":")),
+                )
+            else:
+                merged[arxiv_id] = record
 
     candidates = [merged[key] for key in sorted(merged)]
     required = minimum + reserve

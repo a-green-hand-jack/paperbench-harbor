@@ -47,7 +47,7 @@ def test_consolidation_is_sorted_and_deduplicates_exact_records(tmp_path: Path) 
 
 def test_consolidation_rejects_conflicting_duplicate(tmp_path: Path) -> None:
     one = _report(tmp_path / "one.json", [_record("2504.11111")])
-    two = _report(tmp_path / "two.json", [_record("2504.11111", note="changed")])
+    two = _report(tmp_path / "two.json", [_record("2504.11111", expected_version="v2")])
     with pytest.raises(ConsolidationError, match="conflicting records"):
         consolidate([one, two], domain_name="lifesci", output=tmp_path / "out.json", minimum=1)
 
