@@ -215,7 +215,17 @@ def _sanitize_unavailable_graphics(template_tex: Path, materials_dir: Path) -> l
             if not (materials_dir / graphic.lstrip("./")).is_file()
         ]
         if missing:
-            output.append("% Harbor omitted unavailable upstream graphic: " + line)
+            # Keep the surrounding template command active.  Commenting the
+            # whole line to remove one unavailable icon can also erase a
+            # required title, author, or section declaration.
+            output.append(
+                pattern.sub(
+                    lambda match, missing=frozenset(missing): (
+                        "" if match.group(1) in missing else match.group(0)
+                    ),
+                    line,
+                )
+            )
             warnings.extend(
                 f"Removed unavailable upstream graphic `{graphic}` from template.tex."
                 for graphic in missing

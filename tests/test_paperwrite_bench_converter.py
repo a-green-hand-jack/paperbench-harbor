@@ -191,6 +191,33 @@ def test_missing_figures_are_not_required(tmp_path: Path) -> None:
         assert "/workspace/materials/figures/" not in path.read_text(encoding="utf-8")
 
 
+def test_missing_graphic_does_not_comment_out_a_template_title(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\title{Faithful title \\includegraphics{missing-icon.png}}\n"
+        "\\begin{document}\n\\maketitle\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    template = (
+        tmp_path / "out" / "pwb-0001" / "environment" / "materials" / "template.tex"
+    ).read_text(encoding="utf-8")
+    assert "\\title{Faithful title }" in template
+    assert "missing-icon.png" not in template
+    assert "% Harbor omitted unavailable upstream graphic" not in template
+
+
 def test_conversion_includes_a_paper_local_bibliography_style(tmp_path: Path) -> None:
     source = _make_source(tmp_path)
     resources = source / "paper_1" / "resources"
