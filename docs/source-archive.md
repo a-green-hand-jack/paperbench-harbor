@@ -1,86 +1,69 @@
-# Source Archive Release Gate
+# Source Archive
 
-The source archive is a separate Hugging Face dataset for immutable provenance
-records and legally redistributable construction inputs. It is not a task
-configuration and converters must never read it. In particular, archive files
-must not be copied to `environment/materials/`, `solution/`, `tests/`, or any
-other runnable task path.
+The source archive is a separate Hugging Face dataset for immutable task-paper
+provenance and retained construction inputs. It is not a Harbor task
+configuration: converters must never copy archive files into
+`environment/materials/`, `solution/`, `tests/`, or any other runnable task
+path.
 
-## Plan Contract
+## Current archive
 
-`scripts/build_source_archive.py` accepts a strict schema-v1 JSON plan. It
-requires a pinned runnable dataset revision and converter/workflow commits,
-then records a separate paper-level identity for every task. A paper record
-contains its canonical title, arXiv version and URLs, verified license, code
-repository and fixed code revision (or an explicit no-code explanation), plus
-the fetch date and source-archive manifest release identifier.
+[`Paper-Writing-Exam-Source-Archive`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive)
+`v0.1.0` is the archive paired with the 274-task `Paper-Writing-Exam`
+`v0.4.1` release at task revision
+`367bbf67ea05d0ec3d580e062aadf5636b45fc65`. The archive's immutable target
+commit is `328f2ca7ee8b68cbf2b5af60ad9ff1b85f47cce0`.
 
-Each construction input records its kind, immutable source URL, fetch time,
-byte count, SHA-256, and one of two treatments:
+It contains:
 
-- `archived`: copy independently rehashed bytes to the archive at a safe
-  archive-relative path.
-- `locator-only`: retain its immutable locator, byte count, hash, and a
-  concrete redistribution-exclusion explanation without copying it.
+- one task-paper registry record for every task/configuration pair;
+- 273 archived upstream source trees, covering all 51 PaperWrite-Bench, 200
+  PaperWritingBench, and 22 LifeSci-PaperRecon tasks;
+- a SHA-256 manifest for 14,388 archived source files; and
+- one `hello-world` record marked `not_applicable`, because the first-party
+  smoke task has no external paper or source archive input.
 
-Every arXiv paper must account for its e-print source, PDF, and extracted
-source-tree manifest. A venue-only paper must explicitly mark its arXiv fields
-as not applicable and explain why. A paper with a code repository must also
-account for its code snapshot. Missing mappings, movable revisions, bad hashes,
-or a silent redistribution exclusion fail before an archive is created.
+The registry connects a task's immutable release identity and checksum to its
+upstream sample or paper, conversion revision, source location, and licensing
+metadata. It is for provenance review and source auditing, not for supplying
+extra context to an evaluated agent.
 
-## Release Workflow
+## Archive boundaries
 
-The release workflow is executed by
-`scripts/run_release_workflow.py --spec ... --audit-output ...
---archive-output ... --evidence-output ...`. Its strict schema-v1 JSON spec
-pins the task converter revision, the workflow revision, the semantic-review
-model, and every audit's source, task tree, upstream revision, protocol, and
-per-task worker count.
+The archive never contains runnable task directories, oracle solutions,
+verifier fixtures, or trial artifacts. Refreshing the archive must not modify a
+task file or task checksum. Conversely, a task release cannot claim archive
+coverage until the matching archive revision and registry have been verified
+and published.
 
-It starts all declared configuration audits concurrently (bounded by the spec's
-`max_concurrent_audits`) and always passes `--semantic-review` with the named
-reviewer model. It verifies that every produced summary represents the exact
-task tree, has a pinned workflow revision, passes the two independent
-determinism rebuilds, and contains one successful semantic review per task.
+Each archived input retains the upstream license and redistribution terms. A
+source that may be located but not redistributed remains a locator with its
+identity and rationale; the archive does not create new distribution rights.
 
-Only after those full audits pass does the workflow build the separate source
-archive, validate the registry and copied hashes, run the source-archive gate
-for the configurations covered by the archive plan, and write one
-machine-readable release-workflow evidence file. A failure leaves no successful
-gate evidence, so it cannot be used to create a release tag.
+## Maintainer implementation
 
-The intended sequence is:
+The implementation is maintained on `main` in
+`src/paperbench_harbor/provenance/archive.py` and exposed through
+`scripts/build_source_archive.py`. It builds a source-only archive from a fixed
+task-release tree and the retained PaperWrite-Bench, PaperWritingBench, and
+LifeSci source roots; it then writes the registry and per-file manifest.
 
-1. Materialize candidate task trees and upload them only to an isolated
-   candidate Hugging Face revision. Its immutable commit is recorded in the
-   source-archive plan; it is not a public release tag.
-2. Prepare the human-approved archive plan and source inputs outside every
-   runnable task directory.
-3. Run the release workflow. It performs the complete deterministic and
-   semantic audit of every declared configuration in parallel, then builds and
-   verifies the archive and its provenance gate.
-4. Upload the source archive, create immutable tags for the verified runnable
-   candidate revision and its archive revision, then publish the workflow
-   evidence and links in both dataset cards.
+Before publication, run the builder against explicit immutable task and
+converter revisions, then validate the staged archive with `--verify-only`.
+The verification checks registry structure, archive-tree hashes, and the
+absence of runnable-task content.
 
-`scripts/build_source_archive.py` and
-`scripts/verify_release_provenance.py` remain useful independent verification
-commands, but a release workflow must use the orchestrator above rather than
-hand-compose a partial audit. This makes source-archive production a required
-part of each future release workflow, not an after-the-fact document.
+## Future releases
 
-The archive builder hashes the entire local task tree before and after it
-writes. An archive refresh that changes a task byte is a failure, rather than a
-new benchmark release.
+For every new task release:
 
-## Current Scope
+1. merge the converter changes into `main` and record the exact build revision;
+2. regenerate and validate the task release from pinned upstream inputs;
+3. publish and tag the immutable task dataset revision;
+4. build and verify the matching source archive from that exact task tree; and
+5. publish and tag the archive, then cross-link both immutable revisions in the
+   dataset cards.
 
-The source archive being added in the PR #42 release cycle covers the 22-task
-LifeSci-PaperRecon configuration. The repository owner explicitly decided not
-to backfill a source archive for the already published 51 PaperWrite-Bench or
-200 PaperWritingBench tasks. Those configurations remain subject to their
-conversion, regression, isolation, and semantic-audit gates, but are not task
-registrations in this LifeSci archive plan or release gate. A later decision to
-archive either legacy configuration must use a separate complete plan; it must
-not silently reuse or weaken the LifeSci registry.
+The build revision is historical provenance for that release. A later `main`
+may contain patch-equivalent fixes, but it must not replace the recorded
+revision when reproducing the older immutable dataset.

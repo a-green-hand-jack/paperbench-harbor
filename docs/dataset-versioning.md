@@ -50,6 +50,12 @@ repair was generated with converter revision
 `ffcdc76f74a1711d2157b9bf6aa5c10b49183800`: it verified 144 source tables and
 144 writer-visible table fragments across all 22 tasks.
 
+That converter revision is immutable release provenance, not a claim that a
+released dataset should track a moving branch. The complete LifeSci repair
+series is already present on the current `main` as patch-equivalent changes;
+future maintenance starts from `main`, while reproduction of `v0.4.1` continues
+to cite the fixed converter revision above.
+
 Task selection and execution instructions are normative in the
 [Paper-Writing-Exam dataset card](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam), not here.
 
