@@ -22,6 +22,7 @@ DEFAULT_DATASET_REPOSITORY = "Jack-Jieke-Wu/Paper-Writing-Exam"
 DEFAULT_WORKER_MODEL = "openai/gpt-5.6-sol"
 DEFAULT_REVIEWER_MODEL = "openai/gpt-5.5"
 DEFAULT_MAX_TURNS = 5
+DEFAULT_CONCURRENCY = 4
 INITIAL_RUN_ROOT_ENTRIES = frozenset(
     {".agent-workspace.json", "supervisor.log", "supervisor.pid"}
 )
@@ -73,11 +74,19 @@ def _parse_args() -> argparse.Namespace:
         default=DEFAULT_MAX_TURNS,
         help="Maximum construction/review turns per paper; release candidates default to 5.",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=DEFAULT_CONCURRENCY,
+        help="Independent paper sessions to run at once; release candidates default to 4.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    if args.concurrency < 1:
+        raise SystemExit("--concurrency must be at least 1")
     run_root = args.run_root.resolve()
     existing = (
         []
@@ -110,6 +119,7 @@ def main() -> int:
         "worker_model": args.model,
         "reviewer_model": args.reviewer_model,
         "max_turns": args.max_turns,
+        "concurrency": args.concurrency,
         "run_root": str(run_root),
         "stages": [],
     }
@@ -152,7 +162,7 @@ def main() -> int:
                 "--reviewer-model",
                 args.reviewer_model,
                 "--concurrency",
-                "1",
+                str(args.concurrency),
                 "--max-turns",
                 str(args.max_turns),
                 "--fresh",

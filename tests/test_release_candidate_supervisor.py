@@ -57,6 +57,7 @@ def test_supervisor_runs_all_release_candidate_stages(monkeypatch, tmp_path: Pat
     assert commands[0][:4] == ["hf", "download", "Jack-Jieke-Wu/Paper-Writing-Exam", "lifesci-paperrecon-short/dataset-manifest.jsonl"]
     assert "--fresh" in commands[1]
     assert commands[1][commands[1].index("--max-turns") + 1] == "5"
+    assert commands[1][commands[1].index("--concurrency") + 1] == "4"
     assert commands[2][2] == "scripts/audit_lifesci_table_coverage.py"
     assert commands[3][2:4] == ["paperbench-harbor", "lifesci-paperrecon"]
     assert commands[4][2:4] == ["scripts/audit_fidelity.py", "lifesci-paperrecon"]

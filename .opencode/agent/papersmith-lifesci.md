@@ -114,9 +114,10 @@ existing task: never edit a corpus or generated Harbor task by hand.
    ```
    uv run scripts/run_lifesci_paperrecon_release_candidate.py \\
        --run-root /home/user/orca/tmp/<managed-release-candidate-run> \\
-       --model openai/gpt-5.6-sol \\
+       --model apex/gpt-5.6-sol \\
        --reviewer-model openai/gpt-5.5 \\
-       --max-turns 5
+       --max-turns 5 \\
+       --concurrency 4
    ```
 
    Create the run root with `agent-workspace tmp create` before starting. Run
@@ -143,11 +144,10 @@ existing task: never edit a corpus or generated Harbor task by hand.
    blocked paper; a partial corpus is not a release candidate.
 
 This path deliberately still starts one isolated opencode session per paper.
-Use the explicitly pinned `gpt-5.6-sol` worker, the distinct `gpt-5.5`
-reviewer, and one worker at a time: a published-corpus rebuild is a long
-autonomous job, and this avoids losing a batch of independent starts to a
-provider's per-model usage ceiling while keeping construction and review
-independent. A release candidate permits up to five construction/review turns
+Use the explicitly pinned direct Apex `gpt-5.6-sol` worker and the distinct
+`gpt-5.5` reviewer. Run four isolated paper sessions concurrently: their
+scratch workspaces and review directories do not overlap, so serial execution
+only delays the release candidate. A release candidate permits up to five construction/review turns
 per paper, so a reviewer can check a correction instead of rejecting a sample
 solely because a first revision surfaced another specific omission. It may run
 for hours. The direct supervisor retains its stage
