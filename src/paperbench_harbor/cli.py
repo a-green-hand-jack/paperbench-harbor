@@ -18,6 +18,7 @@ from paperbench_harbor.fidelity.dataset import (
     audit_dataset,
     format_failures,
 )
+from paperbench_harbor.smoke.hello_world import build_hello_world_task
 
 #: Shared help text, so the three commands describe the flag identically.
 _AUDIT_HELP = (
@@ -53,6 +54,17 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Convert scientific-paper writing benchmarks into Harbor task datasets.",
 )
+
+
+@app.command("hello-world")
+def hello_world_command(
+    output_dir: Annotated[Path, typer.Option(resolve_path=True)],
+    overwrite: Annotated[bool, typer.Option()] = False,
+) -> None:
+    """Generate the fast end-to-end Harbor smoke task."""
+
+    task_dir = build_hello_world_task(output_dir, overwrite=overwrite)
+    typer.echo(f"Generated Hello World task at {task_dir}")
 
 
 @app.command("paperwritingbench")
