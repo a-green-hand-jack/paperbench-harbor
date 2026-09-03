@@ -389,7 +389,17 @@ def _remote_file(
     if not enabled:
         return None
     if downloader is not None:
-        downloaded = downloader(repo_id, filename, revision)
+        try:
+            downloaded = downloader(repo_id, filename, revision)
+        except Exception as exc:
+            try:
+                from huggingface_hub.utils import EntryNotFoundError
+            except ImportError:
+                pass
+            else:
+                if isinstance(exc, EntryNotFoundError):
+                    return None
+            raise
         return Path(downloaded) if downloaded is not None else None
     try:
         from huggingface_hub import hf_hub_download
