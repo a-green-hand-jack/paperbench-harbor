@@ -26,7 +26,7 @@ reports zero missing, added, and changed files after the named exclusions.
 
 ## PaperWrite-Bench
 
-The allowed comparison covers 23,672 files, all identical. Eleven generated
+The allowed comparison covers 23,671 files, all identical. Eleven generated
 `AGENTS.md` files are additionally named, rather than hidden by a broad glob:
 `pwb-0003`, `0004`, `0007`, `0013`, `0014`, `0017`, `0021`, `0029`, `0034`,
 `0038`, and `0040`.
@@ -36,6 +36,13 @@ template. Four preserve a supplied Limitation or Future Work heading. In each
 case, the converter changes only the generated instruction from a blanket
 prohibition to a requirement to respect the template's existing protocol; it
 does not add an optional paper section or alter an upstream input.
+
+`pwb-0044/environment/materials/template.tex` is one further, explicitly
+named correction. The historical converter commented out the entire active
+`\\title{...}` line while trying to omit an unavailable `biasicon.png` asset.
+The corrected converter removes only that unavailable graphic command and
+leaves the title active. This is a task-material correctness repair verified by
+the independent semantic audit, not an unreviewed exclusion.
 
 ## PaperWritingBench
 
