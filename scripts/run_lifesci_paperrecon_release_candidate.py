@@ -21,6 +21,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET_REPOSITORY = "Jack-Jieke-Wu/Paper-Writing-Exam"
 DEFAULT_WORKER_MODEL = "openai/gpt-5.6-sol"
 DEFAULT_REVIEWER_MODEL = "openai/gpt-5.5"
+INITIAL_RUN_ROOT_ENTRIES = frozenset(
+    {".agent-workspace.json", "supervisor.log", "supervisor.pid"}
+)
 
 
 def _timestamp() -> str:
@@ -72,11 +75,12 @@ def main() -> int:
     existing = (
         []
         if not run_root.exists()
-        else [entry.name for entry in run_root.iterdir() if entry.name != ".agent-workspace.json"]
+        else [entry.name for entry in run_root.iterdir() if entry.name not in INITIAL_RUN_ROOT_ENTRIES]
     )
     if existing:
         raise SystemExit(
-            "--run-root must be new apart from .agent-workspace.json: " f"{run_root}"
+            "--run-root must be new apart from its managed-directory and "
+            f"supervisor markers: {run_root}"
         )
     run_root.mkdir(parents=True, exist_ok=True)
 

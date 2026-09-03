@@ -27,6 +27,8 @@ def test_supervisor_runs_all_release_candidate_stages(monkeypatch, tmp_path: Pat
     run_root = tmp_path / "candidate"
     run_root.mkdir()
     (run_root / ".agent-workspace.json").write_text("{}\n")
+    (run_root / "supervisor.log").write_text("")
+    (run_root / "supervisor.pid").write_text("123\n")
 
     monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: "revision-123\n")
 
