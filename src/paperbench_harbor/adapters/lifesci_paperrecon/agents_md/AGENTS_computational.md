@@ -77,5 +77,5 @@ Ensure proper citation usage:
 - The paper should make clear what biological or methodological question is being addressed and why the work answers it convincingly.
 - Do not include formatted mathematical formulas or equations in the Abstract. However, mentioning quantities and named statistical or mathematical concepts is perfectly acceptable.
 - Report organism, strain, cell line, reagent, dataset and software identifiers precisely as they appear in the provided materials; never invent an accession number, catalogue number, version string or DOI.
-- Do not include Limitation sections and Future Work sections.
+- Preserve and complete any Limitation or Future Work sections required by the supplied template; do not invent optional sections outside the supplied protocol.
 - Use `\%` to display a literal percent sign, as a standard `%` will be treated as a comment.

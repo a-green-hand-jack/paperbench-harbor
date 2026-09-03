@@ -219,8 +219,18 @@ def test_specs_own_their_task_identity_render_defaults_and_style_mode() -> None:
     assert "source_archive_locator" in LSPR_SPEC.provenance_requirements.registry_fields
 
 
-def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_and_provenance() -> None:
-    assert LSPR_SPEC.public == pwb_spec.SPEC.public
+def test_lifesci_spec_redacts_paper_sources_from_linked_code_checkouts() -> None:
+    source_code_rule = next(rule for rule in LSPR_SPEC.public if rule.source == "resources/code")
+    assert source_code_rule.tree_exclude_globs == ("*.pdf", "*.tex")
+    assert source_code_rule.excludes_tree_path(Path("paper/manuscript.tex"))
+    assert source_code_rule.excludes_tree_path(Path("paper/manuscript.pdf"))
+    assert not source_code_rule.excludes_tree_path(Path("src/model.py"))
+
+
+def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_provenance_and_leakage_policy() -> None:
+    assert tuple(rule.source for rule in LSPR_SPEC.public) == tuple(
+        rule.source for rule in pwb_spec.SPEC.public
+    )
     assert LSPR_SPEC.private == pwb_spec.SPEC.private
     assert LSPR_SPEC.benchmark == "LifeSci-PaperRecon"
     assert LSPR_SPEC.task_id_prefix == "lspr"

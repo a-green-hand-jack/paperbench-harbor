@@ -166,6 +166,18 @@ def _referenced_style_files(template_tex: Path) -> dict[str, Path]:
     return found
 
 
+def _referenced_class_files(template_tex: Path) -> dict[str, Path]:
+    """Find a paper-local document class required by the writer's template."""
+    text = template_tex.read_text(encoding="utf-8", errors="replace")
+    found: dict[str, Path] = {}
+    for match in re.finditer(r"\\documentclass(?:\[[^]]*\])?\{([^}]+)\}", text):
+        name = match.group(1).strip()
+        local = template_tex.parent / f"{name}.cls"
+        if local.is_file():
+            found[name] = local
+    return found
+
+
 def _template_column(template_tex: Path) -> str:
     """Use the shipped template, rather than stale upstream metadata, as authority."""
 
@@ -173,7 +185,13 @@ def _template_column(template_tex: Path) -> str:
         line.split("%", 1)[0]
         for line in template_tex.read_text(encoding="utf-8", errors="replace").splitlines()
     )
-    return "2column" if re.search(r"\\documentclass\[[^]]*twocolumn", text) else "1column"
+    if re.search(r"\\documentclass\[[^]]*twocolumn", text):
+        return "2column"
+    if re.search(r"\\twocolumn\b", text):
+        return "2column"
+    if re.search(r"\\documentclass(?:\[[^]]*\])?\{acmart\}", text):
+        return "2column"
+    return "1column"
 
 
 def _sanitize_unavailable_graphics(template_tex: Path, materials_dir: Path) -> list[str]:
@@ -211,6 +229,14 @@ def _copy_styles(template_tex: Path, environment_dir: Path, tests_dir: Path) -> 
             texmf = target_root / "texmf"
             texmf.mkdir(parents=True, exist_ok=True)
             shutil.copy2(style, texmf / f"{name}.sty")
+
+
+def _copy_document_classes(template_tex: Path, environment_dir: Path, tests_dir: Path) -> None:
+    for name, document_class in _referenced_class_files(template_tex).items():
+        for target_root in (environment_dir, tests_dir):
+            texmf = target_root / "texmf"
+            texmf.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(document_class, texmf / f"{name}.cls")
 
 
 def _referenced_bst_files(*tex_files: Path) -> dict[str, Path]:
@@ -397,6 +423,7 @@ def _convert_paper(
     has_figures = (environment_dir / "materials" / "figures").is_dir()
     has_tables = (environment_dir / "materials" / "tables").is_dir()
     _copy_styles(template_tex, environment_dir, tests_dir)
+    _copy_document_classes(template_tex, environment_dir, tests_dir)
     _copy_bibliography_styles(
         environment_dir,
         tests_dir,

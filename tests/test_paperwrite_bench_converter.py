@@ -217,6 +217,29 @@ def test_conversion_includes_a_paper_local_bibliography_style(tmp_path: Path) ->
     assert (task / "tests" / "texmf" / "localstyle.bst").is_file()
 
 
+def test_conversion_includes_a_paper_local_document_class(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{localjournal}\n\\begin{document}\n\\end{document}\n",
+        encoding="utf-8",
+    )
+    (resources / "localjournal.cls").write_text("\\NeedsTeXFormat{LaTeX2e}\n", encoding="utf-8")
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    task = tmp_path / "out" / "pwb-0001"
+    assert (task / "environment" / "texmf" / "localjournal.cls").is_file()
+    assert (task / "tests" / "texmf" / "localjournal.cls").is_file()
+
+
 def test_unsupported_overview_raises(tmp_path: Path) -> None:
     config = PaperWriteBenchConversionConfig(
         source=_make_source(tmp_path), output_dir=tmp_path / "out", overview="medium"

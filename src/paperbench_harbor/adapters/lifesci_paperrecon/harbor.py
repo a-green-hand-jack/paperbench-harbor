@@ -97,6 +97,12 @@ def lifesci_paperrecon_conversion_config(
 SPEC = dataclasses.replace(
     pwb_spec.SPEC,
     identity=IDENTITY,
+    public=tuple(
+        dataclasses.replace(rule, tree_exclude_globs=("*.pdf", "*.tex"))
+        if rule.source == "resources/code"
+        else rule
+        for rule in pwb_spec.SPEC.public
+    ),
     forbidden_public_names=pwb_spec.SPEC.forbidden_public_names | {"provenance.json"},
     render=dataclasses.replace(pwb_spec.SPEC.render, grader_module=""),
     material_completeness=MaterialCompletenessContract(

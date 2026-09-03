@@ -65,6 +65,12 @@ class CopyRule:
     #: a `.git` directory, a bytecode cache -- describes the machine that
     #: fetched the corpus, not the paper, and the converters drop it.
     tree_excludes: tuple[str, ...] = (".git", "__pycache__")
+    #: Glob patterns for files excluded from a tree source. This is reserved
+    #: for an explicit protocol boundary, not build residue. For example,
+    #: LifeSci never exposes paper-source TeX or PDFs found inside a linked
+    #: code checkout because they would disclose the answer rather than serve
+    #: as implementation evidence.
+    tree_exclude_globs: tuple[str, ...] = ()
     #: The conversion may legitimately rewrite this file, so its bytes need not
     #: match upstream. Only `template.tex`, whose `\includegraphics` of an
     #: asset the corpus does not ship is stripped rather than left to fail the
@@ -82,6 +88,11 @@ class CopyRule:
 
     def applies_to(self, protocol: str) -> bool:
         return not self.protocols or protocol in self.protocols
+
+    def excludes_tree_path(self, relative: Path) -> bool:
+        return any(part in self.tree_excludes for part in relative.parts) or any(
+            relative.match(pattern) for pattern in self.tree_exclude_globs
+        )
 
 
 @dataclass(frozen=True)
@@ -297,7 +308,7 @@ def predict_copies(
                         if not item.is_file():
                             continue
                         parts = item.relative_to(match).parts
-                        if any(part in rule.tree_excludes for part in parts):
+                        if rule.excludes_tree_path(Path(*parts)):
                             continue
                         if item.suffix == ".pyc":
                             continue
@@ -350,14 +361,18 @@ def stage_declared_copies(
                         source,
                         destination,
                         symlinks=True,
-                        ignore=shutil.ignore_patterns(*rule.tree_excludes, "*.pyc"),
+                        ignore=shutil.ignore_patterns(
+                            *rule.tree_excludes,
+                            *rule.tree_exclude_globs,
+                            "*.pyc",
+                        ),
                         dirs_exist_ok=destination.exists(),
                     )
                     for upstream_file in sorted(source.rglob("*")):
                         if not upstream_file.is_file():
                             continue
                         relative = upstream_file.relative_to(source)
-                        if any(part in rule.tree_excludes for part in relative.parts):
+                        if rule.excludes_tree_path(relative):
                             continue
                         if upstream_file.suffix == ".pyc":
                             continue
