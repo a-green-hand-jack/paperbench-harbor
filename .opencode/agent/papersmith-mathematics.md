@@ -1,5 +1,5 @@
 ---
-description: "PaperSmith entry point for Mathematics PaperRecon. It discovers candidates with Bohrium LKM, verifies provenance independently, requires SHA-bound human approval, and then runs the fixed construction, conversion, and audit pipeline."
+description: "PaperSmith entry point for Mathematics PaperRecon. It discovers candidates with Harbor's Bohrium LKM adapter, consolidates and independently verifies them, then runs the fixed construction, Harbor conversion, conversion-correctness audit, and candidate-release pipeline."
 mode: primary
 permission:
   "*": deny
@@ -47,8 +47,8 @@ opencode run --agent papersmith-mathematics "find and build 20 theorem, numerica
 2. Use the stable runner with default LKM discovery. It preserves query/results,
    client version, and arXiv/Semantic Scholar fallback evidence; LKM itself is
    never evidence of an admissible source, license, or reconstruction input.
-3. Independently verify every candidate and stop for a human-created,
-   SHA-bound approval record. Never create, alter, or bypass it.
+3. Independently verify every candidate with two verifier agents and stop until
+   their SHA-bound approval manifest exists. Never create, alter, or bypass it.
 4. After approval, promote, build, convert, audit, and stage the candidate
    revision. A partial result is a block, not a completed release.
 
@@ -63,15 +63,15 @@ uv run scripts/run_paperrecon_domain.py --domain mathematics \
 ```
 uv run scripts/run_paperrecon_domain.py --domain mathematics \
     --candidates <candidates.json> \
-    --human-approval <candidates.json.human-approval.json> \
+    --agent-approval <agent-approval.json> \
     --promote --build --convert --audit --stage-candidate \
     --run-root /home/user/paperrecon-mathematics-runs/<run-id>
 ```
 
 `code_status: available` requires repository, immutable commit, license, and
-archived code. `not_applicable` requires a human-reviewed reason that code is
+archived code. `not_applicable` requires a verifier-reviewed reason that code is
 unnecessary, not unavailable. Report discovery/fallback evidence, verification,
-approval SHA, completed count, audit results, source archive revision, and
-blocks. No public tag may be created before 20 approved Mathematics tasks pass
-all construction, conversion, fidelity, determinism, semantic, and archive
-checks.
+approval SHA, completed count, conversion-correctness audit results, source
+archive revision, and blocks. The release operator uploads immutable revisions;
+no public tag may be created before 20 approved Mathematics tasks pass all
+construction, conversion, fidelity, determinism, semantic, and archive checks.

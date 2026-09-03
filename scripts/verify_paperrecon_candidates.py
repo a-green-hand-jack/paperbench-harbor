@@ -153,7 +153,7 @@ def verify(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--domain", choices=("physics", "chemistry", "mathematics"), required=True)
+    parser.add_argument("--domain", choices=("lifesci", "physics", "chemistry", "mathematics"), required=True)
     parser.add_argument("--candidates", type=Path, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--screening-model", default="openai/gpt-5.6-terra")

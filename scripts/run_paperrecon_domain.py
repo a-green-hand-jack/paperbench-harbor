@@ -1,7 +1,7 @@
 """Run the auditable PaperSmith workflow for one new PaperRecon domain.
 
 Without ``--candidates`` this is the LKM-first discovery and OpenCode screening
-stage.  With a SHA-bound ``--human-approval`` and the promotion/build flags it
+stage.  With a SHA-bound ``--agent-approval`` and the promotion/build flags it
 continues through the deterministic construction and conversion gates.  It
 never creates approval records and never uploads a public release.
 """
@@ -68,7 +68,7 @@ def _queries(domain: str, guidance: str) -> tuple[str, ...]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--domain", choices=("physics", "chemistry", "mathematics"), required=True)
+    parser.add_argument("--domain", choices=("lifesci", "physics", "chemistry", "mathematics"), required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--target-count", type=int, default=20)
     parser.add_argument("--extra-guidance", default="")

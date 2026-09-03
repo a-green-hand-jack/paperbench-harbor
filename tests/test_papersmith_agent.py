@@ -18,5 +18,5 @@ def test_papersmith_cannot_write_or_disable_required_audits() -> None:
     assert "  task: deny" in text
     assert '    "* --no-audit": deny' in text
     assert '    "* --no-semantic-review": deny' in text
-    assert "--human-approval" in text
-    assert "human approval" in text
+    assert "--agent-approval" in text
+    assert "independent verifier" in text
