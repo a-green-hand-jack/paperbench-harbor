@@ -1,5 +1,10 @@
 # LifeSci-PaperRecon: status and verification architecture
 
+> **Status note (2026-09-03):** the current runnable release is
+> [`Paper-Writing-Exam` `v0.4.1`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/v0.4.1/lifesci-paperrecon-short).
+> Use that dataset card for task selection and execution. The dated phase
+> reports below are construction evidence, not a current user guide.
+
 This document consolidates the current state of the project's third Harbor
 benchmark — **LifeSci-PaperRecon**, a from-scratch, non-ML/AI (biology /
 life-sciences) paper-writing benchmark — and clarifies a distinction that is

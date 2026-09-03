@@ -1,5 +1,10 @@
 # Fidelity audit: Harbor conversion vs. upstream benchmarks
 
+> **Maintenance note:** this document explains the audit contract. Any specific
+> task count, revision, or audit total below is dated evidence, not a mutable
+> release claim. Consult the [task dataset card](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam)
+> and its immutable revision for the current release.
+
 This document records how the generated Harbor tasks were checked against the
 upstream PaperWrite-Bench (PaperRecon) and PaperWritingBench
 (PaperOrchestra) writing pipelines, which official evaluators are implemented,
