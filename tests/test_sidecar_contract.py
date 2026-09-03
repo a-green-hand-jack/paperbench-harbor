@@ -38,3 +38,8 @@ def test_semantic_scholar_loader_needs_only_the_runtime_subset(tmp_path: Path, m
     sys.modules.pop("utils.scholar_utils", None)
 
     assert callable(server._load_semantic_scholar_search())
+
+
+def test_task_image_installs_semantic_scholar_dependency() -> None:
+    dockerfile = Path("src/paperbench_harbor/common/templates/environment.Dockerfile.j2")
+    assert "requests thefuzz" in dockerfile.read_text(encoding="utf-8")
