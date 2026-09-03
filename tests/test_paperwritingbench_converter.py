@@ -65,6 +65,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert "2024-10-01" in instruction
     assert "credential-free Semantic Scholar fallback" in instruction
     assert "Use every provided figure exactly once, without merging or grouping them" in instruction
+    assert "Do not create, generate, or include any figures or plots\n   beyond the provided assets" in instruction
     materials = task_dir / "environment" / "materials"
     assert (materials / "idea_sparse.md").is_file()
     assert (materials / "experimental_log.md").is_file()
