@@ -7,13 +7,11 @@ means writing all three again -- measured at 550-800 hand-written lines when the
 corpus can be pre-shaped into the PaperWrite-Bench layout, and 1500-2200 when it
 cannot.
 
-This module is the first step out of that: one declarative description of where
-a benchmark's material lives and where it goes. Nothing consumes it as the
-source of truth yet. A spec is currently *checked against* its converter -- see
-`tests/test_adapter_specs.py`, which converts a fixture and asserts the spec
-predicts exactly the copied files that came out. That is deliberate. The value
-of the exercise is evidence that the layouts really are expressible as data
-before any converter is rewritten to depend on it.
+The shared staging helper below now consumes one declarative description as the
+production source of truth. Fidelity does not simply re-read that declaration:
+it recovers origins from task and upstream bytes, then compares the recovered
+evidence against the spec. That preserves an independent check even though the
+converter has stopped maintaining a second layout table.
 
 What is intentionally **not** here
 ----------------------------------
@@ -32,6 +30,7 @@ description.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +65,12 @@ class CopyRule:
     #: a `.git` directory, a bytecode cache -- describes the machine that
     #: fetched the corpus, not the paper, and the converters drop it.
     tree_excludes: tuple[str, ...] = (".git", "__pycache__")
+    #: Glob patterns for files excluded from a tree source. This is reserved
+    #: for an explicit protocol boundary, not build residue. For example,
+    #: LifeSci never exposes paper-source TeX or PDFs found inside a linked
+    #: code checkout because they would disclose the answer rather than serve
+    #: as implementation evidence.
+    tree_exclude_globs: tuple[str, ...] = ()
     #: The conversion may legitimately rewrite this file, so its bytes need not
     #: match upstream. Only `template.tex`, whose `\includegraphics` of an
     #: asset the corpus does not ship is stripped rather than left to fail the
@@ -73,16 +78,90 @@ class CopyRule:
     #: where it fired also ships `upstream_data_warnings.md` saying so.
     may_be_rewritten: bool = False
 
+    #: Restrict a rule to selected protocols. This makes the non-selected
+    #: PaperWrite-Bench overview explicit verifier-only material without
+    #: pretending that both variants are copied in one conversion.
+    protocols: tuple[str, ...] = ()
+
     def targets(self) -> tuple[str, ...]:
         return (self.target, *self.extra_targets)
+
+    def applies_to(self, protocol: str) -> bool:
+        return not self.protocols or protocol in self.protocols
+
+    def excludes_tree_path(self, relative: Path) -> bool:
+        relative_name = relative.as_posix()
+        return any(part in self.tree_excludes for part in relative.parts) or any(
+            relative_name == pattern.removeprefix("./")
+            if pattern.startswith("./")
+            else relative.match(pattern)
+            for pattern in self.tree_exclude_globs
+        )
+
+
+@dataclass(frozen=True)
+class BenchmarkIdentity:
+    """Task identity that must travel with an upstream layout.
+
+    A new adapter should not need a second table for its task-id prefix, tags,
+    writing-instruction directory, or public benchmark name. These are all
+    stable facts about the benchmark, so the layout spec owns them alongside
+    the source mapping.
+    """
+
+    benchmark: str
+    task_id_prefix: str
+    tags: tuple[str, ...]
+    relevant_experience: str
+    agents_md_dir: str = ""
+    agents_md_fallback: str = ""
+
+
+@dataclass(frozen=True)
+class RenderDefaults:
+    """Stable template defaults supplied by an adapter's declarative spec."""
+
+    category: str = "research-writing"
+    num_page: str = ""
+    column: str = ""
+    grader_module: str = ""
+
+
+@dataclass(frozen=True)
+class MaterialCompletenessContract:
+    """A source inventory that must map to writer-visible evidence.
+
+    This is deliberately schema-neutral. A domain owns how it derives and
+    checks the inventory (for example, LifeSci inventories inline LaTeX tables),
+    while conversion and onboarding retain the stable paths that make the
+    contract visible and auditable rather than an undocumented prompt rule.
+    """
+
+    source_inventory: str
+    public_inventory: str
+    public_material_root: str
+
+
+@dataclass(frozen=True)
+class ProvenanceRequirements:
+    """Fields a future release registry/source archive must fix before publish."""
+
+    registry_fields: tuple[str, ...] = (
+        "task_id",
+        "dataset_revision",
+        "converter_revision",
+        "upstream_revision",
+        "source_archive_locator",
+        "source_archive_sha256",
+        "evaluator_revision",
+    )
 
 
 @dataclass(frozen=True)
 class UpstreamLayoutSpec:
     """Where one benchmark's material lives upstream, and where it lands."""
 
-    benchmark: str
-    task_id_prefix: str
+    identity: BenchmarkIdentity
     #: Glob, relative to the source root, that enumerates candidate paper dirs.
     paper_glob: str
     #: A candidate is a paper iff this relative path exists inside it. This is
@@ -98,6 +177,10 @@ class UpstreamLayoutSpec:
     #: independent layer over the copy rules: a rule that accidentally staged
     #: ground truth would still be caught here.
     forbidden_public_names: frozenset[str] = frozenset()
+    #: Paths relative to ``environment/`` that may contain names otherwise
+    #: forbidden to the writer. A vendored code checkout is source material,
+    #: not ground truth, so its upstream filenames are not leak evidence.
+    forbidden_public_ignore_globs: tuple[str, ...] = ()
     #: Writer-visible paths the conversion *generates* rather than copies.
     #: `fidelity/transforms.classify_generated_vendor` already covers what is
     #: generated for every benchmark; these are the per-benchmark additions it
@@ -107,6 +190,37 @@ class UpstreamLayoutSpec:
     #: the whole of it today: a record of upstream hashes, produced here rather
     #: than copied from anywhere.
     generated_private: tuple[str, ...] = ()
+    #: How this adapter locates its LaTex support files. The implementation is
+    #: deliberately a hook, but its mode is data so onboarding cannot silently
+    #: pick a different resolver from the one fidelity/regression evidence used.
+    style_resolution: str = "none"
+    #: Whether linked-code notes must redact the source paper's direct locator
+    #: before becoming writer-visible material. The underlying code stays
+    #: available, while the task does not hand over its answer by URL.
+    redact_source_paper_references: bool = False
+    #: Defaults supplied to the shared Harbor templates. Per-paper metadata may
+    #: override a value (for example PaperWrite-Bench reads the actual column
+    #: from its template), but the common baseline lives in the spec.
+    render: RenderDefaults = field(default_factory=RenderDefaults)
+    #: Optional exact material-inventory contract supplied by a domain-specific
+    #: deterministic checker. The generic converter stages the declared public
+    #: inventory like every other source material; it never asks an LLM to guess
+    #: whether evidence was omitted.
+    material_completeness: MaterialCompletenessContract | None = None
+    #: The data model #40 requires from future onboarding. Archive publication
+    #: is a separate product, but an adapter cannot claim its fields are
+    #: unknowable or defer them until after a task release has been cut.
+    provenance_requirements: ProvenanceRequirements = field(
+        default_factory=ProvenanceRequirements
+    )
+
+    @property
+    def benchmark(self) -> str:
+        return self.identity.benchmark
+
+    @property
+    def task_id_prefix(self) -> str:
+        return self.identity.task_id_prefix
 
     def protocols(self) -> tuple[str, ...]:
         return tuple(self.variant_sources) or ("",)
@@ -187,6 +301,8 @@ def predict_copies(
     rules = spec.private if private else spec.public
     predicted: dict[str, Path] = {}
     for rule in rules:
+        if not rule.applies_to(protocol):
+            continue
         resolved = spec.resolve(rule, protocol)
         matches = list(_expand(paper_dir, resolved))
         if not matches and rule.required:
@@ -200,7 +316,7 @@ def predict_copies(
                         if not item.is_file():
                             continue
                         parts = item.relative_to(match).parts
-                        if any(part in rule.tree_excludes for part in parts):
+                        if rule.excludes_tree_path(Path(*parts)):
                             continue
                         if item.suffix == ".pyc":
                             continue
@@ -209,3 +325,86 @@ def predict_copies(
                     name = match.name if target.endswith("/") else None
                     predicted[f"{target}{name}" if name else target] = match
     return predicted
+
+
+def stage_declared_copies(
+    spec: UpstreamLayoutSpec,
+    paper_dir: Path,
+    task_dir: Path,
+    protocol: str = "",
+    *,
+    private: bool = False,
+) -> tuple[list[Path], dict[Path, tuple[str, Path]]]:
+    """Copy one spec surface into a task and record its upstream provenance.
+
+    This is the converter-side counterpart to :func:`predict_copies`: the
+    latter is read-only evidence for the audit, while this function is the
+    production implementation of a layout rule.  It deliberately keeps only
+    filesystem mechanics here.  Benchmark-specific normalization, rendering,
+    and vendor staging remain explicit converter hooks.
+
+    Tree copies preserve symlinks and drop repository/cache residue exactly as
+    the original benchmark converters did.  ``dirs_exist_ok`` supports the
+    PaperWrite-Bench verifier tree, where the ``original`` and ``resources``
+    subtrees are intentionally combined under one evaluator root.
+    """
+    rules = spec.private if private else spec.public
+    copied: list[Path] = []
+    provenance: dict[Path, tuple[str, Path]] = {}
+
+    for rule in rules:
+        if not rule.applies_to(protocol):
+            continue
+        resolved = spec.resolve(rule, protocol)
+        matches = list(_expand(paper_dir, resolved))
+        if not matches and rule.required:
+            raise FileNotFoundError(f"{spec.benchmark}: required source missing: {resolved}")
+        for source in matches:
+            for target in rule.targets():
+                destination = task_dir / target
+                if rule.kind == "tree":
+                    if not source.is_dir() or not any(source.iterdir()):
+                        continue
+
+                    def ignore_tree_entries(
+                        directory: str,
+                        names: list[str],
+                        rule: CopyRule = rule,
+                        source: Path = source,
+                    ) -> set[str]:
+                        current = Path(directory)
+                        return {
+                            name
+                            for name in names
+                            if rule.excludes_tree_path((current / name).relative_to(source))
+                            or name.endswith(".pyc")
+                        }
+
+                    shutil.copytree(
+                        source,
+                        destination,
+                        symlinks=True,
+                        ignore=ignore_tree_entries,
+                        dirs_exist_ok=destination.exists(),
+                    )
+                    for upstream_file in sorted(source.rglob("*")):
+                        if not upstream_file.is_file():
+                            continue
+                        relative = upstream_file.relative_to(source)
+                        if rule.excludes_tree_path(relative):
+                            continue
+                        if upstream_file.suffix == ".pyc":
+                            continue
+                        copied_file = destination / relative
+                        copied.append(copied_file)
+                        provenance[copied_file] = ("upstream", upstream_file)
+                    continue
+                if not source.is_file():
+                    continue
+                copied_file = destination / source.name if target.endswith("/") else destination
+                copied_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, copied_file)
+                copied.append(copied_file)
+                provenance[copied_file] = ("upstream", source)
+
+    return copied, provenance

@@ -26,14 +26,24 @@ def _upstream_root() -> str:
     return "/workspace/paper_orchestra"
 
 
-def _load_upstream():
+def _prepare_upstream_imports() -> None:
     root = _upstream_root()
     if root not in sys.path:
         sys.path.insert(0, root)
-    from methods.agents.literature_review_agent import HybridLiteratureAgent
+
+
+def _load_semantic_scholar_search():
+    _prepare_upstream_imports()
     from utils.scholar_utils import s2_title_search
 
-    return HybridLiteratureAgent, s2_title_search
+    return s2_title_search
+
+
+def _load_gemini_literature_agent():
+    _prepare_upstream_imports()
+    from methods.agents.literature_review_agent import HybridLiteratureAgent
+
+    return HybridLiteratureAgent
 
 
 def _new_literature_agent(hybrid_agent):
@@ -102,7 +112,7 @@ def _semantic_scholar_discover(query: str, cutoff: str) -> list[dict[str, object
 def serve(host: str, port: int) -> None:
     """Serve the upstream PaperOrchestra search contract."""
 
-    hybrid_agent, s2_title_search = _load_upstream()
+    s2_title_search = _load_semantic_scholar_search()
 
     class Handler(BaseHTTPRequestHandler):
         def _write_json(self, payload: object) -> None:
@@ -130,6 +140,7 @@ def serve(host: str, port: int) -> None:
                     if _has_gemini_credentials():
                         from google.genai import types
 
+                        hybrid_agent = _load_gemini_literature_agent()
                         agent = _new_literature_agent(hybrid_agent)
                         agent.google_search_tool = types.Tool(google_search=types.GoogleSearch())
                         task = {

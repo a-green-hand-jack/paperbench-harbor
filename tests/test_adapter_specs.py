@@ -1,8 +1,9 @@
 """Does the declarative layout actually describe what the converters do?
 
 `adapters/spec.py` claims each benchmark's layout can be expressed as data.
-This module is the evidence for that claim, and it is the only thing standing
-behind it: nothing consumes a spec as the source of truth yet.
+This module checks that the production spec-driven staging helper produces the
+declared surfaces exactly; the fidelity audit supplies a separate byte-origin
+check instead of treating this declaration as self-certifying.
 
 The check runs a real conversion over each benchmark's existing fixture and
 compares the files that came out against what the spec predicts, both ways.
@@ -56,7 +57,11 @@ def _actual_writer_copies(task_dir: Path, spec) -> set[str]:
         for path in root.rglob("*")
         if path.is_file()
         for rel in [f"environment/{path.relative_to(root).as_posix()}"]
-        if not classify_generated_vendor(rel) and rel not in spec.generated_public
+        if not classify_generated_vendor(rel)
+        and not any(
+            rel == pattern or (pattern.endswith("/") and rel.startswith(pattern))
+            for pattern in spec.generated_public
+        )
     }
 
 
@@ -187,8 +192,59 @@ def test_specs_agree_with_their_converters_forbidden_names() -> None:
     assert pwbw_spec.SPEC.forbidden_public_names == PWBW
 
 
-def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_and_provenance() -> None:
-    assert LSPR_SPEC.public == pwb_spec.SPEC.public
+def test_specs_own_their_task_identity_render_defaults_and_style_mode() -> None:
+    """Onboarding gets one declarative source for non-path adapter facts too."""
+
+    assert pwb_spec.SPEC.identity.benchmark == "PaperWrite-Bench"
+    assert pwb_spec.SPEC.task_id_prefix == "pwb"
+    assert pwb_spec.SPEC.identity.agents_md_dir == "agents_md"
+    assert pwb_spec.SPEC.style_resolution == "package-scan"
+    assert pwb_spec.SPEC.render.grader_module == "grader_pwb"
+
+    assert pwbw_spec.SPEC.identity.benchmark == "PaperWritingBench"
+    assert pwbw_spec.SPEC.task_id_prefix == "pwbw"
+    assert pwbw_spec.SPEC.style_resolution == "venue-directory"
+    assert pwbw_spec.SPEC.render.num_page == "8"
+    assert pwbw_spec.SPEC.render.grader_module == "grader_pwbw"
+
+    assert LSPR_SPEC.identity.benchmark == "LifeSci-PaperRecon"
+    assert LSPR_SPEC.task_id_prefix == "lspr"
+    assert LSPR_SPEC.identity.agents_md_fallback == "AGENTS_computational.md"
+    assert LSPR_SPEC.render.grader_module == ""
+    assert LSPR_SPEC.material_completeness is not None
+    assert LSPR_SPEC.material_completeness.source_inventory == "resources/table_inventory.json"
+    assert LSPR_SPEC.material_completeness.public_inventory == (
+        "environment/materials/table_inventory.json"
+    )
+    assert "source_archive_locator" in LSPR_SPEC.provenance_requirements.registry_fields
+
+
+def test_lifesci_spec_redacts_paper_sources_from_linked_code_checkouts() -> None:
+    source_code_rule = next(rule for rule in LSPR_SPEC.public if rule.source == "resources/code")
+    assert source_code_rule.tree_exclude_globs == (
+        "manuscript/*.tex",
+        "manuscript/*/*.tex",
+        "tex/minibwa.tex",
+        "./README.md",
+    )
+    assert source_code_rule.excludes_tree_path(Path("manuscript/tables/result.tex"))
+    assert source_code_rule.excludes_tree_path(Path("tex/minibwa.tex"))
+    assert source_code_rule.excludes_tree_path(Path("README.md"))
+    assert not source_code_rule.excludes_tree_path(Path("figures/table_runtime.tex"))
+    assert not source_code_rule.excludes_tree_path(Path("configs/baseline/README.md"))
+    assert not source_code_rule.excludes_tree_path(Path("src/model.py"))
+    readme_rule = next(
+        rule for rule in LSPR_SPEC.public if rule.source == "resources/code/README.md"
+    )
+    assert readme_rule.may_be_rewritten
+    assert LSPR_SPEC.style_resolution == "local-first-package-scan"
+    assert LSPR_SPEC.redact_source_paper_references is True
+
+
+def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_provenance_and_leakage_policy() -> None:
+    assert tuple(rule.source for rule in LSPR_SPEC.public) == tuple(
+        rule.source for rule in pwb_spec.SPEC.public
+    )
     assert LSPR_SPEC.private == pwb_spec.SPEC.private
     assert LSPR_SPEC.benchmark == "LifeSci-PaperRecon"
     assert LSPR_SPEC.task_id_prefix == "lspr"

@@ -146,6 +146,7 @@ def test_bio_manifest_records_the_new_benchmark_name(tmp_path: Path) -> None:
     assert manifest["extra"]["task_id"] == "lspr-0002"
     assert manifest["extra"]["paper_type"] == "computational"
     assert manifest["extra"]["conference"] == "arXiv q-bio.PE"
+    assert "source_archive_locator" in manifest["extra"]["release_provenance_requirements"]
 
 
 def test_bio_uses_biology_writing_instructions(tmp_path: Path) -> None:
@@ -191,6 +192,67 @@ def test_bio_provenance_stays_verifier_only(tmp_path: Path) -> None:
     task_dir = _convert(tmp_path) / "lspr-0001"
     assert (task_dir / "tests" / "private" / "ground_truth_sources" / "provenance.json").is_file()
     assert not (task_dir / "environment" / "materials" / "provenance.json").exists()
+
+
+def test_bio_redacts_direct_paper_pointers_but_keeps_local_style_bytes(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    paper = source / "paper_1"
+    resources = paper / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n\\usepackage{arxiv}\n\\begin{document}\n\\end{document}\n",
+        encoding="utf-8",
+    )
+    local_style = resources / "arxiv.sty"
+    local_style.write_text(
+        "\\NeedsTeXFormat{LaTeX2e}\n\\RequirePackage{natbib}\n",
+        encoding="utf-8",
+    )
+    (resources / "code" / "README.md").write_text(
+        "Paper: [arXiv:2606.27607](https://arxiv.org/abs/2606.27607)\n"
+        "DOI: https://doi.org/10.48550/arXiv.2606.27607\n",
+        encoding="utf-8",
+    )
+    (resources / "code" / "nested").mkdir()
+    (resources / "code" / "nested" / "README.md").write_text(
+        "Public implementation notes.\n", encoding="utf-8"
+    )
+    (resources / "code" / "manuscript").mkdir()
+    (resources / "code" / "manuscript" / "answer.tex").write_text(
+        "Ground truth manuscript.\n", encoding="utf-8"
+    )
+    (resources / "code" / "tex").mkdir()
+    (resources / "code" / "tex" / "minibwa.tex").write_text(
+        "Ground truth manuscript.\n", encoding="utf-8"
+    )
+    (resources / "code" / "figures").mkdir()
+    (resources / "code" / "figures" / "table.tex").write_text(
+        "Public table.\n", encoding="utf-8"
+    )
+
+    output = tmp_path / "out"
+    convert_paperwrite_bench(
+        lifesci_paperrecon_conversion_config(
+            source=source,
+            output_dir=output,
+            upstream_revision="test-rev",
+            limit=1,
+        )
+    )
+
+    task = output / "lspr-0001"
+    assert (task / "environment" / "texmf" / "arxiv.sty").read_bytes() == local_style.read_bytes()
+    readme = (task / "environment" / "materials" / "code" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "2606.27607" not in readme
+    assert "arxiv.org/abs" not in readme
+    assert "doi.org/10.48550" not in readme
+    assert "10.48550/arXiv" not in readme
+    assert "source-paper-url-withheld" in readme
+    assert (task / "environment" / "materials" / "code" / "nested" / "README.md").is_file()
+    assert not (task / "environment" / "materials" / "code" / "manuscript" / "answer.tex").exists()
+    assert not (task / "environment" / "materials" / "code" / "tex" / "minibwa.tex").exists()
+    assert (task / "environment" / "materials" / "code" / "figures" / "table.tex").is_file()
 
 
 def test_bio_conversion_is_deterministic(tmp_path: Path) -> None:

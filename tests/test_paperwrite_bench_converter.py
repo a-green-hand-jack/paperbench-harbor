@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 import shutil
 from pathlib import Path
 
 import pytest
 
+from paperbench_harbor.adapters.paperwrite_bench import converter as converter_module
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
@@ -28,8 +27,7 @@ def _make_paper(source: Path, paper_id: str, paper_type: str = "method") -> None
         encoding="utf-8",
     )
     (original / "main.tex").write_text(
-        "\\documentclass{article}\n"
-        "\\begin{document}\nHello world\\end{document}\n",
+        "\\documentclass{article}\n\\begin{document}\nHello world\\end{document}\n",
         encoding="utf-8",
     )
     (original / "main.pdf").write_bytes(b"%PDF-1.4 fake")
@@ -56,25 +54,6 @@ def _make_source(tmp_path: Path, paper_type: str = "method") -> Path:
     for paper_id in PAPERS:
         _make_paper(source, paper_id, paper_type)
     return source
-
-
-def _write_table_inventory(resources: Path) -> None:
-    material = resources / "tables" / "a.tex"
-    resources.joinpath("table_inventory.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "tables": [
-                    {
-                        "id": "table-001",
-                        "public_path": "tables/a.tex",
-                        "content_sha256": hashlib.sha256(material.read_bytes()).hexdigest(),
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
 
 
 def _environment_names(task_dir: Path) -> set[str]:
@@ -105,11 +84,23 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         assert "Always include references within" not in agents
         assert "do not embed it with a `filecontents` environment" in agents
         assert "external `references.bib`" in agents
-        assert "/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only" in agents
+        assert (
+            "/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only"
+            in agents
+        )
         assert "Write the completed document to `/workspace/submission/main.tex`" in agents
-        assert "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`" in agents
-        assert "Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in agents
-        assert "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently." in agents
+        assert (
+            "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`"
+            in agents
+        )
+        assert (
+            "Copy referenced figure assets from `/workspace/materials/figures/` to `/workspace/submission/figures/`"
+            in agents
+        )
+        assert (
+            "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently."
+            in agents
+        )
         assert (task_dir / "solution" / "solve.sh").is_file()
         assert (task_dir / "solution" / "private" / "main.tex").is_file()
         assert (task_dir / "tests" / "test.sh").is_file()
@@ -122,8 +113,9 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         manifest = task_dir / "tests" / "private" / "source_manifest.json"
         assert f'"upstream_id": "{paper_id}"' in manifest.read_text(encoding="utf-8")
         instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
-        assert "single-column paper" in instruction
-        assert (task_dir / "environment" / "materials" / "upstream_data_warnings.md").is_file()
+        assert "double-column paper" in instruction
+        assert "submission to NeurIPS25" in instruction
+        assert not (task_dir / "environment" / "materials" / "upstream_data_warnings.md").exists()
 
     dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
     assert '"task_id": "pwb-0003"' in dataset_manifest
@@ -136,9 +128,53 @@ def test_conversion_is_idempotent(tmp_path: Path) -> None:
     config = PaperWriteBenchConversionConfig(source=source, output_dir=output, overview="short")
     assert convert_paperwrite_bench(config) == 3
     assert convert_paperwrite_bench(config) == 0
-    assert convert_paperwrite_bench(
-        PaperWriteBenchConversionConfig(source=source, output_dir=output, overwrite=True)
-    ) == 3
+    assert (
+        convert_paperwrite_bench(
+            PaperWriteBenchConversionConfig(source=source, output_dir=output, overwrite=True)
+        )
+        == 3
+    )
+
+
+def test_conversion_redacts_declared_source_pointers_from_code_readme(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _make_paper(source, "paper_42")
+    readme = source / "paper_42" / "resources" / "code" / "README.md"
+    readme.write_text(
+        "# AIM-Fair: Advancing Algorithmic Fairness\n\n"
+        "[arXiv](https://arxiv.org/abs/2503.05665)\n\n"
+        "*Zengqun Zhao et al., AIM-Fair, CVPR 2025*\n\n"
+        "## Data Preparation\n\nKeep this implementation guidance.\n\n"
+        "## Citation\n\n@misc{zhao2025aimfair, eprint={2503.05665}}\n",
+        encoding="utf-8",
+    )
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+    )
+
+    writer_readme = (
+        tmp_path / "out" / "pwb-0001" / "environment" / "materials" / "code" / "README.md"
+    ).read_text(encoding="utf-8")
+    assert "2503.05665" not in writer_readme
+    assert "AIM-Fair" not in writer_readme
+    assert "Zengqun Zhao" not in writer_readme
+    assert "Keep this implementation guidance." in writer_readme
+    assert "Source-paper citation withheld." in writer_readme
+
+
+def test_conversion_rejects_a_source_tree_that_changes_mid_run(tmp_path: Path, monkeypatch) -> None:
+    source = _make_source(tmp_path)
+
+    def mutate_source(**kwargs) -> None:
+        (source / "paper_1" / "resources" / "changed-during-conversion.txt").write_text(
+            "changed", encoding="utf-8"
+        )
+
+    monkeypatch.setattr(converter_module, "_convert_paper", mutate_source)
+    with pytest.raises(RuntimeError, match="source tree changed during conversion"):
+        convert_paperwrite_bench(
+            PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+        )
 
 
 def test_no_private_material_in_environment(tmp_path: Path) -> None:
@@ -169,41 +205,145 @@ def test_missing_figures_are_not_required(tmp_path: Path) -> None:
     shutil.rmtree(resources / "figures")
     (resources / "figure_summary.txt").unlink()
     output = tmp_path / "out"
-    assert convert_paperwrite_bench(
-        PaperWriteBenchConversionConfig(source=source, output_dir=output, overview="short", limit=1)
-    ) == 1
+    assert (
+        convert_paperwrite_bench(
+            PaperWriteBenchConversionConfig(
+                source=source, output_dir=output, overview="short", limit=1
+            )
+        )
+        == 1
+    )
     task_dir = output / "pwb-0001"
     for path in (task_dir / "instruction.md", task_dir / "environment" / "materials" / "AGENTS.md"):
         assert "/workspace/materials/figures/" not in path.read_text(encoding="utf-8")
 
 
-def test_validated_table_inventory_is_published_with_the_task(tmp_path: Path) -> None:
+def test_missing_graphic_does_not_comment_out_a_template_title(tmp_path: Path) -> None:
     source = _make_source(tmp_path)
     resources = source / "paper_1" / "resources"
-    _write_table_inventory(resources)
-    output = tmp_path / "out"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\title{Faithful title \\includegraphics{missing-icon.png}}\n"
+        "\\begin{document}\n\\maketitle\n\\end{document}\n",
+        encoding="utf-8",
+    )
 
-    assert convert_paperwrite_bench(
-        PaperWriteBenchConversionConfig(source=source, output_dir=output, overview="short", limit=1)
-    ) == 1
-    task_dir = output / "pwb-0001"
-    assert (task_dir / "environment" / "materials" / "table_inventory.json").is_file()
-    assert "/workspace/materials/tables/" in (task_dir / "instruction.md").read_text(
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    template = (
+        tmp_path / "out" / "pwb-0001" / "environment" / "materials" / "template.tex"
+    ).read_text(encoding="utf-8")
+    assert "\\title{Faithful title }" in template
+    assert "missing-icon.png" not in template
+    assert "% Harbor omitted unavailable upstream graphic" not in template
+
+
+def test_conversion_includes_a_paper_local_bibliography_style(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "\\bibliographystyle{localstyle}\n"
+        "\\end{document}\n",
+        encoding="utf-8",
+    )
+    (resources / "localstyle.bst").write_text("ENTRY{}{}{}\n", encoding="utf-8")
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    task = tmp_path / "out" / "pwb-0001"
+    assert (task / "environment" / "texmf" / "localstyle.bst").is_file()
+    assert (task / "tests" / "texmf" / "localstyle.bst").is_file()
+
+
+def test_conversion_includes_a_paper_local_document_class(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{localjournal}\n\\begin{document}\n\\end{document}\n",
+        encoding="utf-8",
+    )
+    (resources / "localjournal.cls").write_text("\\NeedsTeXFormat{LaTeX2e}\n", encoding="utf-8")
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    task = tmp_path / "out" / "pwb-0001"
+    assert (task / "environment" / "texmf" / "localjournal.cls").is_file()
+    assert (task / "tests" / "texmf" / "localjournal.cls").is_file()
+
+
+def test_conversion_recognizes_acmart_as_a_double_column_template(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass[sigconf]{acmart}\n\\begin{document}\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(
         encoding="utf-8"
     )
+    assert "suitable for submission to NeurIPS25 as a 9-page double-column paper" in instruction
 
 
-def test_table_directory_cannot_bypass_an_empty_inventory(tmp_path: Path) -> None:
+@pytest.mark.parametrize("heading", ("Limitations", "Availability and Future Directions"))
+def test_conversion_preserves_template_required_limitations_section(
+    tmp_path: Path, heading: str
+) -> None:
     source = _make_source(tmp_path)
     resources = source / "paper_1" / "resources"
-    (resources / "table_inventory.json").write_text(
-        '{"schema_version": 1, "tables": []}\n', encoding="utf-8"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        f"\\section{{{heading}}}\n"
+        "\\end{document}\n",
+        encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="tables/ does not match inventory entries"):
-        convert_paperwrite_bench(
-            PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
         )
+    )
+
+    agents = (tmp_path / "out" / "pwb-0001" / "environment" / "materials" / "AGENTS.md")
+    assert "Preserve and complete any Limitation or Future Work sections" in agents.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_unsupported_overview_raises(tmp_path: Path) -> None:
@@ -241,18 +381,45 @@ def test_rendered_instruction_declares_submission_workflow(tmp_path: Path) -> No
     instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(encoding="utf-8")
 
     assert "final.pdf" not in instruction
-    assert "`/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only" in instruction
+    assert (
+        "`/workspace/materials/template.tex` and `/workspace/materials/references.bib` are read-only"
+        in instruction
+    )
     assert "write the completed document to `/workspace/submission/main.tex`" in instruction
-    assert "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`" in instruction
-    assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in instruction
-    assert "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently." in instruction
+    assert "upstream code materials in `/workspace/materials/code/`" in instruction
+    assert "may\ncontain implementation files, documentation, or both" in instruction
+    assert "proposed method's code implementation" not in instruction
+    assert (
+        "Copy `/workspace/materials/references.bib` unchanged to `/workspace/submission/references.bib`"
+        in instruction
+    )
+    assert (
+        "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`"
+        in instruction
+    )
+    assert (
+        "Compile from `/workspace/submission/`; the verifier recompiles `main.tex` independently."
+        in instruction
+    )
     assert "Update that file only when the task requires it" not in instruction
     assert "update it to produce" not in instruction
     assert "then edit it to incorporate" not in instruction
-    assert "main.tex` is the authoritative compilation entry point, not necessarily the only LaTeX source file" in instruction
-    assert "braced `\\input{...}` or `\\include{...}` commands to reference files inside `/workspace/submission/`, using paths relative to the submission root" in instruction
-    assert "every source dependency required by `main.tex` into `/workspace/submission/`" in instruction
-    assert "Do not rely on absolute paths, parent-directory paths, or files under `/workspace/materials/`" in instruction
+    assert (
+        "main.tex` is the authoritative compilation entry point, not necessarily the only LaTeX source file"
+        in instruction
+    )
+    assert (
+        "braced `\\input{...}` or `\\include{...}` commands to reference files inside `/workspace/submission/`, using paths relative to the submission root"
+        in instruction
+    )
+    assert (
+        "every source dependency required by `main.tex` into `/workspace/submission/`"
+        in instruction
+    )
+    assert (
+        "Do not rely on absolute paths, parent-directory paths, or files under `/workspace/materials/`"
+        in instruction
+    )
 
 
 def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:
@@ -279,8 +446,14 @@ def test_all_paper_types_render_submission_workflow(tmp_path: Path) -> None:
         assert all(phrase in agents for phrase in workflow_phrases[:3])
         assert workflow_phrases[1] in instruction
         assert workflow_phrases[2] in instruction
-        assert "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`" in instruction
-        assert "reference them with paths relative to the submission root (for example, `\\includegraphics{figures/foo.png}`)" in instruction
+        assert (
+            "copy every referenced figure asset from `/workspace/materials/figures/` to `/workspace/submission/figures/`"
+            in instruction
+        )
+        assert (
+            "reference them with paths relative to the submission root (for example, `\\includegraphics{figures/foo.png}`)"
+            in instruction
+        )
         assert workflow_phrases[4] in instruction
         assert "`\\graphicspath{{figures/}}`" not in agents
         assert "`\\includegraphics{figures/foo.png}`" in agents
@@ -325,3 +498,28 @@ def test_existing_graphicspath_gets_consistent_guidance(tmp_path: Path) -> None:
     )
     instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(encoding="utf-8")
     assert "does not prepend `figures/` twice" in instruction
+
+
+def test_acknowledgement_instruction_only_changes_for_a_supplied_heading(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "without-heading", limit=1)
+    )
+    without_heading = (
+        tmp_path / "without-heading" / "pwb-0001" / "environment" / "materials" / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+    assert "Do not add `Acknowledgements` section to the paper." in without_heading
+
+    for paper_id in PAPERS:
+        (source / paper_id / "resources" / "template.tex").write_text(
+            "\\documentclass{article}\n\\begin{document}\n"
+            "\\section*{Acknowledgments}\n\\end{document}\n",
+            encoding="utf-8",
+        )
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "with-heading", limit=1)
+    )
+    with_heading = (
+        tmp_path / "with-heading" / "pwb-0001" / "environment" / "materials" / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+    assert "preserve an existing heading without adding new content" in with_heading

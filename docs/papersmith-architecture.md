@@ -201,11 +201,12 @@ is fixed and runs identically every time.
 |---|---|---|
 | 1 | Parse the request for a target count, topical steering, and any explicit arXiv IDs | the agent itself |
 | 2 | Screen for candidates | `scripts/screen_lifesci_paperrecon_candidates.py` |
-| 3 | Verify every claim against live sources, then promote | `scripts/promote_lifesci_paperrecon_candidates.py --promote --limit N` |
-| 4 | Build — construction plus reconstructability review | `scripts/build_lifesci_paperrecon_source.py --concurrency 3` |
-| 5 | Harbor-wrap the corpus | `paperbench-harbor lifesci-paperrecon --overwrite` |
-| 6 | Audit task fidelity | `scripts/audit_fidelity.py lifesci-paperrecon` |
-| 7 | Report candidates → promoted → built → blocked → task count → audit result | the agent itself |
+| 3 | Verify every claim against live sources | `scripts/promote_lifesci_paperrecon_candidates.py --limit N` |
+| 4 | Human approves a byte-bound candidate subset, then promote | `scripts/promote_lifesci_paperrecon_candidates.py --human-approval <file> --promote --limit N` |
+| 5 | Build — construction plus reconstructability review | `scripts/build_lifesci_paperrecon_source.py --concurrency 3` |
+| 6 | Harbor-wrap the corpus | `paperbench-harbor lifesci-paperrecon --overwrite` |
+| 7 | Audit task fidelity and semantic material allocation | `scripts/audit_fidelity.py lifesci-paperrecon` |
+| 8 | Report candidates → human-approved/promoted → built → blocked → task count → audit result | the agent itself |
 
 Only steps 1 and 7 are the agent's own judgment, and both are about reading a
 sentence and relaying output. Every step that decides anything is a program.
@@ -237,7 +238,11 @@ deterministic verification stage between screening and promotion**:
   candidates this session reported a primary category from the model's prior
   rather than from the API, which is what motivated building this at all.
 - The default invocation is a **dry-run report**. Writing requires an explicit
-  `--promote`, and `--limit N` caps one invocation.
+  `--promote` plus a human-created approval JSON record that names the reviewer,
+  selects candidate arXiv ids, and carries the SHA-256 of the exact candidate
+  proposal. A stale approval cannot be replayed against edited candidate bytes;
+  an eligible candidate not selected by the reviewer remains unpromoted.
+  `--limit N` still caps one invocation.
 - Promotion writes **data, not code**: accepted candidates are appended to
   `src/paperbench_harbor/construction/lifesci_paperrecon/approved_scaleup.jsonl`,
   one `PaperSpec`-shaped JSON object per line. It never text-surgeries
@@ -255,6 +260,11 @@ deterministic verification stage between screening and promotion**:
   sits one level above that. So the agent's role is strictly "call these known
   programs with sensible arguments and relay what they printed", enforced
   structurally rather than by instruction.
+- The audit command defaults to isolated semantic review and the PaperSmith
+  permission policy explicitly denies `--no-semantic-review`. Its version-pinned
+  report records the upstream revision and tree digest, dataset tree digest,
+  converter revision, reviewer selection, and semantic-review outcome so a
+  release can retain actual evidence instead of a prose claim.
 
 One implementation note worth recording, because it is not what the plan assumed:
 **the arXiv Atom API does not expose a license.** An `id_list` query returns
@@ -485,7 +495,8 @@ until the gate has passed it.
   parsers are exercised rather than bypassed: a claim matching the live source is
   accepted, a mismatch on any one of license, category or code license is rejected
   with that field named, a dry run leaves the approved file untouched, `--limit`
-  caps eligible promotions, and a second run over the same candidates is a no-op.
+  caps eligible promotions, a human approval is required and byte-bound, and a
+  second run over the same candidates is a no-op.
 
 ## Related documents
 

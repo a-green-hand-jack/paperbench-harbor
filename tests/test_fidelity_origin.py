@@ -84,7 +84,7 @@ def test_edited_content_stops_being_upstream(tmp_path: Path) -> None:
 
     expected = predict_copies(pwb_spec.SPEC, paper_dir, "short")
     findings = compare_to_expectation(report, expected, paper_dir)
-    assert any("does not have" in f for f in findings)
+    assert any("content mismatch" in f for f in findings)
 
 
 def test_a_spec_naming_the_wrong_source_is_caught(tmp_path: Path) -> None:
@@ -188,9 +188,12 @@ def test_a_sanitized_template_is_not_a_missing_file(tmp_path: Path) -> None:
     assert compare_to_expectation(report, expected, paper_dir, rewritable=rewritable) == []
 
 
-def test_only_template_tex_may_be_rewritten(tmp_path: Path) -> None:
-    """The exemption stays narrow. Everything else must match upstream bytes."""
-    assert rewritable_targets(pwb_spec.SPEC) == {"environment/materials/template.tex"}
+def test_only_declared_writer_material_may_be_rewritten(tmp_path: Path) -> None:
+    """The exemption stays narrow and names every audited transformation."""
+    assert rewritable_targets(pwb_spec.SPEC) == {
+        "environment/materials/template.tex",
+        "environment/materials/code/README.md",
+    }
 
 
 def test_tree_copies_exclude_build_environment_residue(tmp_path: Path) -> None:
@@ -214,15 +217,6 @@ def test_tree_copies_exclude_build_environment_residue(tmp_path: Path) -> None:
     assert not [p for p in predicted if ".git" in p or "__pycache__" in p or p.endswith(".pyc")]
 
 
-def test_pwbw_declares_its_normalized_log_rewritable() -> None:
-    """`experimental_log.md` is rewritten on all 200 published tasks.
-
-    Upstream logs carry short alignment rows, bare pipes inside math, and
-    unlabeled columns; `normalize_markdown_tables` repairs the structure
-    without touching a result value. A spec that called it a plain copy would
-    report every PaperWritingBench task as defective -- which is exactly what
-    the content-addressed check reported before this was declared.
-    """
-    assert rewritable_targets(pwbw_spec.SPEC) == {
-        "environment/materials/experimental_log.md"
-    }
+def test_pwbw_experimental_log_is_not_rewritable() -> None:
+    """The writer-visible experimental log is a byte-faithful upstream input."""
+    assert rewritable_targets(pwbw_spec.SPEC) == set()

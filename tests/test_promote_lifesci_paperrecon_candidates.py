@@ -22,6 +22,7 @@ are exercised rather than bypassed. No network, no `opencode`, no model.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -134,7 +135,24 @@ def _live(
 def _write_candidates(directory: Path, records: list[dict]) -> Path:
     path = directory / "candidates.json"
     path.write_text(json.dumps(records), encoding="utf-8")
+    _write_human_approval(path, [str(record["arxiv_id"]) for record in records])
     return path
+
+
+def _write_human_approval(path: Path, approved_arxiv_ids: list[str]) -> Path:
+    approval = path.with_name(f"{path.name}.human-approval.json")
+    approval.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "candidate_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "approved_arxiv_ids": approved_arxiv_ids,
+                "reviewer": "test reviewer",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return approval
 
 
 def _lines(path: Path) -> list[dict]:
@@ -169,6 +187,7 @@ def _write_report(directory: Path, records: list[dict]) -> Path:
         ),
         encoding="utf-8",
     )
+    _write_human_approval(path, [str(record["arxiv_id"]) for record in records])
     return path
 
 
@@ -225,6 +244,49 @@ def test_main_accepts_the_real_cli_report_shape_end_to_end(
 
     assert exit_code == 0
     assert [record["arxiv_id"] for record in _lines(approved)] == ["2504.11111"]
+
+
+def test_promote_requires_a_human_approval_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(promote_module, "_http_get", _live())
+    candidates = _write_candidates(tmp_path, [_candidate()])
+    candidates.with_name(f"{candidates.name}.human-approval.json").unlink()
+    approved = tmp_path / "approved_scaleup.jsonl"
+
+    code = main(
+        ["--candidates", str(candidates), "--approved-file", str(approved), "--promote"]
+    )
+
+    assert code == 1
+    assert "human approval is required" in capsys.readouterr().out
+    assert not approved.exists()
+
+
+def test_human_approval_is_bound_to_exact_candidate_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(promote_module, "_http_get", _live())
+    candidates = _write_candidates(tmp_path, [_candidate()])
+    candidates.write_text(json.dumps([_candidate(note="edited after review")]), encoding="utf-8")
+
+    code = main(["--candidates", str(candidates), "--promote"])
+
+    assert code == 1
+    assert "does not match the exact candidate proposal" in capsys.readouterr().out
+
+
+def test_human_can_approve_only_a_verified_subset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(promote_module, "_http_get", _live())
+    records = [_candidate(), _candidate(arxiv_id="2504.22222")]
+    candidates = _write_candidates(tmp_path, records)
+    _write_human_approval(candidates, ["2504.22222"])
+    approved = tmp_path / "approved_scaleup.jsonl"
+
+    assert main(["--candidates", str(candidates), "--approved-file", str(approved), "--promote"]) == 0
+    assert [record["arxiv_id"] for record in _lines(approved)] == ["2504.22222"]
 
 
 # --------------------------------------------------------------------------- #

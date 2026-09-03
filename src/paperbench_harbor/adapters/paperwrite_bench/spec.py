@@ -1,8 +1,8 @@
 """PaperWrite-Bench's layout, as data.
 
-Every path here was read off `converter.py`, not out of the upstream README:
-the point of the exercise is a description of what the conversion *does*, which
-`tests/test_adapter_specs.py` then checks against what it actually produces.
+The shared conversion staging helper consumes this spec directly. The
+regression tests check its predicted copies against the produced task tree, and
+the fidelity audit independently recovers source origins from bytes.
 
 LifeSci-PaperRecon reuses this shape (see `SPEC` in
 `adapters/lifesci_paperrecon/harbor.py`) because its corpus is built to this
@@ -12,7 +12,13 @@ converter.
 
 from __future__ import annotations
 
-from paperbench_harbor.adapters.spec import VARIANT, CopyRule, UpstreamLayoutSpec
+from paperbench_harbor.adapters.spec import (
+    VARIANT,
+    BenchmarkIdentity,
+    CopyRule,
+    RenderDefaults,
+    UpstreamLayoutSpec,
+)
 
 #: The upstream tree has no venue nesting: every immediate subdirectory that
 #: carries `resources/template.tex` is a paper.
@@ -37,9 +43,24 @@ PUBLIC_RULES = (
     CopyRule("resources/references.bib", "environment/materials/references.bib"),
     CopyRule("resources/figure_summary.txt", "environment/materials/figure_summary.txt"),
     CopyRule("resources/table_summary.txt", "environment/materials/table_summary.txt"),
+    # Optional on the historical corpus; required by LifeSci's source-table
+    # contract once a constructed sample declares it.
+    CopyRule("resources/table_inventory.json", "environment/materials/table_inventory.json"),
     CopyRule("resources/figures", "environment/materials/figures", kind="tree"),
     CopyRule("resources/tables", "environment/materials/tables", kind="tree"),
-    CopyRule("resources/code", "environment/materials/code", kind="tree"),
+    # README files can contain a direct locator for the source paper. Stage it
+    # separately so the converter can redact only declared exceptions.
+    CopyRule(
+        "resources/code",
+        "environment/materials/code",
+        kind="tree",
+        tree_exclude_globs=("./README.md",),
+    ),
+    CopyRule(
+        "resources/code/README.md",
+        "environment/materials/code/README.md",
+        may_be_rewritten=True,
+    ),
 )
 
 PRIVATE_RULES = (
@@ -52,6 +73,16 @@ PRIVATE_RULES = (
         "solution/private/eval_points.json",
         extra_targets=("tests/private/eval_points.json",),
     ),
+    CopyRule(
+        "resources/research_overview_short.md",
+        "tests/private/research_overview_short.md",
+        protocols=("long",),
+    ),
+    CopyRule(
+        "resources/research_overview_long.md",
+        "tests/private/research_overview_long.md",
+        protocols=("short",),
+    ),
     CopyRule("original/main.tex", "tests/private/ground_truth.tex"),
     CopyRule("resources/figure_summary.txt", "tests/private/figure_summary.txt"),
     CopyRule("resources/table_summary.txt", "tests/private/table_summary.txt"),
@@ -62,8 +93,17 @@ PRIVATE_RULES = (
 )
 
 SPEC = UpstreamLayoutSpec(
-    benchmark="PaperWrite-Bench",
-    task_id_prefix="pwb",
+    identity=BenchmarkIdentity(
+        benchmark="PaperWrite-Bench",
+        task_id_prefix="pwb",
+        tags=("paper-writing", "latex", "scientific-writing", "paperwrite-bench"),
+        relevant_experience=(
+            "Benchmark adaptation of PaperWrite-Bench into the Harbor task format, "
+            "preserving the upstream writing-agent contract."
+        ),
+        agents_md_dir="agents_md",
+        agents_md_fallback="AGENTS_method.md",
+    ),
     paper_glob=PAPER_GLOB,
     discovery_marker=DISCOVERY_MARKER,
     variant_sources=VARIANT_SOURCES,
@@ -72,6 +112,7 @@ SPEC = UpstreamLayoutSpec(
     forbidden_public_names=frozenset(
         {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json"}
     ),
+    forbidden_public_ignore_globs=("materials/code/**",),
     generated_public=(
         "environment/materials/AGENTS.md",
         # Written only when the conversion had to drop a graphic the upstream
@@ -79,4 +120,7 @@ SPEC = UpstreamLayoutSpec(
         "environment/materials/upstream_data_warnings.md",
     ),
     generated_private=("tests/private/source_manifest.json",),
+    style_resolution="package-scan",
+    redact_source_paper_references=True,
+    render=RenderDefaults(grader_module="grader_pwb"),
 )

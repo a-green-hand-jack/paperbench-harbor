@@ -26,7 +26,9 @@ reproducibility fixes, reproducing v0.3.1 needs:
 
     --ignore '*/tests/private/source_manifest.json' \
     --ignore '*/__pycache__/*' \
-    --ignore '*/task.toml'
+    --ignore '*/task.toml' \
+    --ignore '*/instruction.md' \
+    --ignore '*/environment/materials/upstream_data_warnings.md'
 """
 
 from __future__ import annotations

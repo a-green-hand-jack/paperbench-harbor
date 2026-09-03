@@ -107,6 +107,18 @@ def _writer_files(task_dir: Path) -> Iterable[tuple[str, Path]]:
     )
 
 
+def _matches_generated(rel_path: str, generated: Iterable[str]) -> bool:
+    """Whether a spec-declared generated target covers ``rel_path``.
+
+    A trailing slash denotes a generated or vendored subtree. Keeping that
+    convention here lets the global classifier stay genuinely cross-benchmark.
+    """
+    return any(
+        rel_path == pattern or (pattern.endswith("/") and rel_path.startswith(pattern))
+        for pattern in generated
+    )
+
+
 def derive_origins(
     task_dir: Path,
     paper_dir: Path,
@@ -127,10 +139,10 @@ def derive_origins(
     known to be produced, its origin is not a question worth asking.
     """
     index = index_by_content(paper_dir)
-    exempt = set(generated)
+    exempt = tuple(generated)
     report = OriginReport()
     for rel, path in _writer_files(task_dir):
-        if classify_generated_vendor(rel) or rel in exempt:
+        if classify_generated_vendor(rel) or _matches_generated(rel, exempt):
             report.generated_or_vendor.append(rel)
             continue
         sources = index.get(sha256(path))
@@ -168,7 +180,10 @@ def compare_to_expectation(
     for target, source in sorted(expected.items()):
         origin = report.from_upstream.get(target)
         if origin is None:
-            if target in rewritable and target in report.unexplained:
+            if target in report.unexplained:
+                if target in rewritable:
+                    continue
+                findings.append(f"content mismatch: {target} has no upstream byte match")
                 continue
             if target in report.generated_or_vendor:
                 findings.append(

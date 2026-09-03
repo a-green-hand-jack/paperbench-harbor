@@ -42,7 +42,11 @@ Verifier-only materials:
 - P0/P1 labels;
 - evaluator prompts, metadata, and outputs.
 
-Later datasets should encode other protocols in distinct dataset names, such as `sparse-ploton` and `dense-plotoff`.
+Other PaperWritingBench protocols are not implemented by this converter. A
+future dataset such as `sparse-ploton` or `dense-plotoff` needs a separate
+candidate selection and human-approved onboarding record under
+[issue #2](https://github.com/a-green-hand-jack/paperbench-harbor/issues/2);
+it must not be implied by the `sparse-plotoff` implementation.
 
 ### PaperWrite-Bench
 

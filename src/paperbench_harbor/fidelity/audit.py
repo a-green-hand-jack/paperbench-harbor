@@ -18,31 +18,25 @@ input twice into scratch directories and compares digests.
 
 from __future__ import annotations
 
+import tempfile
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from paperbench_harbor.common.audit import audit_forbidden_names
-from paperbench_harbor.fidelity.transforms import (
-    KIND_COPY,
-    KIND_MOVE,
-    KIND_RENAME,
-    LSPR_BENCHMARK,
-    FileTransform,
-    classify_generated_vendor,
-    lspr_verifier_entries,
-    lspr_writer_transforms,
-    pwb_verifier_entries,
-    pwb_writer_transforms,
-    pwbw_verifier_entries,
-    pwbw_writer_transforms,
-    sha256,
+from paperbench_harbor.adapters.spec import (
+    UpstreamLayoutSpec,
+    find_paper_dirs,
+    predict_copies,
+    rewritable_targets,
 )
+from paperbench_harbor.common.audit import audit_forbidden_names
+from paperbench_harbor.fidelity.origin import compare_to_expectation, derive_origins
+from paperbench_harbor.fidelity.review import run_conversion_review
+from paperbench_harbor.fidelity.transforms import classify_generated_vendor, sha256
 
-#: Benchmarks whose source corpus uses the generic PaperWrite-Bench layout.
-PAPERWRITE_LAYOUT_BENCHMARKS = ("PaperWrite-Bench", LSPR_BENCHMARK)
+LSPR_BENCHMARK = "LifeSci-PaperRecon"
 
 
 class FidelityError(RuntimeError):
@@ -61,6 +55,8 @@ class TaskReport:
     verifier_entries_checked: int = 0
     contract_checks: int = 0
     notes: list[str] = field(default_factory=list)
+    semantic_reviewed: bool = False
+    semantic_verdict: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +70,8 @@ class TaskReport:
             "verifier_entries_checked": self.verifier_entries_checked,
             "contract_checks": self.contract_checks,
             "notes": self.notes,
+            "semantic_reviewed": self.semantic_reviewed,
+            "semantic_verdict": self.semantic_verdict,
         }
 
 
@@ -88,133 +86,126 @@ def _writer_visible_files(task_dir: Path) -> list[str]:
     )
 
 
-def _content_match(left: Path, right: Path, rel: str, report: TaskReport) -> None:
-    if not left.is_file():
-        report.errors.append(f"declared source missing: {left}")
-        return
-    if not right.is_file():
-        report.errors.append(f"declared target missing: {right} ({rel})")
-        return
-    if sha256(left) != sha256(right):
-        report.errors.append(f"content mismatch: {rel} (source={left})")
-    else:
-        report.writer_hashes_matched += 1
+def _layout_spec(benchmark: str) -> UpstreamLayoutSpec:
+    if benchmark == "PaperWrite-Bench":
+        from paperbench_harbor.adapters.paperwrite_bench.spec import SPEC
+
+        return SPEC
+    if benchmark == LSPR_BENCHMARK:
+        from paperbench_harbor.adapters.lifesci_paperrecon.harbor import SPEC
+
+        return SPEC
+    if benchmark == "PaperWritingBench":
+        from paperbench_harbor.adapters.paperwritingbench.spec import SPEC
+
+        return SPEC
+    raise FidelityError(f"unsupported benchmark for fidelity audit: {benchmark}")
+
+
+def _paper_dir(spec: UpstreamLayoutSpec, upstream_root: Path, paper_id: str) -> Path:
+    matches = [path for path in find_paper_dirs(spec, upstream_root) if path.name == paper_id]
+    if len(matches) != 1:
+        raise FidelityError(
+            f"{spec.benchmark}: expected one source directory for {paper_id!r}, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _private_files(task_dir: Path) -> dict[str, Path]:
+    files: dict[str, Path] = {}
+    for root in (task_dir / "solution" / "private", task_dir / "tests" / "private"):
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file():
+                files[path.relative_to(task_dir).as_posix()] = path
+    return files
+
+
+def _matches_generated(rel_path: str, generated: tuple[str, ...]) -> bool:
+    return any(
+        rel_path == pattern or (pattern.endswith("/") and rel_path.startswith(pattern))
+        for pattern in generated
+    )
 
 
 def _audit_writer_surface(
     task_dir: Path,
-    upstream_root: Path,
-    benchmark: str,
-    paper_id: str,
-    overview_or_protocol: str,
-    venue: str | None,
+    paper_dir: Path,
+    spec: UpstreamLayoutSpec,
+    protocol: str,
     report: TaskReport,
 ) -> None:
-    """Verify every writer-visible file against a declared transform."""
-    if benchmark == "PaperWrite-Bench":
-        transforms = pwb_writer_transforms(upstream_root, paper_id, task_dir, overview_or_protocol)
-    elif benchmark == LSPR_BENCHMARK:
-        transforms = lspr_writer_transforms(
-            upstream_root, paper_id, task_dir, overview_or_protocol
+    """Recover writer origins from bytes, then compare that evidence to the spec."""
+    origins = derive_origins(task_dir, paper_dir, generated=spec.generated_public)
+    rewritable = rewritable_targets(spec)
+    report.writer_files_checked += origins.checked
+    report.writer_hashes_matched += len(origins.from_upstream)
+    report.notes.extend(f"generated/vendor: {rel}" for rel in origins.generated_or_vendor)
+    expected = predict_copies(spec, paper_dir, protocol)
+    report.errors.extend(
+        f"undeclared writer-visible file: {rel} has no upstream origin or generated declaration"
+        for rel in origins.unexplained
+        if rel not in rewritable and rel not in expected
+    )
+    report.errors.extend(
+        compare_to_expectation(
+            origins,
+            expected,
+            paper_dir,
+            rewritable=rewritable,
         )
-    else:
-        assert venue is not None
-        transforms = pwbw_writer_transforms(upstream_root, paper_id, task_dir, venue)
-
-    declared: dict[str, FileTransform] = {}
-    for transform in transforms:
-        declared[transform.target] = transform
-
-    actual = _writer_visible_files(task_dir)
-    for rel in actual:
-        transform = declared.get(rel)
-        if transform is None and classify_generated_vendor(rel):
-            report.notes.append(f"vendor/generated: {rel}")
-            continue
-        if transform is None:
-            report.errors.append(f"undeclared writer-visible file: {rel}")
-            continue
-        report.writer_files_checked += 1
-        if transform.kind in (KIND_COPY, KIND_RENAME, KIND_MOVE):
-            if transform.source is None:
-                report.errors.append(f"content-preserving transform without source: {rel}")
-                continue
-            _content_match(upstream_root / transform.source, task_dir / rel, rel, report)
-        else:
-            report.notes.append(f"{transform.kind}: {rel} ({transform.note})")
-
-    # Every declared content-preserving target must exist on disk.
-    for target, transform in declared.items():
-        if transform.kind in (KIND_COPY, KIND_RENAME, KIND_MOVE) and not (task_dir / target).is_file():
-            report.errors.append(f"declared target missing on disk: {target}")
+    )
 
 
 def _audit_verifier(
     task_dir: Path,
-    upstream_root: Path,
-    benchmark: str,
-    paper_id: str,
-    overview_or_protocol: str,
-    venue: str | None,
+    paper_dir: Path,
+    spec: UpstreamLayoutSpec,
+    protocol: str,
     report: TaskReport,
 ) -> None:
-    """Verify private copies are byte-identical and leak nothing to the writer."""
-    if benchmark == "PaperWrite-Bench":
-        entries = pwb_verifier_entries(upstream_root, paper_id, task_dir, overview_or_protocol)
-    elif benchmark == LSPR_BENCHMARK:
-        entries = lspr_verifier_entries(
-            upstream_root, paper_id, task_dir, overview_or_protocol
-        )
-    else:
-        assert venue is not None
-        entries = pwbw_verifier_entries(upstream_root, paper_id, task_dir, venue)
+    """Verify the entire private surface against actual upstream bytes and rules."""
+    expected = predict_copies(spec, paper_dir, protocol, private=True)
+    actual = _private_files(task_dir)
+    for target, source in sorted(expected.items()):
+        report.verifier_entries_checked += 1
+        target_path = actual.get(target)
+        if target_path is None:
+            report.errors.append(f"verifier target missing: {target}")
+        elif sha256(source) != sha256(target_path):
+            report.errors.append(f"verifier content mismatch: {source} -> {target}")
 
-    for entry in entries:
-        source = upstream_root / entry.upstream
-        for target in entry.targets:
-            report.verifier_entries_checked += 1
-            if not source.is_file():
-                report.errors.append(f"verifier source missing: {source}")
-                continue
-            if not (task_dir / target).is_file():
-                report.errors.append(f"verifier target missing: {target}")
-                continue
-            if sha256(source) != sha256(task_dir / target):
-                report.errors.append(f"verifier content mismatch: {entry.upstream} -> {target}")
+    for target in sorted(actual):
+        if target not in expected and not _matches_generated(target, spec.generated_private):
+            report.errors.append(f"undeclared verifier-only file: {target}")
+    for target in spec.generated_private:
+        if not target.endswith("/") and target not in actual:
+            report.errors.append(f"generated verifier file missing: {target}")
 
-    # Leakage: writer environment must not contain any verifier-only content.
-    env_files = _writer_visible_files(task_dir)
-    env_hashes = {sha256(task_dir / rel) for rel in env_files}
-    for entry in entries:
-        if entry.expected_in_writer:
+    public_hashes = {
+        sha256(source) for source in predict_copies(spec, paper_dir, protocol).values()
+    }
+    writer_hashes = {
+        sha256(task_dir / rel)
+        for rel in _writer_visible_files(task_dir)
+        if not classify_generated_vendor(rel) and not _matches_generated(rel, spec.generated_public)
+    }
+    for source in sorted(set(expected.values())):
+        if sha256(source) in public_hashes:
             continue
-        source = upstream_root / entry.upstream
-        if not source.is_file():
-            continue
-        if sha256(source) in env_hashes:
+        if sha256(source) in writer_hashes:
             report.errors.append(
-                f"verifier-only content leaked into writer environment: {entry.upstream}"
+                f"verifier-only content leaked into writer environment: {source.relative_to(paper_dir)}"
             )
 
-    # Forbidden-name check as a second, independent layer. It must mirror the
-    # converter's exemptions: upstream PWB code repositories legitimately
-    # contain files named like config.yaml, so materials/code/** is exempt.
-    forbidden = {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json"}
-    if benchmark == "PaperWritingBench":
-        forbidden.add("idea_dense.md")
-    if benchmark == LSPR_BENCHMARK:
-        forbidden.add("provenance.json")
     try:
         audit_forbidden_names(
             task_dir / "environment",
-            forbidden,
-            ignore_globs=(
-                ("materials/code/**",)
-                if benchmark in PAPERWRITE_LAYOUT_BENCHMARKS
-                else ()
-            ),
+            set(spec.forbidden_public_names),
+            ignore_globs=spec.forbidden_public_ignore_globs,
         )
-    except RuntimeError as exc:  # LeakageError
+    except RuntimeError as exc:
         report.errors.append(str(exc))
 
 
@@ -360,6 +351,10 @@ def run_fidelity_audit(
     task_dir: Path,
     protocol: str,
     venue: str | None,
+    semantic_review: bool = False,
+    reviewer_model: str | None = None,
+    review_log_dir: Path | None = None,
+    layout_spec: UpstreamLayoutSpec | None = None,
 ) -> TaskReport:
     """Run the full fidelity audit for a single task."""
     report = TaskReport(
@@ -369,15 +364,32 @@ def run_fidelity_audit(
         ok=True,
     )
 
-    if benchmark in PAPERWRITE_LAYOUT_BENCHMARKS:
-        _audit_writer_surface(task_dir, upstream_root, benchmark, upstream_paper_id, protocol, None, report)
-        _audit_verifier(task_dir, upstream_root, benchmark, upstream_paper_id, protocol, None, report)
-        _audit_contract(task_dir, report)
-    else:
-        assert venue is not None
-        _audit_writer_surface(task_dir, upstream_root, benchmark, upstream_paper_id, protocol, venue, report)
-        _audit_verifier(task_dir, upstream_root, benchmark, upstream_paper_id, protocol, venue, report)
-        _audit_contract(task_dir, report)
+    del venue  # Layout specs identify the source paper without a benchmark dispatch chain.
+    spec = layout_spec or _layout_spec(benchmark)
+    if spec.benchmark != benchmark:
+        raise FidelityError(
+            f"layout spec benchmark {spec.benchmark!r} does not match audit benchmark {benchmark!r}"
+        )
+    paper_dir = _paper_dir(spec, upstream_root, upstream_paper_id)
+    _audit_writer_surface(task_dir, paper_dir, spec, protocol, report)
+    _audit_verifier(task_dir, paper_dir, spec, protocol, report)
+    _audit_contract(task_dir, report)
+    if semantic_review:
+        report.semantic_reviewed = True
+        verdict = run_conversion_review(
+            benchmark=benchmark,
+            paper_id=upstream_paper_id,
+            paper_dir=paper_dir,
+            task_dir=task_dir,
+            protocol=protocol,
+            model=reviewer_model,
+            log_dir=review_log_dir
+            or Path(tempfile.gettempdir()) / "paperbench-harbor-fidelity-review-logs",
+        )
+        report.semantic_verdict = verdict.as_dict()
+        if not verdict.ok:
+            report.errors.append(f"semantic review failed: {verdict.reasoning}")
+            report.errors.extend(f"semantic concern: {concern}" for concern in verdict.concerns)
 
     report.ok = not report.errors
     return report
@@ -395,6 +407,10 @@ def summarize(reports: list[TaskReport]) -> dict[str, Any]:
         "writer_hashes_matched": sum(r.writer_hashes_matched for r in reports),
         "verifier_entries_checked": sum(r.verifier_entries_checked for r in reports),
         "contract_checks": sum(r.contract_checks for r in reports),
+        "semantic_reviews": sum(r.semantic_reviewed for r in reports),
+        "semantic_review_failures": sum(
+            r.semantic_reviewed and not (r.semantic_verdict or {}).get("ok", False) for r in reports
+        ),
         "failed_tasks_detail": [
             {"task_id": r.task_id, "errors": r.errors} for r in reports if not r.ok
         ],

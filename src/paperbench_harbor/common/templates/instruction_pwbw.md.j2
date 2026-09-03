@@ -34,12 +34,13 @@ Write a complete scientific paper based on the raw research materials in
    `/workspace/submission/main.tex`.
 2. Report results accurately based on `/workspace/materials/experimental_log.md`.
 {% if has_figures %}
-3. Use the provided figures where they support the paper, with captions
-   based on `figures/info.json`. Copy referenced assets into
+3. Use every provided figure exactly once, without merging or grouping them,
+   with captions based on `figures/info.json`. Copy the assets into
    `/workspace/submission/figures/` and use root-relative paths such as
    `\includegraphics{figures/foo.png}`. If the template has a `\graphicspath`
    that prepends `figures/`, remove or update it so it does not prepend
-   `figures/` twice.
+   `figures/` twice. Do not create, generate, or include any figures or plots
+   beyond the provided assets.
 {% endif %}
 {{ 4 if has_figures else 3 }}. Ground every claim in the provided materials; do not invent datasets,
    numbers, or results that are not present in the materials.
