@@ -115,7 +115,8 @@ existing task: never edit a corpus or generated Harbor task by hand.
    uv run scripts/run_lifesci_paperrecon_release_candidate.py \\
        --run-root /home/user/orca/tmp/<managed-release-candidate-run> \\
        --model openai/gpt-5.6-sol \\
-       --reviewer-model openai/gpt-5.5
+       --reviewer-model openai/gpt-5.5 \\
+       --max-turns 5
    ```
 
    Create the run root with `agent-workspace tmp create` before starting. Run
@@ -146,7 +147,10 @@ Use the explicitly pinned `gpt-5.6-sol` worker, the distinct `gpt-5.5`
 reviewer, and one worker at a time: a published-corpus rebuild is a long
 autonomous job, and this avoids losing a batch of independent starts to a
 provider's per-model usage ceiling while keeping construction and review
-independent. It may run for hours. The direct supervisor retains its stage
+independent. A release candidate permits up to five construction/review turns
+per paper, so a reviewer can check a correction instead of rejecting a sample
+solely because a first revision surfaced another specific omission. It may run
+for hours. The direct supervisor retains its stage
 record and the deterministic gates decide admission; no manual repair path
 exists.
 

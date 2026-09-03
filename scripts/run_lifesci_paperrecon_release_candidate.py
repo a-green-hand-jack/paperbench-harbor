@@ -21,6 +21,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET_REPOSITORY = "Jack-Jieke-Wu/Paper-Writing-Exam"
 DEFAULT_WORKER_MODEL = "openai/gpt-5.6-sol"
 DEFAULT_REVIEWER_MODEL = "openai/gpt-5.5"
+DEFAULT_MAX_TURNS = 5
 INITIAL_RUN_ROOT_ENTRIES = frozenset(
     {".agent-workspace.json", "supervisor.log", "supervisor.pid"}
 )
@@ -66,6 +67,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model", default=DEFAULT_WORKER_MODEL)
     parser.add_argument("--reviewer-model", default=DEFAULT_REVIEWER_MODEL)
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=DEFAULT_MAX_TURNS,
+        help="Maximum construction/review turns per paper; release candidates default to 5.",
+    )
     return parser.parse_args()
 
 
@@ -102,6 +109,7 @@ def main() -> int:
         "upstream_revision": revision,
         "worker_model": args.model,
         "reviewer_model": args.reviewer_model,
+        "max_turns": args.max_turns,
         "run_root": str(run_root),
         "stages": [],
     }
@@ -145,6 +153,8 @@ def main() -> int:
                 args.reviewer_model,
                 "--concurrency",
                 "1",
+                "--max-turns",
+                str(args.max_turns),
                 "--fresh",
                 "--report",
                 str(run_root / "build-report.json"),
