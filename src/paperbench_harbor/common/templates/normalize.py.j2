@@ -111,7 +111,26 @@ def _fix_citations(tex: str, bibliography: Path) -> str:
     return tex
 
 
+def _copy_private_tex_support(private: Path, submission: Path) -> None:
+    """Stage source-local TeX support files for the private oracle build.
+
+    A paper can ship its own document class or bibliography style. The writer
+    need not receive that source implementation, but the oracle's private copy
+    must use the exact class that compiled the source rather than an unrelated
+    host-wide package with the same name.
+    """
+
+    support_suffixes = {".bst", ".cls", ".sty"}
+    for source in private.rglob("*"):
+        if not source.is_file() or source.suffix.lower() not in support_suffixes:
+            continue
+        destination = submission / source.relative_to(private)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
 def normalize(materials: Path, submission: Path, private: Path) -> None:
+    _copy_private_tex_support(private, submission)
     tex = (private / "main.tex").read_text(encoding="utf-8", errors="replace")
     tex = re.sub(r"\\bibliography\{[^}]*\}", r"\\bibliography{references}", tex)
     tex = tex.replace(r"\usepackage[final]{neurips_2025}", r"\usepackage[final,main]{neurips_2025}")

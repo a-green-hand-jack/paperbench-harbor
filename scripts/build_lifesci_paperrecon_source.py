@@ -53,6 +53,38 @@ def _log(message: str) -> None:
     print(message, flush=True)
 
 
+def _published_paper_ids(manifest_path: Path) -> list[str]:
+    """Read published upstream ids in task order from a dataset manifest."""
+
+    if not manifest_path.is_file():
+        raise ValueError(f"published manifest does not exist: {manifest_path}")
+    paper_ids: list[str] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(manifest_path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"published manifest {manifest_path}:{line_number} is invalid JSON: {error.msg}"
+            ) from error
+        paper_id = record.get("upstream_paper_id") if isinstance(record, dict) else None
+        if not isinstance(paper_id, str) or not paper_id:
+            raise ValueError(
+                f"published manifest {manifest_path}:{line_number} has no upstream_paper_id"
+            )
+        if paper_id in seen:
+            raise ValueError(
+                f"published manifest {manifest_path}:{line_number} repeats {paper_id!r}"
+            )
+        seen.add(paper_id)
+        paper_ids.append(paper_id)
+    if not paper_ids:
+        raise ValueError(f"published manifest has no task records: {manifest_path}")
+    return paper_ids
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -70,6 +102,15 @@ def main() -> int:
     parser.add_argument("--build-root", type=Path, default=None, help="Scratch for compile checks.")
     parser.add_argument("--log-dir", type=Path, default=None, help="Agent transcripts.")
     parser.add_argument("--papers", nargs="*", default=None, help="Paper ids (default: all approved papers).")
+    parser.add_argument(
+        "--published-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Dataset-manifest.jsonl whose upstream_paper_id values select exactly the "
+            "currently published tasks; mutually exclusive with --papers."
+        ),
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument(
         "--reviewer-model",
@@ -119,7 +160,18 @@ def main() -> int:
         parser.error("--concurrency must be >= 1")
 
     specs: list[PaperSpec]
-    if args.papers:
+    if args.papers and args.published_manifest:
+        parser.error("--papers and --published-manifest cannot be used together")
+    if args.published_manifest:
+        try:
+            paper_ids = _published_paper_ids(args.published_manifest)
+        except ValueError as error:
+            parser.error(str(error))
+        unknown = [name for name in paper_ids if name not in APPROVED_BY_ID]
+        if unknown:
+            parser.error("published manifest has unknown paper id(s): " + ", ".join(unknown))
+        specs = [APPROVED_BY_ID[name] for name in paper_ids]
+    elif args.papers:
         unknown = [name for name in args.papers if name not in APPROVED_BY_ID]
         if unknown:
             parser.error(f"unknown paper id(s): {', '.join(unknown)}")
@@ -162,6 +214,7 @@ def main() -> int:
         ),
         "corpus_root": str(corpus_root),
         "scratch_root": str(scratch_root),
+        "published_manifest": str(args.published_manifest) if args.published_manifest else None,
         "papers": outcomes,
     }
     if args.report:

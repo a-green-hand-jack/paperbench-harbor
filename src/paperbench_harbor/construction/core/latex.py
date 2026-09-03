@@ -29,11 +29,36 @@ CONFERENCE_TEMPLATES_DIR = (
     Path(__file__).resolve().parents[4] / "packaging" / "conference-templates"
 )
 
-_PDFLATEX = ("pdflatex", "-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape")
+_PDFLATEX_OPTIONS = ("-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape")
 
 _USEPACKAGE_RE = re.compile(r"\\usepackage(?:\[[^]]*\])?\{([^}]+)\}")
 _BIBSTYLE_RE = re.compile(r"\\bibliographystyle\{([^}]+)\}")
 _TEX_ERROR_RE = re.compile(r"^(?:! .*|l\.\d+ .*)$", re.MULTILINE)
+
+
+def _resolve_tex_tool(name: str) -> str:
+    """Prefer a native TeX binary over a shell wrapper earlier on ``PATH``.
+
+    A developer workstation can place a convenience wrapper named ``pdflatex``
+    ahead of a real TeX Live binary. Construction agents may use the real
+    binary through their interactive shell while this validator, which uses a
+    non-interactive subprocess environment, would otherwise invoke the wrapper
+    and silently fail every compilation. Keep the normal first-match behavior
+    unless another executable path entry resolves to a native binary.
+    """
+
+    candidates: list[Path] = []
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(directory or ".") / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            candidates.append(candidate)
+    for candidate in candidates:
+        try:
+            if candidate.resolve().read_bytes()[:2] != b"#!":
+                return str(candidate)
+        except OSError:
+            continue
+    return str(candidates[0]) if candidates else name
 
 
 @dataclass(frozen=True)
@@ -132,12 +157,14 @@ def compile_restricted(
     env["max_print_line"] = "1000"
 
     stem = Path(tex_name).stem
+    pdflatex = _resolve_tex_tool("pdflatex")
+    bibtex = _resolve_tex_tool("bibtex")
     commands: list[tuple[str, ...]] = [
-        (*_PDFLATEX, tex_name),
-        (*_PDFLATEX, tex_name),
-        ("bibtex", stem),
-        (*_PDFLATEX, tex_name),
-        (*_PDFLATEX, tex_name),
+        (pdflatex, *_PDFLATEX_OPTIONS, tex_name),
+        (pdflatex, *_PDFLATEX_OPTIONS, tex_name),
+        (bibtex, stem),
+        (pdflatex, *_PDFLATEX_OPTIONS, tex_name),
+        (pdflatex, *_PDFLATEX_OPTIONS, tex_name),
     ]
     for command in commands:
         try:
@@ -166,7 +193,7 @@ def compile_restricted(
                 failed_command=command,
                 log_excerpt=f"timed out after {timeout}s",
             )
-        if command[0] == "bibtex":
+        if command[0] == bibtex:
             continue
         if result.returncode != 0:
             return CompileResult(

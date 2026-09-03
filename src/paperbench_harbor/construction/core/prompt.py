@@ -59,6 +59,55 @@ def build_prompt(spec: PaperSpec, output_dir: str, plugin: DomainPlugin) -> str:
         f"\n{plugin.stop_condition_examples}\n" if plugin.stop_condition_examples else ""
     )
 
+    if plugin.require_table_inventory:
+        table_tree = """    ├── table_inventory.json
+    ├── figures/
+    ├── tables/          (omit only when the source-table inventory is empty)
+"""
+        table_material_contract = """Every figure asset the paper includes goes in `figures/`, in a format `pdflatex`
+accepts (`.pdf`, `.png`, `.jpg`, `.eps`). Before you finish, recursively inspect
+`original/main.tex` and every TeX file it reaches through `\\input` or
+`\\include`. Every `table`, `table*`, `longtable` or sideways-table environment
+is a source table even if it is written inline.
+
+Create `resources/table_inventory.json`, a JSON object with
+`{\"schema_version\": 1, \"tables\": [...]}`. The entries must be in source order
+and each one must contain: `id` (`table-001`, `table-002`, ...), `source_path`
+(relative to `original/`), `line_start`, `environment`, `caption`, `label`,
+`content_sha256`, and `public_path`. For every entry, extract the exact complete
+LaTeX environment into the corresponding `resources/tables/...` file and use
+the SHA-256 of those exact UTF-8 bytes as `content_sha256`. Do not use the
+presence of a separately stored source file to decide whether a table exists.
+The fragments are public study evidence: preserve their identity, caption,
+label, numerical content and source association, but do not put general paper
+prose into them.
+
+Only when the source inventory is empty may `tables/` be omitted and the
+inventory contain an empty `tables` list. This is a release-blocking contract:
+the deterministic gate recomputes the inventory from `original/` and rejects a
+missing, incomplete or altered public table material. After each construction
+turn, the pipeline regenerates the table fragments and inventory from that
+same source traversal. Treat those generated values as authoritative; use
+`table_summary.txt` to explain what the tables report rather than trying to
+hand-compute source metadata or hashes."""
+        table_summary_contract = """Every file in `figures/` must be mentioned by name in `figure_summary.txt`, and
+every `public_path` from `table_inventory.json` must be mentioned in
+`table_summary.txt`, with its caption and what results it reports. Generate the
+table summary from the inventory, not from a directory listing. Only if the
+inventory is empty may the table summary say that the paper has no tables. The
+pipeline adds the canonical source-caption ledger after each turn; retain or
+add the qualitative interpretation of each table's result."""
+    else:
+        table_tree = """    ├── figures/
+    ├── tables/          (omit if the paper has no tables as separate assets)
+"""
+        table_material_contract = """Every figure asset the paper includes, in a format `pdflatex` accepts (`.pdf`,
+`.png`, `.jpg`, `.eps`). Tables that exist as separate `\\input` files go in
+`tables/`; tables written inline in `main.tex` do not need extracting."""
+        table_summary_contract = """Every file in `figures/` must be mentioned by name in `figure_summary.txt`, and
+likewise for tables. If the paper has no separate table assets, say so
+explicitly in `table_summary.txt` rather than leaving it empty."""
+
     return f"""\
 {plugin.benchmark_intro} Your job
 is to turn one published arXiv paper into that sample. You are not writing a
@@ -117,9 +166,7 @@ Create exactly this tree under `{output_dir}` (absolute path; create it):
     ├── references.bib
     ├── figure_summary.txt
     ├── table_summary.txt
-    ├── figures/
-    ├── tables/          (omit if the paper has no tables as separate assets)
-    └── code/
+{table_tree}    └── code/
 ```
 
 ## The leakage rule
@@ -230,9 +277,7 @@ reference.
 
 ## `resources/figures/` and `resources/tables/`
 
-Every figure asset the paper includes, in a format `pdflatex` accepts (`.pdf`,
-`.png`, `.jpg`, `.eps`). Tables that exist as separate `\\input` files go in
-`tables/`; tables written inline in `main.tex` do not need extracting.
+{table_material_contract}
 
 ## `resources/figure_summary.txt` and `resources/table_summary.txt`
 
@@ -248,9 +293,7 @@ decide where each asset belongs and what it shows. Describe what is actually
 plotted or depicted: axes and units, conditions compared, what the panel
 demonstrates. {plugin.imagery_guidance}
 
-Every file in `figures/` must be mentioned by name in `figure_summary.txt`, and
-likewise for tables. If the paper has no separate table assets, say so
-explicitly in `table_summary.txt` rather than leaving it empty.
+{table_summary_contract}
 
 ## `resources/code/`
 

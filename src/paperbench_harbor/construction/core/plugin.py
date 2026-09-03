@@ -108,6 +108,12 @@ class DomainPlugin:
     #: actually plotted instead of defaulting to ML-paper vocabulary.
     imagery_guidance: str
 
+    #: Whether every source-table environment must be represented by an
+    #: immutable public table fragment and an inventory. This stays opt-in so
+    #: an existing domain can adopt the stricter source-material contract on
+    #: its own release cadence.
+    require_table_inventory: bool = False
+
     def __post_init__(self) -> None:
         if self.significance_heading not in self.overview_skeleton_headings:
             raise ValueError(

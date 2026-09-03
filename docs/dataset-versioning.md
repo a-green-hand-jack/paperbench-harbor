@@ -44,19 +44,19 @@ revision; it does not rewrite or delete the old one.
 ## Current Dataset
 
 [`Jack-Jieke-Wu/Paper-Writing-Exam`](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam)
-currently contains the 274-task release at tag `v0.4.0`, whose immutable task
-revision is `fac54a81702f62b38c765de9e85615b4eb31a470`. It adds the standalone
-`hello-world/hello-world-0001` configuration to the 273-task `v0.3.1` release.
-The earlier `v0.3.1`, `v0.3.0`, and `v0.2.0` releases remain available and must
-be used when reproducing results from those releases.
+currently contains the 274-task release at tag `v0.4.1` and immutable revision
+`367bbf67ea05d0ec3d580e062aadf5636b45fc65`. It retains the two upstream
+benchmark configurations, the `hello-world` integration task, and the repaired
+22-task `lifesci-paperrecon-short` configuration. Earlier releases remain
+available and must be used when reproducing results from those releases.
 
 For a direct single-task run, point Harbor at the Hugging Face dataset tree and
 filter by task name. No user-managed local dataset checkout is required:
 
 ```bash
 harbor run \
-  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/fac54a81702f62b38c765de9e85615b4eb31a470/hello-world" \
-  --include-task-name hello-world-0001 \
+  --repo "https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam/tree/367bbf67ea05d0ec3d580e062aadf5636b45fc65/lifesci-paperrecon-short" \
+  --include-task-name lspr-0001 \
   --agent codex \
   --model <provider>/<model> \
   --yes --n-concurrent 1
@@ -65,6 +65,22 @@ harbor run \
 Harbor uses its own task cache and repository checkout internally. The
 immutable revision and task filter keep the run reproducible. `--dataset` is
 reserved for Harbor Hub packages; use `--repo` for this Hugging Face Git source.
+
+### v0.4.1
+
+- Hugging Face task revision: `367bbf67ea05d0ec3d580e062aadf5636b45fc65`;
+- stable tag: `v0.4.1`;
+- converter revision: `ffcdc76f74a1711d2157b9bf6aa5c10b49183800` from
+  PaperBench Harbor PR #43;
+- scope: regenerated all 22 LifeSci-PaperRecon `short` tasks while retaining
+  the 252 non-LifeSci tasks already present in the release;
+- source-table audit: 144 tables in the admitted source papers and 144 public
+  writer-visible `environment/materials/tables/*.tex` fragments, with no task
+  mismatch;
+- converter fidelity audit: 22/22 tasks passed and deterministic regeneration
+  passed;
+- `lspr-0003` now ships five public table fragments and a five-entry table
+  inventory, rather than an instruction pointing to a missing table directory.
 
 ### v0.4.0
 
