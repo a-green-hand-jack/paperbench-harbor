@@ -35,6 +35,83 @@ For task execution, configuration-specific materials, and trajectory analysis,
 use the dataset cards linked above. GitHub keeps only the construction and
 maintenance contracts so a release does not create two competing user manuals.
 
+## OpenCode workflows
+
+The repository has two human-gated OpenCode entry points. They orchestrate
+screening, verification, and evidence collection but cannot directly edit the
+repository or bypass a required audit. The converting and publishing programs
+remain deterministic, separately auditable maintainer commands.
+
+### Onboard an existing benchmark
+
+`benchmark-onboard` evaluates a public, fixed benchmark for Harbor packaging.
+It stops at a SHA-bound human approval; only then may a release operator
+materialize and audit the approved layout.
+
+```mermaid
+flowchart TD
+    request([Candidate benchmark request]) --> onboard[OpenCode: benchmark-onboard]
+    onboard --> scope[Screen the paper-writing task boundary]
+    scope --> eligible{In scope?}
+    eligible -- no --> rejected([Report rejection and stop])
+    eligible -- yes --> candidate[Write a candidate claim in isolated scratch]
+    candidate --> verify[Independently verify revision, license, manifest hash, and count]
+    verify --> verified{Evidence valid?}
+    verified -- no --> rejected
+    verified -- yes --> layout[Propose a generic Harbor layout in scratch]
+    layout --> approval{Human SHA-bound approval?}
+    approval -- not yet --> hold([Stop at the approval gate])
+    approval -- yes --> materialize[Release operator runs materialize_onboarded_benchmark.py]
+    materialize --> audits[Structural and semantic fidelity audits plus two deterministic rebuilds]
+    audits --> passed{All audits pass?}
+    passed -- no --> failed([Retain evidence; do not publish])
+    passed -- yes --> archive[Build and verify matching source-archive provenance]
+    archive --> publish([Manually publish immutable dataset and archive revisions])
+```
+
+### Build tasks from papers
+
+`papersmith-lifesci` is the current LifeSci implementation of the PaperSmith
+paper-to-task pipeline. Its same screening, human approval, construction,
+conversion, and audit contracts are intended for domain plugins, so the pattern
+can serve future Physics, Chemistry, Mathematics, and other paper corpora.
+
+```mermaid
+flowchart TD
+    request([Natural-language paper request]) --> papersmith[OpenCode: PaperSmith domain workflow]
+    papersmith --> kind{Collect new papers or rebuild a published corpus?}
+
+    kind -- collect --> parse[Parse target count, domain guidance, and explicit paper IDs]
+    parse --> screen[Screen candidates in isolated scratch]
+    screen --> liveverify[Independently verify paper and code provenance, licenses, and eligibility]
+    liveverify --> valid{Eligible and verifiable?}
+    valid -- no --> reportrejected([Report rejected or unverifiable candidates])
+    valid -- yes --> humanapproval{Human SHA-bound approval?}
+    humanapproval -- not yet --> hold([Stop at the approval gate])
+    humanapproval -- yes --> promote[Promote approved paper IDs]
+    promote --> construct[Construct source corpus with one isolated OpenCode build and review session per paper]
+    construct --> convert[Convert the corpus to Harbor tasks]
+    convert --> fidelity[Fidelity, determinism, and semantic audits]
+    fidelity --> collectionpassed{All audits pass?}
+    collectionpassed -- no --> failed([Report evidence; do not publish])
+    collectionpassed -- yes --> collectionreport([Report auditable task-design evidence])
+
+    kind -- rebuild --> manifest[Download the current immutable published manifest]
+    manifest --> supervisor[Run the release-candidate supervisor]
+    supervisor --> rebuild[Reconstruct and review every published paper]
+    rebuild --> coverage[Audit complete reachable TeX table coverage]
+    coverage --> coveragepassed{Coverage passes?}
+    coveragepassed -- no --> failed
+    coveragepassed -- yes --> reconvert[Convert the rebuilt corpus to Harbor tasks]
+    reconvert --> releaseaudit[Run the fidelity audit]
+    releaseaudit --> releasepassed{run-summary.json is passed?}
+    releasepassed -- no --> failed
+    releasepassed -- yes --> releasereport([Produce release-candidate evidence])
+```
+
+These workflows establish task-construction correctness only. They do not score
+or make claims about the performance of a paper-writing agent.
+
 ## Benchmark families
 
 The current task release has four configurations:
