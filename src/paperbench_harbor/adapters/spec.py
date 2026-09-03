@@ -190,6 +190,10 @@ class UpstreamLayoutSpec:
     #: deliberately a hook, but its mode is data so onboarding cannot silently
     #: pick a different resolver from the one fidelity/regression evidence used.
     style_resolution: str = "none"
+    #: Whether linked-code notes must redact the source paper's direct locator
+    #: before becoming writer-visible material. The underlying code stays
+    #: available, while the task does not hand over its answer by URL.
+    redact_source_paper_references: bool = False
     #: Defaults supplied to the shared Harbor templates. Per-paper metadata may
     #: override a value (for example PaperWrite-Bench reads the actual column
     #: from its template), but the common baseline lives in the spec.

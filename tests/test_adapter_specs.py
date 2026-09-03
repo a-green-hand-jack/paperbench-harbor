@@ -221,15 +221,23 @@ def test_specs_own_their_task_identity_render_defaults_and_style_mode() -> None:
 
 def test_lifesci_spec_redacts_paper_sources_from_linked_code_checkouts() -> None:
     source_code_rule = next(rule for rule in LSPR_SPEC.public if rule.source == "resources/code")
-    assert source_code_rule.tree_exclude_globs == ("*.tex",)
+    assert source_code_rule.tree_exclude_globs == ("*.tex", "README.md")
     assert source_code_rule.excludes_tree_path(Path("paper/manuscript.tex"))
+    assert source_code_rule.excludes_tree_path(Path("README.md"))
     assert not source_code_rule.excludes_tree_path(Path("paper/manuscript.pdf"))
     assert not source_code_rule.excludes_tree_path(Path("src/model.py"))
+    readme_rule = next(
+        rule for rule in LSPR_SPEC.public if rule.source == "resources/code/README.md"
+    )
+    assert readme_rule.may_be_rewritten
+    assert LSPR_SPEC.style_resolution == "local-first-package-scan"
+    assert LSPR_SPEC.redact_source_paper_references is True
 
 
 def test_lifesci_spec_differs_from_paperwrite_bench_only_in_identity_provenance_and_leakage_policy() -> None:
-    assert tuple(rule.source for rule in LSPR_SPEC.public) == tuple(
-        rule.source for rule in pwb_spec.SPEC.public
+    assert tuple(rule.source for rule in LSPR_SPEC.public) == (
+        *(rule.source for rule in pwb_spec.SPEC.public),
+        "resources/code/README.md",
     )
     assert LSPR_SPEC.private == pwb_spec.SPEC.private
     assert LSPR_SPEC.benchmark == "LifeSci-PaperRecon"

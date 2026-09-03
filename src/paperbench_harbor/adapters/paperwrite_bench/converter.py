@@ -155,14 +155,26 @@ _CONFERENCE_TEMPLATES_DIR = (
 )
 
 
-def _referenced_style_files(template_tex: Path) -> dict[str, Path]:
-    """Map conference style names referenced by the template to bundled files."""
+def _referenced_style_files(
+    template_tex: Path, *, prefer_local_styles: bool = False
+) -> dict[str, Path]:
+    """Map conference style names referenced by the template to usable files.
+
+    A constructed corpus sometimes carries the exact ``.sty`` used by its
+    template.  The LifeSci layout opts into that local-first resolution so the
+    task receives the same citation setup as its public upstream material.
+    Historical PaperWrite-Bench releases retain their bundled-style behaviour.
+    """
     text = template_tex.read_text(encoding="utf-8", errors="replace")
     found: dict[str, Path] = {}
     for match in re.finditer(r"\\usepackage(?:\[[^]]*\])?\{([^}]+)\}", text):
         for raw_name in match.group(1).split(","):
             name = raw_name.strip()
             if name in found:
+                continue
+            local = template_tex.parent / f"{name}.sty"
+            if prefer_local_styles and local.is_file():
+                found[name] = local
                 continue
             flat = _STYLES_DIR / f"{name}.sty"
             if flat.is_file():
@@ -217,8 +229,14 @@ def _sanitize_unavailable_graphics(template_tex: Path, materials_dir: Path) -> l
     return warnings
 
 
-def _copy_styles(template_tex: Path, environment_dir: Path, tests_dir: Path) -> None:
-    styles = _referenced_style_files(template_tex)
+def _copy_styles(
+    template_tex: Path,
+    environment_dir: Path,
+    tests_dir: Path,
+    *,
+    prefer_local_styles: bool = False,
+) -> None:
+    styles = _referenced_style_files(template_tex, prefer_local_styles=prefer_local_styles)
     for name, style in styles.items():
         for target_root in (environment_dir, tests_dir):
             texmf = target_root / "texmf"
@@ -232,6 +250,58 @@ def _copy_document_classes(template_tex: Path, environment_dir: Path, tests_dir:
             texmf = target_root / "texmf"
             texmf.mkdir(parents=True, exist_ok=True)
             shutil.copy2(document_class, texmf / f"{name}.cls")
+
+
+def _redact_lifesci_source_pointers(
+    paper_dir: Path,
+    materials_dir: Path,
+    *,
+    enabled: bool,
+) -> list[Path]:
+    """Withhold a LifeSci source paper's direct arXiv locator from code notes.
+
+    Linked-code READMEs are useful writer-visible implementation material, but
+    may include a one-click pointer to the ground-truth paper.  Preserve the
+    document while replacing only the paper identifier and its canonical arXiv
+    URL.  The source remains byte-addressed in verifier-only provenance.
+    """
+    if not enabled:
+        return []
+    provenance_path = paper_dir / "original" / "provenance.json"
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        arxiv_id = provenance.get("arxiv_id")
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(arxiv_id, str) or not re.fullmatch(r"\d{4}\.\d{4,5}", arxiv_id):
+        return []
+
+    code_readme = materials_dir / "code" / "README.md"
+    if not code_readme.is_file():
+        return []
+    original = code_readme.read_text(encoding="utf-8", errors="replace")
+    escaped_id = re.escape(arxiv_id)
+    redacted = re.sub(
+        rf"https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/{escaped_id}(?:v\d+)?(?:\.pdf)?",
+        "source-paper-url-withheld",
+        original,
+        flags=re.IGNORECASE,
+    )
+    redacted = re.sub(
+        rf"arXiv:\s*{escaped_id}(?:v\d+)?",
+        "arXiv: source-paper-identifier-withheld",
+        redacted,
+        flags=re.IGNORECASE,
+    )
+    redacted = re.sub(
+        rf"(?<![\d.]){escaped_id}(?:v\d+)?(?![\d.])",
+        "source-paper-identifier-withheld",
+        redacted,
+    )
+    if redacted == original:
+        return []
+    code_readme.write_text(redacted, encoding="utf-8")
+    return [code_readme]
 
 
 def _referenced_bst_files(*tex_files: Path) -> dict[str, Path]:
@@ -410,13 +480,23 @@ def _convert_paper(
     has_code = (environment_dir / "materials" / "code").is_dir()
     has_figures = (environment_dir / "materials" / "figures").is_dir()
     has_tables = (environment_dir / "materials" / "tables").is_dir()
-    _copy_styles(template_tex, environment_dir, tests_dir)
+    _copy_styles(
+        template_tex,
+        environment_dir,
+        tests_dir,
+        prefer_local_styles=layout_spec.style_resolution == "local-first-package-scan",
+    )
     _copy_document_classes(template_tex, environment_dir, tests_dir)
     _copy_bibliography_styles(
         environment_dir,
         tests_dir,
         template_tex,
         original / "main.tex",
+    )
+    _redact_lifesci_source_pointers(
+        paper_dir,
+        environment_dir / "materials",
+        enabled=layout_spec.redact_source_paper_references,
     )
     private_files, _ = stage_declared_copies(
         layout_spec, paper_dir, task_dir, overview, private=True

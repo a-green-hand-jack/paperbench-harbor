@@ -194,6 +194,44 @@ def test_bio_provenance_stays_verifier_only(tmp_path: Path) -> None:
     assert not (task_dir / "environment" / "materials" / "provenance.json").exists()
 
 
+def test_bio_redacts_direct_paper_pointers_but_keeps_local_style_bytes(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    paper = source / "paper_1"
+    resources = paper / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass{article}\n\\usepackage{arxiv}\n\\begin{document}\n\\end{document}\n",
+        encoding="utf-8",
+    )
+    local_style = resources / "arxiv.sty"
+    local_style.write_text(
+        "\\NeedsTeXFormat{LaTeX2e}\n\\RequirePackage{natbib}\n",
+        encoding="utf-8",
+    )
+    (resources / "code" / "README.md").write_text(
+        "Paper: [arXiv:2606.27607](https://arxiv.org/abs/2606.27607)\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "out"
+    convert_paperwrite_bench(
+        lifesci_paperrecon_conversion_config(
+            source=source,
+            output_dir=output,
+            upstream_revision="test-rev",
+            limit=1,
+        )
+    )
+
+    task = output / "lspr-0001"
+    assert (task / "environment" / "texmf" / "arxiv.sty").read_bytes() == local_style.read_bytes()
+    readme = (task / "environment" / "materials" / "code" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "2606.27607" not in readme
+    assert "arxiv.org/abs" not in readme
+    assert "source-paper-url-withheld" in readme
+
+
 def test_bio_conversion_is_deterministic(tmp_path: Path) -> None:
     source = _make_source(tmp_path)
 
