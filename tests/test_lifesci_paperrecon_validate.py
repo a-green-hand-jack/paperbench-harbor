@@ -22,6 +22,7 @@ import pytest
 from paperbench_harbor.construction.core.prompt import build_prompt
 from paperbench_harbor.construction.core.spec import PaperSpec
 from paperbench_harbor.construction.core.validate import (
+    _render_normalize_script,
     collect_source_tables,
     synchronize_source_table_materials,
     validate_paper,
@@ -208,6 +209,37 @@ def test_lifesci_prompt_requires_source_table_inventory() -> None:
     assert "table_inventory.json" in prompt
     assert "recursively inspect" in prompt
     assert "source table even if it is written inline" in prompt
+
+
+def test_normalizer_stages_private_tex_support_files(tmp_path: Path) -> None:
+    materials = tmp_path / "materials"
+    private = tmp_path / "private"
+    submission = tmp_path / "submission"
+    materials.mkdir()
+    private.mkdir()
+    (materials / "references.bib").write_text("@article{source, title={Source}}\n", encoding="utf-8")
+    (private / "main.tex").write_text(
+        "\\documentclass{sourceclass}\n\\begin{document}Text\\end{document}\n",
+        encoding="utf-8",
+    )
+    (private / "sourceclass.cls").write_text(
+        "\\NeedsTeXFormat{LaTeX2e}\n", encoding="utf-8"
+    )
+    (private / "source.bst").write_text("ENTRY{}{}{}\n", encoding="utf-8")
+
+    script = _render_normalize_script(tmp_path / "normalize.py")
+    result = subprocess.run(
+        (sys.executable, str(script), str(materials), str(submission), str(private)),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (submission / "sourceclass.cls").read_text(encoding="utf-8") == (
+        private / "sourceclass.cls"
+    ).read_text(encoding="utf-8")
+    assert (submission / "source.bst").is_file()
 
 
 def test_an_inline_source_table_without_public_material_fails(paper: Path) -> None:
