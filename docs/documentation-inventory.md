@@ -21,7 +21,9 @@ must cite an immutable release, tag, or current code revision.
 | `docs/non-ml-benchmark-survey.md` | Maintainers | GitHub | Historical research | Issue #2 scope only; no task usage guide |
 | `docs/paper-orchestra-sidecar.md` | Maintainers | GitHub | Keep | Sidecar operation |
 | `docs/papersmith-architecture.md` | Maintainers | GitHub | Keep | Construction architecture |
+| `docs/release-regression-deltas.md` | Release maintainers | GitHub | Keep | Document expected task-byte changes by release |
 | `docs/scholarly-search-sidecar.md` | Maintainers | GitHub | Keep | Sidecar operation |
+| `docs/source-archive.md` | Release maintainers | GitHub | Keep | Source-archive release gate and evidence requirements |
 | `docs/submission-contract.md` | Maintainers | GitHub | Keep | Submission/verifier contract |
 | `docs/trial-dataset.md` | Trial maintainers | GitHub | Updated | Export and sanitization only; link users to HF card |
 | `packaging/huggingface/paper-writing-exam/README.md` | Task users | Hugging Face | Updated | Dataset relations, task selection, use, material boundary |
