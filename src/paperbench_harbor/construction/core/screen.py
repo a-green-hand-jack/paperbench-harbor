@@ -246,14 +246,30 @@ so there is nothing to re-verify and you are searching from scratch. Find
 
     return f"""\
 You are screening candidate papers for a paper-reconstruction benchmark. Your
-output is a **proposal** that a human will review. You are not building
-anything, and you are not adding anything to any approved list.
+output is a **proposal** that independent verifier agents will review. You are
+not building anything, and you are not adding anything to any approved list.
 
 Propose {target_count} papers that satisfy every criterion below. Verify each one
 against live sources — the arXiv abstract page, the e-print bundle, and the
 GitHub API. Do not answer from memory about any paper; a license or a repository
 you recall may have changed, and a plausible-looking wrong answer here costs a
 whole failed construction run to discover.
+
+# Discovery protocol
+
+Harbor has already run its own LKM adapter with the official `bohr lkm search`
+command. The compact leads above come from the recorded `discovery.json`
+snapshot; use them to improve recall and ranking. Do **not** call the raw
+Bohrium HTTP endpoint, do not use `curl` against `open.bohrium.com`, and do not
+require `BOHR_ACCESS_KEY` or any other LKM credential in this screening
+session. Do not silently replace the Harbor adapter with a different LKM
+client. If the snapshot records an LKM failure, use its recorded arXiv or
+Semantic Scholar fallback leads instead.
+
+LKM is discovery metadata only. It is never proof of a paper license, version,
+primary category, e-print contents, repository, or repository license. Those
+facts must still be checked independently against the live arXiv abstract page,
+e-print bundle, and GitHub API before a candidate is proposed.
 
 # Where to look
 

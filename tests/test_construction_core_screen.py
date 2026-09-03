@@ -113,6 +113,22 @@ def test_the_core_invariants_are_present_whatever_the_policy_says() -> None:
     assert "GET /repos/{owner}/{repo}" in prompt
 
 
+def test_screening_uses_the_harbor_lkm_snapshot_not_the_raw_service() -> None:
+    prompt = build_screening_prompt(
+        GEOLOGY_POLICY,
+        discovery_context="- [bohrium-lkm] 2503.00001: A geology lead",
+        target_count=10,
+        output_path=Path("/scratch/candidates.json"),
+    )
+    assert "official `bohr lkm search`" in prompt
+    assert "`discovery.json`" in prompt
+    assert "snapshot" in prompt
+    assert "Do **not** call the raw" in prompt
+    assert "open.bohrium.com" in prompt
+    assert "BOHR_ACCESS_KEY" in prompt
+    assert "LKM is discovery metadata only" in prompt
+
+
 def test_seeds_are_listed_for_re_verification_not_trusted() -> None:
     prompt = build_screening_prompt(
         GEOLOGY_POLICY,

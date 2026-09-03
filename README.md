@@ -37,10 +37,12 @@ maintenance contracts so a release does not create two competing user manuals.
 
 ## OpenCode workflows
 
-The repository has two human-gated OpenCode entry points. They orchestrate
-screening, verification, and evidence collection but cannot directly edit the
-repository or bypass a required audit. The converting and publishing programs
-remain deterministic, separately auditable maintainer commands.
+The repository has two OpenCode entry points. They orchestrate screening,
+verification, and evidence collection but cannot directly edit the repository
+or bypass a required audit. Existing-benchmark onboarding retains its explicit
+human SHA gate; PaperRecon candidate selection uses two independent verifier
+agents. The converting and publishing programs remain deterministic,
+separately auditable maintainer commands.
 
 ### Onboard an existing benchmark
 
@@ -71,12 +73,16 @@ flowchart TD
 
 ### Build tasks from papers
 
-PaperSmith has four human-gated paper-to-task agents: `papersmith-lifesci`,
+PaperSmith has four paper-to-task agents: `papersmith-lifesci`,
 `papersmith-physics`, `papersmith-chemistry`, and `papersmith-mathematics`.
 They share a public-materials-to-paper-reconstruction protocol while retaining
-domain-specific screening policies and writing instructions. LKM is the first
-candidate-discovery provider for PaperSmith: it improves recall and ranking,
-but never establishes source, license, code, or reconstructability facts.
+domain-specific screening policies and writing instructions. PaperSmith invokes
+Harbor's LKM adapter through the official `bohr lkm search` command and records
+the normalized result in `discovery.json`. The screening agent must consume that
+snapshot rather than calling a raw Bohrium endpoint or requiring
+`BOHR_ACCESS_KEY`. LKM improves recall and ranking, but never establishes
+source, license, code, or reconstructability facts; those remain authoritative
+arXiv/e-print/GitHub checks.
 
 ```mermaid
 flowchart TD

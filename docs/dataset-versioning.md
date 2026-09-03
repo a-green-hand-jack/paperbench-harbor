@@ -42,13 +42,20 @@ that has not been published at an immutable archive revision.
 New PaperRecon domains first publish reviewable candidate revisions, not public
 dataset tags. Candidate manifests record the construction revision, source
 archive revision, LKM discovery snapshot, independently verified provenance,
-and the SHA-256 of the human approval record that selected every paper.
+and the SHA-256 of the independent verifier approval record that selected every
+paper. The discovery snapshot is produced by Harbor's official `bohr lkm
+search` adapter and is replayable evidence of the leads presented to screening;
+screening agents must not call the raw Bohrium endpoint or require
+`BOHR_ACCESS_KEY`.
 
 Physics, Chemistry, and Mathematics may receive their first public `v0.1.0`
-tags only when each domain has at least 20 human-approved tasks that have been
+tags only when each domain has at least 20 independent-verifier-approved tasks that have been
 fully rebuilt and pass task contracts, fidelity, deterministic regeneration,
 semantic review, and source-archive verification. LKM is a discovery input
-only; it cannot substitute for independent source or license verification.
+only; it cannot substitute for independent source or license verification. The
+promoter performs those authoritative arXiv/e-print/GitHub checks separately
+and should reuse cached responses with bounded backoff when a provider returns
+`403` or `429`, rather than treating rate limiting as a candidate rejection.
 
 ## Current task release
 
