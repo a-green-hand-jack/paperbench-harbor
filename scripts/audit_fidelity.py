@@ -82,6 +82,7 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
             protocol=protocol,
             semantic_review=args.semantic_review,
             reviewer_model=args.reviewer_model,
+            review_log_dir=args.output / "review-logs",
         )
     except DatasetAuditError as exc:
         raise SystemExit(str(exc)) from exc

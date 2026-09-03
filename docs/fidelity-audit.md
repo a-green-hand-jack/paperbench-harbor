@@ -51,12 +51,14 @@ dataset-level determinism check. Determinism is deliberately not part of the
 conversion command: it is a property of the converter rather than of any task,
 and establishing it costs two further full conversions.
 
-The audit writes one `<task-id>.json` report per task plus a `summary.json`
-with overall totals, determinism, semantic-review outcomes, and a version-pinned
-evidence block: upstream revision/tree digest, dataset tree digest, converter
-revision, and reviewer selection. Retain that generated report with the
-released dataset version; it is the audit evidence, rather than a copied table
-of counts in this document.
+The audit writes one `<task-id>.json` report per task, `summary.json`, and
+`review-logs/` below the requested output directory. The latter is isolated per
+audit run, so concurrent audits cannot overwrite each other's reviewer
+evidence. The summary records overall totals, determinism, semantic-review
+outcomes, and a version-pinned evidence block: upstream revision/tree digest,
+dataset tree digest, converter revision, and reviewer selection. Retain that
+generated report directory with the released dataset version; it is the audit
+evidence, rather than a copied table of counts in this document.
 
 Source-to-Harbor layout lives in each benchmark's
 `src/paperbench_harbor/adapters/*/spec.py` and drives production staging. The
@@ -95,7 +97,7 @@ Harbor task `environment/materials/` mirrors this exactly:
 | `figures/`, `tables/`, `code/` | `materials/*` | identical bytes |
 | `eval_points.json` (excluded upstream) | verifier-only (`tests/private/`) | matches |
 | non-selected overview (excluded upstream) | verifier-only (`tests/private/`) | matches |
-| `AGENTS_<type>.md` | embedded in `instruction.md` + `materials/AGENTS.md` | identical text |
+| `AGENTS_<type>.md` | embedded in `instruction.md` + `materials/AGENTS.md` | preserves the upstream instructions; an existing `Acknowledgements` heading may be retained but must receive no new content |
 
 The one-shot writing prompt is reproduced in `instruction.md` (overview and
 figure/table descriptions are referenced by file path instead of being

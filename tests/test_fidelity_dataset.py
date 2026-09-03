@@ -87,6 +87,34 @@ def test_venue_comes_from_the_manifest_entry(tmp_path: Path, monkeypatch) -> Non
     assert seen["venue"] == "cvpr2025"
 
 
+def test_dataset_audit_passes_an_explicit_review_log_directory(tmp_path: Path, monkeypatch) -> None:
+    dataset = tmp_path / "dataset"
+    _write_manifest(dataset, [{"task_id": "pwb-0001", "upstream_paper_id": "paper_1"}])
+    (dataset / "pwb-0001").mkdir()
+
+    seen: dict = {}
+
+    def _fake(**kwargs):
+        seen.update(kwargs)
+        return TaskReport(
+            benchmark=kwargs["benchmark"],
+            task_id=kwargs["task_id"],
+            upstream_paper_id=kwargs["upstream_paper_id"],
+            ok=True,
+        )
+
+    monkeypatch.setattr("paperbench_harbor.fidelity.dataset.run_fidelity_audit", _fake)
+    review_logs = tmp_path / "review-logs"
+    audit_dataset(
+        benchmark="PaperWrite-Bench",
+        source=tmp_path / "source",
+        dataset=dataset,
+        protocol="short",
+        review_log_dir=review_logs,
+    )
+    assert seen["review_log_dir"] == review_logs
+
+
 def _report(task_id: str, errors: list[str]) -> TaskReport:
     return TaskReport(
         benchmark="PaperWrite-Bench",
