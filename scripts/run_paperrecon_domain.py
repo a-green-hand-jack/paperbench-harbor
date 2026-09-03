@@ -40,6 +40,7 @@ from scripts.promote_lifesci_paperrecon_candidates import (
     read_candidates,
     read_human_approval,
 )
+from scripts.verify_paperrecon_candidates import VerifierError, read_agent_approval
 
 
 def _summary(candidates: list[Candidate]) -> dict[str, object]:
@@ -79,7 +80,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--candidates", type=Path)
-    parser.add_argument("--human-approval", type=Path)
+    parser.add_argument("--human-approval", type=Path, help="legacy LifeSci approval record")
+    parser.add_argument("--agent-approval", type=Path, help="independent verifier-agent approval manifest")
     parser.add_argument("--promote", action="store_true")
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--convert", action="store_true")
@@ -129,24 +131,30 @@ def _screen(args: argparse.Namespace) -> int:
 
 def _promote_and_build(args: argparse.Namespace) -> int:
     domain = get_domain(args.domain)
-    if not all((args.candidates, args.human_approval, args.promote, args.build, args.convert, args.audit)):
+    if not all((args.candidates, args.promote, args.build, args.convert, args.audit)) or not (args.agent_approval or args.human_approval):
         raise ValueError(
-            "promotion requires --candidates --human-approval --promote --build --convert --audit"
+            "promotion requires --candidates --agent-approval --promote --build --convert --audit"
         )
     candidates_path = args.candidates.resolve()
     candidates = read_candidates(
         candidates_path, policy=domain.screening_policy, exclude_ids=domain.exclude_ids
     )
-    approval = read_human_approval(
-        args.human_approval.resolve(), candidates_path=candidates_path, candidates=candidates
-    )
+    if args.agent_approval:
+        approval = read_agent_approval(
+            args.agent_approval.resolve(), candidates_path=candidates_path, candidates=candidates
+        )
+    else:
+        legacy = read_human_approval(
+            args.human_approval.resolve(), candidates_path=candidates_path, candidates=candidates
+        )
+        approval = {"candidate_sha256": legacy.candidate_sha256, "approved_arxiv_ids": legacy.approved_arxiv_ids, "reviewer": legacy.reviewer}
     _outcomes, promoted, promotion_summary = promote(
         candidates,
         approved_file=args.run_root.resolve() / "approved_scaleup.jsonl",
         promote_now=True,
         limit=None,
-        approved_arxiv_ids=approval.approved_arxiv_ids,
-        human_reviewer=approval.reviewer,
+        approved_arxiv_ids=approval["approved_arxiv_ids"],
+        human_reviewer=approval["reviewer"],
         existing_specs=domain.approved_papers,
     )
     specs = [*domain.approved_papers, *promoted]
@@ -228,7 +236,7 @@ def _promote_and_build(args: argparse.Namespace) -> int:
         source_archive = str(source_archive_dir)
     result = {
         "promotion": promotion_summary,
-        "approval_sha256": approval.candidate_sha256,
+        "approval_sha256": approval["candidate_sha256"],
         "built_tasks": len(outcomes_build),
         "converted_tasks": converted,
         "dataset": str(output_dir),
@@ -244,7 +252,7 @@ def main() -> int:
     args = _parser().parse_args()
     try:
         return _promote_and_build(args) if args.candidates else _screen(args)
-    except (ValueError, PromotionError, ScreeningError, DatasetAuditError) as error:
+    except (ValueError, PromotionError, ScreeningError, DatasetAuditError, VerifierError) as error:
         print(f"ERROR: {error}")
         return 1
 

@@ -92,9 +92,10 @@ flowchart TD
     screen --> liveverify[Independently verify paper and code provenance, licenses, and eligibility]
     liveverify --> valid{Eligible and verifiable?}
     valid -- no --> reportrejected([Report rejected or unverifiable candidates])
-    valid -- yes --> humanapproval{Human SHA-bound approval?}
-    humanapproval -- not yet --> hold([Stop at the approval gate])
-    humanapproval -- yes --> promote[Promote approved paper IDs and immutable approval SHA]
+    valid -- yes --> consolidate[Merge iterative reports into deterministic SHA-bound candidate set]
+    consolidate --> agentapproval{Two independent verifier agents unanimously approve?}
+    agentapproval -- not yet --> hold([Stop at the approval gate])
+    agentapproval -- yes --> promote[Promote approved paper IDs and immutable approval SHA]
     promote --> construct[Construct source corpus with one isolated OpenCode build and review session per paper]
     construct --> convert[Convert the corpus to Harbor tasks]
     convert --> fidelity[Fidelity, determinism, and semantic audits]
@@ -119,10 +120,30 @@ These workflows establish task-construction correctness only. They do not score
 or make claims about the performance of a paper-writing agent.
 
 For Physics, Chemistry, and Mathematics, a domain is not ready for public
-release until it has at least 20 human-approved, fully rebuilt tasks that pass
+release until it has at least 20 independent-verifier-approved, fully rebuilt tasks that pass
 the same conversion, fidelity, determinism, and semantic audits. Candidate
 revisions are review artifacts identified by immutable SHAs, not public version
 tags.
+
+For a new PaperRecon domain, merge iterative reports before review:
+
+```bash
+uv run --all-extras python scripts/consolidate_paperrecon_candidates.py \
+  --domain chemistry \
+  --report <screen-run-1>/candidates.json \
+  --report <screen-run-2>/candidates.json \
+  --output <run>/candidate-set.json \
+  --minimum 20 --reserve 5
+```
+
+Then run two isolated verifier agents with distinct models. Promotion accepts
+only the resulting SHA-bound `agent-approval.json`.
+
+```bash
+uv run --all-extras python scripts/verify_paperrecon_candidates.py \
+  --domain chemistry --candidates <run>/candidate-set.json \
+  --run-root <run>/verifier --minimum-approved 20
+```
 
 ## Benchmark families
 
