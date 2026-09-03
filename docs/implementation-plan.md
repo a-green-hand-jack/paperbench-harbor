@@ -1,5 +1,11 @@
 # Harbor Adapter Implementation Plan
 
+> **Historical plan:** this document records the original adapter design.
+> Current released-task use and immutable revisions are maintained in the
+> [Paper-Writing-Exam dataset card](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam).
+> Do not treat this plan's task counts, commands, or future-tense items as
+> current release behavior without checking the relevant immutable revision.
+
 ## Objective
 
 Convert PaperWritingBench and PaperWrite-Bench into two independent Harbor datasets before evaluating any writing agent.
