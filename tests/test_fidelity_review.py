@@ -15,6 +15,7 @@ from paperbench_harbor.fidelity import review as review_module
 from paperbench_harbor.fidelity.audit import run_fidelity_audit
 from paperbench_harbor.fidelity.review import (
     DEFAULT_CONVERSION_REVIEWER_MODEL,
+    build_conversion_review_prompt,
     prepare_conversion_review_dir,
     run_conversion_review,
 )
@@ -47,6 +48,15 @@ def test_conversion_review_stages_only_upstream_and_writer_evidence(tmp_path: Pa
     assert (staged / "task" / "environment" / "texmf" / ".keep").is_file()
     assert not (staged / "task" / "solution").exists()
     assert not (staged / "task" / "tests").exists()
+
+
+def test_pwbw_plot_off_review_context_explains_provided_figures(tmp_path: Path) -> None:
+    prompt = build_conversion_review_prompt(
+        tmp_path / "review", "PaperWritingBench", "sparse-plotoff"
+    )
+
+    assert '"PlotOff" disables generation of\nnew figures' in prompt
+    assert "every\nfigure named" in prompt
 
 
 def test_conversion_review_runs_in_a_throwaway_directory(tmp_path: Path, monkeypatch) -> None:

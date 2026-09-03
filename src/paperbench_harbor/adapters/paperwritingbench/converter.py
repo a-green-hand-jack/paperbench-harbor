@@ -23,10 +23,7 @@ from paperbench_harbor.adapters.paperwritingbench.spec import SPEC
 from paperbench_harbor.adapters.spec import find_paper_dirs, stage_declared_copies
 from paperbench_harbor.common.audit import audit_forbidden_names
 from paperbench_harbor.common.manifest import write_source_manifest
-from paperbench_harbor.common.task_contract import (
-    assert_valid_task_contract,
-    normalize_markdown_tables,
-)
+from paperbench_harbor.common.task_contract import assert_valid_task_contract
 
 # Do not advertise protocols that have no faithful converter. New protocols are
 # added only with their upstream fixture, layout rules, evaluator, and release
@@ -44,22 +41,22 @@ _PAPER_ORDER_RE = re.compile(r"(\d+)")
 
 _UPSTREAM_DATA_WARNINGS = {
     "pwbw-0007": "Some supplied visual comparisons are incomplete; do not infer missing rendered content.",
-    "pwbw-0025": "One result-table header is under-specified upstream; neutral labels preserve its extra values.",
+    "pwbw-0025": "One result-table header is under-specified upstream; do not invent labels for its values.",
     "pwbw-0030": "Some supplied reenactment visual comparisons are incomplete; do not infer missing rendered content.",
     "pwbw-0048": "One supplied figure is visibly clipped upstream; use it only for what is actually visible.",
     "pwbw-0059": "One supplied figure is visibly incomplete upstream; use it only for what is actually visible.",
     "pwbw-0083": "One supplied figure is visibly incomplete upstream; use it only for what is actually visible.",
-    "pwbw-0096": "A Markdown result-table alignment row was repaired mechanically from the upstream data.",
+    "pwbw-0096": "One upstream Markdown table has a non-standard alignment row; preserve its cells exactly.",
     "pwbw-0101": "A Figure 2 caption is truncated in the upstream source; do not complete it by inference.",
     "pwbw-0116": "The upstream experimental log does not state a batch size; do not report one as established fact.",
-    "pwbw-0132": "A Markdown result-table alignment row was repaired mechanically from the upstream data.",
+    "pwbw-0132": "One upstream Markdown table has a non-standard alignment row; preserve its cells exactly.",
     "pwbw-0133": "Some Kendall tau cells use an ambiguous upstream sentinel; report the ambiguity rather than assigning meaning.",
     "pwbw-0144": "Some figure captions are truncated in the upstream source; do not complete them by inference.",
     "pwbw-0149": "Referenced audio supplements are absent upstream; do not claim observations from unavailable audio.",
-    "pwbw-0165": "A Markdown table contained an escaped-pipe repair from upstream notation; preserve the literal mathematical meaning.",
+    "pwbw-0165": "An upstream table uses escaped-pipe notation; preserve its literal mathematical meaning.",
     "pwbw-0170": "The supplied source omits central method definitions; restrict claims to the available description.",
     "pwbw-0171": "Some figure captions are truncated in the upstream source; do not complete them by inference.",
-    "pwbw-0197": "A Markdown table contained an escaped-pipe repair from upstream notation; preserve the literal mathematical meaning.",
+    "pwbw-0197": "An upstream table uses escaped-pipe notation; preserve its literal mathematical meaning.",
 }
 
 
@@ -104,17 +101,11 @@ def _iter_papers(source: Path) -> list[tuple[Path, _PaperMetadata]]:
 
 def _copy_public_materials(
     paper_dir: Path, task_dir: Path, venue: str
-) -> tuple[list[Path], dict[Path, tuple[str, Path]], list[str]]:
+) -> tuple[list[Path], dict[Path, tuple[str, Path]]]:
     environment_dir = task_dir / "environment"
     materials_dir = environment_dir / "materials"
     materials_dir.mkdir(parents=True, exist_ok=True)
     copied, provenance = stage_declared_copies(SPEC, paper_dir, task_dir)
-    warnings: list[str] = []
-
-    experimental_log = materials_dir / "experimental_log.md"
-    if experimental_log.is_file():
-        warnings.extend(normalize_markdown_tables(experimental_log))
-
     template_dir = _CONFERENCE_TEMPLATES_DIR / venue
     if not template_dir.is_dir():
         raise FileNotFoundError(f"conference template missing: {template_dir}")
@@ -125,7 +116,7 @@ def _copy_public_materials(
             copied.append(path)
             provenance[path] = ("harbor_conference_template", template_dir / path.relative_to(destination))
 
-    return copied, provenance, warnings
+    return copied, provenance
 
 
 def _render_templates(
@@ -202,10 +193,8 @@ def _convert_paper(
     tests_dir = directories.tests
     tests_private = directories.tests_private
 
-    public_files, material_provenance, normalization_warnings = _copy_public_materials(
-        paper_dir, task_dir, metadata.venue
-    )
-    upstream_warnings = [*normalization_warnings]
+    public_files, material_provenance = _copy_public_materials(paper_dir, task_dir, metadata.venue)
+    upstream_warnings: list[str] = []
     known_warning = _UPSTREAM_DATA_WARNINGS.get(task_id)
     if known_warning:
         upstream_warnings.append(known_warning)
@@ -232,11 +221,13 @@ def _convert_paper(
         tests_dir / "vendor" / "paper_orchestra",
         ignore=_ignore_bytecode,
     )
-    # Ship the complete upstream PaperOrchestra pipeline with the writer environment.
+    # The frontend's bundled demonstration describes a real benchmark paper;
+    # it is not runtime support and would disclose ground truth to the writer.
+    _ignore_writer_examples = shutil.ignore_patterns("__pycache__", "*.pyc", "examples")
     shutil.copytree(
         _VENDOR_DIR / "paper_orchestra" / "upstream_pipeline",
         environment_dir / "paper_orchestra",
-        ignore=_ignore_bytecode,
+        ignore=_ignore_writer_examples,
     )
     shutil.copy2(
         Path(__file__).resolve().parents[2] / "sidecar" / "server.py",

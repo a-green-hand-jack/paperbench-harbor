@@ -20,7 +20,10 @@ def _make_paper(source: Path, venue: str, paper_id: str) -> None:
     (paper_dir / f"{paper_id}.pdf").write_bytes(b"%PDF-1.4 fake")
     (raw / "idea_sparse.md").write_text("# Title\n## Problem Statement\nA problem.\n", encoding="utf-8")
     (raw / "idea_dense.md").write_text("# Dense idea\n", encoding="utf-8")
-    (raw / "experimental_log.md").write_text("## Experimental Setup\n- dataset\n", encoding="utf-8")
+    (raw / "experimental_log.md").write_text(
+        "## Experimental Setup\n| Metric | $P(a|b)$ |\n| :--- | :--- |\n| Result | 1 |\n",
+        encoding="utf-8",
+    )
     (raw / "figures").mkdir()
     (raw / "figures" / "figure_1.png").write_bytes(b"\x89PNG fake")
     (raw / "figures" / "info.json").write_text(
@@ -42,8 +45,9 @@ def _make_source(tmp_path: Path) -> Path:
 
 
 def test_convert_creates_expected_structure(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
     config = PaperWritingBenchConversionConfig(
-        source=_make_source(tmp_path), output_dir=tmp_path / "out", protocol="sparse-plotoff"
+        source=source, output_dir=tmp_path / "out", protocol="sparse-plotoff"
     )
     assert convert_paperwritingbench(config) == 3
 
@@ -60,10 +64,19 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert "Do not rely on absolute\npaths, parent-directory paths, or files under `/workspace/materials/`" in instruction
     assert "2024-10-01" in instruction
     assert "credential-free Semantic Scholar fallback" in instruction
+    assert "Use every provided figure exactly once, without merging or grouping them" in instruction
     materials = task_dir / "environment" / "materials"
     assert (materials / "idea_sparse.md").is_file()
     assert (materials / "experimental_log.md").is_file()
     assert (materials / "figures" / "figure_1.png").is_file()
+    assert (materials / "experimental_log.md").read_text(encoding="utf-8") == (
+        source
+        / "cvpr2025"
+        / "papers"
+        / "cvpr2025_aaaa"
+        / "raw_materials"
+        / "experimental_log.md"
+    ).read_text(encoding="utf-8")
     assert (task_dir / "environment" / "texmf" / ".keep").is_file()
     assert (materials / "conference_template" / "template.tex").is_file()
     conference_template = (materials / "conference_template" / "template.tex").read_text(
@@ -75,6 +88,7 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     upstream = task_dir / "environment" / "paper_orchestra"
     assert (upstream / "paper_writing_cli.py").is_file()
     assert (upstream / "methods" / "paper_writer.py").is_file()
+    assert not (upstream / "frontend" / "examples").exists()
     assert (task_dir / "environment" / "paper_orchestra_sidecar.py").is_file()
     assert (task_dir / "environment" / "entrypoint.sh").is_file()
     assert (task_dir / "solution" / "solve.sh").is_file()

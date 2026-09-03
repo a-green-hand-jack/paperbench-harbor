@@ -17,6 +17,20 @@ DEFAULT_CONVERSION_REVIEWER_MODEL = "apex-claude/claude-sonnet-5"
 VERDICT_FILENAME = "verdict.json"
 
 
+def _protocol_review_context(benchmark: str, protocol: str) -> str:
+    if benchmark == "PaperWritingBench" and protocol == "sparse-plotoff":
+        return """\
+
+For PaperWritingBench `sparse-plotoff`, "PlotOff" disables generation of
+new figures. It does not remove the upstream-provided figure assets: every
+figure named in `raw_materials/figures/info.json` remains writer-visible and
+the task instruction must require each one to be used separately. Do not flag
+those provided figures as a protocol violation merely because the protocol is
+named `plotoff`.
+"""
+    return ""
+
+
 def _review_scratch_root() -> Path:
     """Return a disposable review root that cannot inherit a repository's Git state.
 
@@ -94,6 +108,7 @@ protocol variants in its upstream sample; those variants are deliberately not
 writer-visible for this task. Do not report a source file as omitted merely
 because it belongs to a different protocol. Judge the selected protocol's
 instruction and materials instead.
+{_protocol_review_context(benchmark, protocol)}
 
 # Evidence
 
