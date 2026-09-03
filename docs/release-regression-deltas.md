@@ -22,7 +22,9 @@ standard exclusions are deliberately visible in the command invocation:
   safeguard generated only when it is needed.
 
 No exclusion is an unreviewed content change: `scripts/regress_release.py`
-reports zero missing, added, and changed files after the named exclusions.
+reports zero missing, added, and changed files after the named exclusions, and
+the configuration-specific entries below identify any material correction that
+needs a separate fidelity audit.
 
 ## PaperWrite-Bench
 
@@ -48,9 +50,29 @@ independent semantic audit, not an unreviewed exclusion.
 
 ## PaperWritingBench
 
-The allowed comparison covers 32,240 files, all identical after only the
-standard generated-file exclusions. There is no PaperWritingBench content
-delta in this PR.
+The allowed comparison keeps every path outside two reviewed fidelity repairs
+byte-identical to `v0.3.1`. The two additional named comparison exclusions are
+`environment/materials/experimental_log.md` and
+`environment/paper_orchestra/` for all 200 tasks:
+
+- The historical converter rewrote experimental logs by escaping mathematical
+  pipes, adding synthetic table headers, and padding cells with invented `NA`
+  values. The corrected converter copies each log byte-for-byte from the pinned
+  upstream source. The full independent material and semantic audit verifies
+  that every excluded log now has the declared upstream origin rather than
+  treating this exclusion as a content waiver.
+- The historical writer environment shipped the complete PaperOrchestra source
+  tree. It included a front-end example with a direct ground-truth-paper URL,
+  evaluator code, and sample pipeline commands. The corrected environment
+  ships only the sidecar's declared runtime closure: `LICENSE`, the literature
+  review agent and prompt, and the Gemini, prompt, and Semantic Scholar helper
+  modules. The converter regression test asserts that no CLI, evaluator, or
+  front-end subtree remains writer-visible.
+
+The generated instruction now faithfully states the upstream PlotOff contract:
+provided figures are supplied rather than newly generated, and every figure in
+`info.json` must be used separately. The full isolated semantic audit is the
+release gate for these content corrections.
 
 ## LifeSci-PaperRecon
 

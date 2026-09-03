@@ -86,11 +86,18 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
     assert "Ambitious AI Researcher" not in conference_template
     assert "\\usepackage[review]{cvpr}" in conference_template
     upstream = task_dir / "environment" / "paper_orchestra"
-    assert (upstream / "methods" / "agents" / "literature_review_agent.py").is_file()
-    assert (upstream / "utils" / "scholar_utils.py").is_file()
-    assert not (upstream / "paper_writing_cli.py").exists()
-    assert not (upstream / "autoraters").exists()
-    assert not (upstream / "frontend").exists()
+    assert {
+        path.relative_to(upstream).as_posix()
+        for path in upstream.rglob("*")
+        if path.is_file()
+    } == {
+        "LICENSE",
+        "methods/agents/literature_review_agent.py",
+        "methods/prompts/literature_review_agent.py",
+        "utils/gemini_utils.py",
+        "utils/prompt_utils.py",
+        "utils/scholar_utils.py",
+    }
     assert (task_dir / "environment" / "paper_orchestra_sidecar.py").is_file()
     assert (task_dir / "environment" / "entrypoint.sh").is_file()
     assert (task_dir / "solution" / "solve.sh").is_file()
