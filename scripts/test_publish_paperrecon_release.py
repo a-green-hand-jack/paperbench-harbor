@@ -36,7 +36,7 @@ def _run(root: Path, domain: str, count: int = 20) -> None:
 def test_gate_requires_all_domains(tmp_path: Path) -> None:
     for domain in publisher.DOMAINS[1:]:
         _run(tmp_path / domain, domain)
-    with pytest.raises(publisher.ReleasePublisherError, match="lifesci"):
+    with pytest.raises(publisher.ReleasePublisherError, match="physics"):
         publisher.load_gate({domain: tmp_path / domain for domain in publisher.DOMAINS[1:]})
 
 
@@ -62,7 +62,9 @@ def test_gate_returns_immutable_digests(tmp_path: Path) -> None:
         roots[domain] = root
     evidence = publisher.load_gate(roots)
     assert evidence["minimum_tasks_per_domain"] == 20
-    assert {item["config"] for item in evidence["domains"]} == set(publisher.CONFIGS.values())
+    assert {item["config"] for item in evidence["domains"]} == {
+        publisher.CONFIGS[domain] for domain in publisher.DOMAINS
+    }
     assert all(len(item["dataset_tree_sha256"]) == 64 for item in evidence["domains"])
 
 
