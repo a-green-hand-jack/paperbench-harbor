@@ -50,10 +50,11 @@ independent semantic audit, not an unreviewed exclusion.
 
 ## PaperWritingBench
 
-The allowed comparison keeps every path outside two reviewed fidelity repairs
-byte-identical to `v0.3.1`. The two additional named comparison exclusions are
+The allowed comparison keeps every path outside three reviewed fidelity repairs
+byte-identical to `v0.3.1`. The three additional named comparison exclusions are
 `environment/materials/experimental_log.md` and
-`environment/paper_orchestra/` for all 200 tasks:
+`environment/paper_orchestra/`, plus `environment/paper_orchestra_sidecar.py`,
+for all 200 tasks:
 
 - The historical converter rewrote experimental logs by escaping mathematical
   pipes, adding synthetic table headers, and padding cells with invented `NA`
@@ -68,6 +69,11 @@ byte-identical to `v0.3.1`. The two additional named comparison exclusions are
   review agent and prompt, and the Gemini, prompt, and Semantic Scholar helper
   modules. The converter regression test asserts that no CLI, evaluator, or
   front-end subtree remains writer-visible.
+- The companion sidecar now imports only the credential-free Semantic Scholar
+  helper at startup and defers the Gemini-backed literature agent until valid
+  Gemini or Vertex credentials are deliberately supplied. This preserves the
+  credential-free discovery fallback and prevents writer-visible support code
+  from eagerly loading a credential-dependent integration.
 
 The generated instruction now faithfully states the upstream PlotOff contract:
 provided figures are supplied rather than newly generated, and every figure in
