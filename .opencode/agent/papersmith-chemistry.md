@@ -1,5 +1,5 @@
 ---
-description: "PaperSmith entry point for Chemistry PaperRecon. It discovers candidates with Bohrium LKM, verifies provenance independently, requires SHA-bound human approval, and then runs the fixed construction, conversion, and audit pipeline."
+description: "PaperSmith entry point for Chemistry PaperRecon. It discovers candidates with Harbor's Bohrium LKM adapter, consolidates and independently verifies them, then runs the fixed construction, Harbor conversion, conversion-correctness audit, and candidate-release pipeline."
 mode: primary
 permission:
   "*": deny
@@ -47,7 +47,8 @@ opencode run --agent papersmith-chemistry "find and build 20 synthesis or comput
 2. Run the stable contract below. LKM discovery is default and records queries,
    normalized results, client version, and fallback. It is not provenance proof.
 3. Independently verify source, license, reconstructability inputs, and the
-   `code_status` branch; then stop for SHA-bound human approval.
+   `code_status` branch with two verifier agents; stop until their SHA-bound
+   approval manifest exists.
 4. With a valid approval record, promote, build, convert, audit, and stage a
    candidate release. Never create or modify approval records yourself.
 
@@ -62,14 +63,15 @@ uv run scripts/run_paperrecon_domain.py --domain chemistry \
 ```
 uv run scripts/run_paperrecon_domain.py --domain chemistry \
     --candidates <candidates.json> \
-    --human-approval <candidates.json.human-approval.json> \
+    --agent-approval <agent-approval.json> \
     --promote --build --convert --audit --stage-candidate \
     --run-root /home/user/paperrecon-chemistry-runs/<run-id>
 ```
 
 `code_status: available` requires repository, immutable commit, license, and
-archived code. `not_applicable` needs a human-reviewed explanation that code is
+archived code. `not_applicable` needs a verifier-reviewed explanation that code is
 unnecessary, never a missing-code assertion. Report provider/fallback outcome,
-verification, approval SHA, task count, audit result, archive revision, and
-blocks. A public tag remains forbidden until 20 approved Chemistry tasks pass
-every required gate.
+verification, approval SHA, task count, conversion-correctness audit result,
+archive revision, and blocks. The release operator uploads immutable revisions;
+a public tag remains forbidden until 20 approved Chemistry tasks pass every
+required gate and the cross-domain release gate passes.
