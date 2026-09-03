@@ -113,8 +113,8 @@ def test_convert_creates_expected_structure(tmp_path: Path) -> None:
         manifest = task_dir / "tests" / "private" / "source_manifest.json"
         assert f'"upstream_id": "{paper_id}"' in manifest.read_text(encoding="utf-8")
         instruction = (task_dir / "instruction.md").read_text(encoding="utf-8")
-        assert "single-column paper" in instruction
-        assert (task_dir / "environment" / "materials" / "upstream_data_warnings.md").is_file()
+        assert "double-column paper" in instruction
+        assert not (task_dir / "environment" / "materials" / "upstream_data_warnings.md").exists()
 
     dataset_manifest = (tmp_path / "out" / "dataset-manifest.jsonl").read_text(encoding="utf-8")
     assert '"task_id": "pwb-0003"' in dataset_manifest

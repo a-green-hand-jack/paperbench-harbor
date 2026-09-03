@@ -189,22 +189,6 @@ def _referenced_class_files(template_tex: Path) -> dict[str, Path]:
     return found
 
 
-def _template_column(template_tex: Path) -> str:
-    """Use the shipped template, rather than stale upstream metadata, as authority."""
-
-    text = "\n".join(
-        line.split("%", 1)[0]
-        for line in template_tex.read_text(encoding="utf-8", errors="replace").splitlines()
-    )
-    if re.search(r"\\documentclass\[[^]]*twocolumn", text):
-        return "2column"
-    if re.search(r"\\twocolumn\b", text):
-        return "2column"
-    if re.search(r"\\documentclass(?:\[[^]]*\])?\{acmart\}", text):
-        return "2column"
-    return "1column"
-
-
 def _sanitize_unavailable_graphics(template_tex: Path, materials_dir: Path) -> list[str]:
     """Comment active graphic calls whose upstream assets were not provided."""
 
@@ -413,18 +397,6 @@ def _convert_paper(
     warnings = _sanitize_unavailable_graphics(
         environment_dir / "materials" / "template.tex", environment_dir / "materials"
     )
-    effective_column = _template_column(environment_dir / "materials" / "template.tex")
-    if effective_column != metadata.column:
-        warnings.append(
-            f"Upstream column metadata `{metadata.column}` conflicts with the shipped template; Harbor uses `{effective_column}`."
-        )
-        metadata = _PaperMetadata(
-            paper_id=metadata.paper_id,
-            paper_type=metadata.paper_type,
-            num_page=metadata.num_page,
-            column=effective_column,
-            conference=metadata.conference,
-        )
     if warnings:
         warning_path = environment_dir / "materials" / "upstream_data_warnings.md"
         warning_path.write_text(

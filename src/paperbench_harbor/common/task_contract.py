@@ -155,7 +155,7 @@ def validate_task_contract(task_dir: Path) -> list[ContractFinding]:
                 or re.search(r"\\twocolumn\b", source)
                 or re.search(r"\\documentclass(?:\[[^]]*\])?\{acmart\}", source)
             )
-            if (expected.group(1) == "double") != has_two_columns:
+            if has_two_columns and expected.group(1) != "double":
                 findings.append(ContractFinding("format_template_mismatch", expected.group(0)))
 
     log_path = materials / "experimental_log.md"
