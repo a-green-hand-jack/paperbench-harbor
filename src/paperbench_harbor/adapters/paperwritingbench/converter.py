@@ -9,11 +9,13 @@ from pathlib import Path
 from jinja2 import Environment
 
 from paperbench_harbor.adapters.core.convert import (
+    assert_source_tree_unchanged,
     create_template_environment,
     load_dataset_manifest,
     prepare_task_directories,
     prepare_task_output,
     render_templates,
+    source_tree_sha256,
     task_id_for,
     write_dataset_manifest,
 )
@@ -309,6 +311,7 @@ def convert_paperwritingbench(config: PaperWritingBenchConversionConfig) -> int:
         raise ValueError(f"Unsupported protocol {config.protocol!r}; expected one of: {allowed}")
     if not config.source.is_dir():
         raise FileNotFoundError(f"source directory not found: {config.source}")
+    source_digest = source_tree_sha256(config.source)
 
     papers = _iter_papers(config.source)
     if config.limit is not None:
@@ -347,6 +350,7 @@ def convert_paperwritingbench(config: PaperWritingBenchConversionConfig) -> int:
         }
         converted += 1
 
+    assert_source_tree_unchanged(config.source, source_digest)
     if converted:
         write_dataset_manifest(manifest_path, manifest)
 

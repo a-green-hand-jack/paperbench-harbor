@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from paperbench_harbor.adapters.paperwrite_bench import converter as converter_module
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
@@ -132,6 +133,21 @@ def test_conversion_is_idempotent(tmp_path: Path) -> None:
         )
         == 3
     )
+
+
+def test_conversion_rejects_a_source_tree_that_changes_mid_run(tmp_path: Path, monkeypatch) -> None:
+    source = _make_source(tmp_path)
+
+    def mutate_source(**kwargs) -> None:
+        (source / "paper_1" / "resources" / "changed-during-conversion.txt").write_text(
+            "changed", encoding="utf-8"
+        )
+
+    monkeypatch.setattr(converter_module, "_convert_paper", mutate_source)
+    with pytest.raises(RuntimeError, match="source tree changed during conversion"):
+        convert_paperwrite_bench(
+            PaperWriteBenchConversionConfig(source=source, output_dir=tmp_path / "out", limit=1)
+        )
 
 
 def test_no_private_material_in_environment(tmp_path: Path) -> None:

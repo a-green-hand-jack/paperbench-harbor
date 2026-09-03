@@ -9,11 +9,13 @@ from pathlib import Path
 from jinja2 import Environment
 
 from paperbench_harbor.adapters.core.convert import (
+    assert_source_tree_unchanged,
     create_template_environment,
     load_dataset_manifest,
     prepare_task_directories,
     prepare_task_output,
     render_templates,
+    source_tree_sha256,
     task_id_for,
     write_dataset_manifest,
 )
@@ -496,6 +498,7 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
 
     if not config.source.is_dir():
         raise FileNotFoundError(f"source directory not found: {config.source}")
+    source_digest = source_tree_sha256(config.source)
 
     layout_spec = config.layout_spec or SPEC
     paper_dirs = sorted(
@@ -533,6 +536,7 @@ def convert_paperwrite_bench(config: PaperWriteBenchConversionConfig) -> int:
         }
         converted += 1
 
+    assert_source_tree_unchanged(config.source, source_digest)
     if converted:
         write_dataset_manifest(manifest_path, manifest)
 

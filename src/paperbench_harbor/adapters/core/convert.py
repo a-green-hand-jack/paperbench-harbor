@@ -14,6 +14,7 @@ configuration language.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from collections.abc import Mapping
@@ -21,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+from paperbench_harbor.common.manifest import sha256_file
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,31 @@ class TaskDirectories:
     solution_private: Path
     tests: Path
     tests_private: Path
+
+
+def source_tree_sha256(source_root: Path) -> str:
+    """Return a stable digest of every input byte an adapter can consume."""
+
+    if not source_root.is_dir():
+        raise FileNotFoundError(f"source directory not found: {source_root}")
+    digest = hashlib.sha256()
+    for path in sorted(candidate for candidate in source_root.rglob("*") if candidate.is_file()):
+        digest.update(path.relative_to(source_root).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(sha256_file(path).encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def assert_source_tree_unchanged(source_root: Path, expected_digest: str) -> None:
+    """Reject a conversion whose input changed before its task bytes were complete."""
+
+    actual_digest = source_tree_sha256(source_root)
+    if actual_digest != expected_digest:
+        raise RuntimeError(
+            "source tree changed during conversion; discard the generated output and retry from "
+            "an immutable input snapshot"
+        )
 
 
 def task_id_for(prefix: str, index: int) -> str:
