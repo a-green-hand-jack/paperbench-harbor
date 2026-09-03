@@ -150,7 +150,11 @@ def validate_task_contract(task_dir: Path) -> list[ContractFinding]:
                 line.split("%", 1)[0]
                 for line in template.read_text(encoding="utf-8", errors="replace").splitlines()
             )
-            has_two_columns = bool(re.search(r"\\documentclass\[[^]]*twocolumn", source))
+            has_two_columns = bool(
+                re.search(r"\\documentclass\[[^]]*twocolumn", source)
+                or re.search(r"\\twocolumn\b", source)
+                or re.search(r"\\documentclass(?:\[[^]]*\])?\{acmart\}", source)
+            )
             if (expected.group(1) == "double") != has_two_columns:
                 findings.append(ContractFinding("format_template_mismatch", expected.group(0)))
 

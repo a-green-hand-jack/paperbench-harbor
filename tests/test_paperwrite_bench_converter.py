@@ -240,6 +240,29 @@ def test_conversion_includes_a_paper_local_document_class(tmp_path: Path) -> Non
     assert (task / "tests" / "texmf" / "localjournal.cls").is_file()
 
 
+def test_conversion_recognizes_acmart_as_a_double_column_template(tmp_path: Path) -> None:
+    source = _make_source(tmp_path)
+    resources = source / "paper_1" / "resources"
+    (resources / "template.tex").write_text(
+        "\\documentclass[sigconf]{acmart}\n\\begin{document}\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    convert_paperwrite_bench(
+        PaperWriteBenchConversionConfig(
+            source=source,
+            output_dir=tmp_path / "out",
+            overview="short",
+            limit=1,
+        )
+    )
+
+    instruction = (tmp_path / "out" / "pwb-0001" / "instruction.md").read_text(
+        encoding="utf-8"
+    )
+    assert "suitable for a 9-page double-column paper" in instruction
+
+
 def test_unsupported_overview_raises(tmp_path: Path) -> None:
     config = PaperWriteBenchConversionConfig(
         source=_make_source(tmp_path), output_dir=tmp_path / "out", overview="medium"
