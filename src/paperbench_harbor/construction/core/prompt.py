@@ -58,6 +58,50 @@ def build_prompt(spec: PaperSpec, output_dir: str, plugin: DomainPlugin) -> str:
     stop_condition_notes = (
         f"\n{plugin.stop_condition_examples}\n" if plugin.stop_condition_examples else ""
     )
+    if spec.requires_code:
+        code_identity = f"- Code repository: {spec.code_repo}"
+        code_stop_condition = "3. The code repository is gone, private, or cannot be checked out."
+        code_tree = "    └── code/\n"
+        code_leakage_exception = (
+            " (the sole exception is inside `resources/code/`, which is a verbatim "
+            "third-party checkout)"
+        )
+        code_provenance = f'''  "code_status": "available",
+  "code_repo": "{spec.code_repo}",
+  "code_commit": "<the exact commit SHA you checked out>",
+  "code_license": "...",
+  "code_not_applicable_reason": "",'''
+        code_section = f'''## `resources/code/`
+
+A checkout of {spec.code_repo}. Record the exact commit in `provenance.json`.
+Remove `.git/` and any large data artefacts that are not source; keep the
+analysis/simulation code, its README, and its license file if it has one.
+Record the repository's license in `provenance.json`'s `code_license` exactly
+as you find it — `"none declared"` is a valid and expected answer, and is not
+a reason to stop.'''
+    else:
+        code_identity = (
+            "- Code evidence: not applicable because "
+            f"{spec.code_not_applicable_reason}"
+        )
+        code_stop_condition = (
+            "3. You find that code is actually needed to reconstruct this paper, or "
+            "the approved no-code reason is not true."
+        )
+        code_tree = ""
+        code_leakage_exception = ""
+        code_provenance = f'''  "code_status": "not_applicable",
+  "code_repo": "",
+  "code_commit": "",
+  "code_license": "",
+  "code_not_applicable_reason": "{spec.code_not_applicable_reason}",'''
+        code_section = '''## Code evidence
+
+This approved paper has `code_status: "not_applicable"`: code is not an input
+to reconstructing it. Do not create `resources/code/`, and do not invent or
+substitute a repository. Preserve the approved reason verbatim in
+`provenance.json`; if live inspection contradicts it, stop and report the
+contradiction in the top-level `blocked` field.'''
 
     if plugin.require_table_inventory:
         table_tree = """    ├── table_inventory.json
@@ -122,7 +166,7 @@ paper has different ones — find them yourself by compiling.
 - arXiv ID: `{spec.arxiv_id}` version `{spec.expected_version}`
 - Abstract page: {spec.arxiv_abs_url}
 - Source bundle (LaTeX): {spec.arxiv_eprint_url}
-- Code repository: {spec.code_repo}
+{code_identity}
 - Expected arXiv category: `{spec.expected_category}`
 - Expected license: `{spec.expected_license}`
 - Assigned paper type: `{spec.paper_type}`
@@ -141,7 +185,7 @@ explaining what you found, build nothing else, and end your run.
    (This benchmark redistributes material derived from the paper, so a
    non-permissive license disqualifies it outright.)
 2. The submission has no LaTeX source — an e-print bundle that is a PDF only.
-3. The code repository is gone, private, or cannot be checked out.
+{code_stop_condition}
 4. The arXiv ID, version or category does not match the expectations above.
 {stop_condition_notes}
 Do **not** substitute a different paper, a different version, or a different
@@ -166,16 +210,14 @@ Create exactly this tree under `{output_dir}` (absolute path; create it):
     ├── references.bib
     ├── figure_summary.txt
     ├── table_summary.txt
-{table_tree}    └── code/
-```
+{table_tree}{code_tree}```
 
 ## The leakage rule
 
 `resources/` is handed to the writing agent verbatim. `original/` is not. So
 `resources/` must contain **no** file named `main.tex`, `main.pdf`,
 `config.yaml`, `provenance.json`, `eval_points.json` or `source_manifest.json`
-anywhere in its tree (the sole exception is inside `resources/code/`, which is
-a verbatim third-party checkout). More importantly, nothing in `resources/`
+anywhere in its tree{code_leakage_exception}. More importantly, nothing in `resources/`
 outside the figures, tables, bibliography and overviews may contain the
 paper's prose — that is the answer.
 
@@ -216,9 +258,7 @@ prompt claims:
   "license_url": "...",
   "source_url": "{spec.arxiv_eprint_url}",
   "fetch_date": "<YYYY-MM-DD, the date you fetched it>",
-  "code_repo": "{spec.code_repo}",
-  "code_commit": "<the exact commit SHA you checked out>",
-  "code_license": "...",
+{code_provenance}
   "notes": "<anything a human reviewing this sample should know>"
 }}
 ```
@@ -295,14 +335,7 @@ demonstrates. {plugin.imagery_guidance}
 
 {table_summary_contract}
 
-## `resources/code/`
-
-A checkout of {spec.code_repo}. Record the exact commit in `provenance.json`.
-Remove `.git/` and any large data artefacts that are not source; keep the
-analysis/simulation code, its README, and its license file if it has one.
-Record the repository's license in `provenance.json`'s `code_license` exactly
-as you find it — `"none declared"` is a valid and expected answer, and is not
-a reason to stop.
+{code_section}
 
 # The hard requirement: the oracle must compile
 

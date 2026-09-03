@@ -5,6 +5,10 @@ from typing import Annotated
 
 import typer
 
+from paperbench_harbor.adapters.paperrecon import (
+    get_paperrecon_adapter,
+    paperrecon_conversion_config,
+)
 from paperbench_harbor.adapters.paperwrite_bench.converter import (
     PaperWriteBenchConversionConfig,
     convert_paperwrite_bench,
@@ -71,6 +75,44 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Convert scientific-paper writing benchmarks into Harbor task datasets.",
 )
+
+
+def _convert_paperrecon(
+    domain: str,
+    *,
+    source: Path,
+    output_dir: Path,
+    upstream_revision: str,
+    overview: str,
+    limit: int | None,
+    overwrite: bool,
+    audit: bool,
+    semantic_review: bool,
+) -> None:
+    if not upstream_revision.strip():
+        raise typer.BadParameter("--upstream-revision must be a non-empty revision")
+    adapter = get_paperrecon_adapter(domain)
+    config = paperrecon_conversion_config(
+        domain,
+        source=source,
+        output_dir=output_dir,
+        upstream_revision=upstream_revision.strip(),
+        overview=overview,
+        limit=limit,
+        overwrite=overwrite,
+    )
+    converted = convert_paperwrite_bench(config)
+    typer.echo(f"Converted {converted} {adapter.benchmark} task(s).")
+    if audit:
+        _audit_or_exit(
+            benchmark=adapter.benchmark,
+            source=source,
+            output_dir=output_dir,
+            protocol=overview,
+            semantic_review=semantic_review,
+        )
+    else:
+        typer.echo("Fidelity audit skipped by explicit --no-audit.")
 
 
 @app.command("hello-world")
@@ -175,34 +217,77 @@ def lifesci_paperrecon_command(
     command reuses the PaperWrite-Bench converter with biology identity
     metadata and without the vendored official-metrics grader.
     """
-    from paperbench_harbor.adapters.lifesci_paperrecon.harbor import (
-        lifesci_paperrecon_conversion_config,
-    )
-
-    if not upstream_revision.strip():
-        raise typer.BadParameter("--upstream-revision must be a non-empty revision")
-    config = lifesci_paperrecon_conversion_config(
+    _convert_paperrecon(
+        "lifesci",
         source=source,
         output_dir=output_dir,
-        upstream_revision=upstream_revision.strip(),
+        upstream_revision=upstream_revision,
         overview=overview,
         limit=limit,
         overwrite=overwrite,
+        audit=audit,
+        semantic_review=semantic_review,
     )
-    converted = convert_paperwrite_bench(config)
-    typer.echo(f"Converted {converted} LifeSci-PaperRecon task(s).")
-    if audit:
-        from paperbench_harbor.adapters.lifesci_paperrecon.harbor import BENCHMARK
 
-        _audit_or_exit(
-            benchmark=BENCHMARK,
-            source=source,
-            output_dir=output_dir,
-            protocol=overview,
-            semantic_review=semantic_review,
-        )
-    else:
-        typer.echo("Fidelity audit skipped by explicit --no-audit.")
+
+@app.command("physics-paperrecon")
+def physics_paperrecon_command(
+    source: Annotated[Path, typer.Option(exists=True, file_okay=False, resolve_path=True)],
+    output_dir: Annotated[Path, typer.Option(resolve_path=True)],
+    upstream_revision: Annotated[str, typer.Option(help="Pinned construction-pipeline revision; required")],
+    overview: Annotated[str, typer.Option()] = "short",
+    limit: Annotated[int | None, typer.Option(min=1)] = None,
+    overwrite: Annotated[bool, typer.Option()] = False,
+    audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
+    semantic_review: Annotated[bool, typer.Option(help=_SEMANTIC_REVIEW_HELP)] = True,
+) -> None:
+    """Convert a Physics-PaperRecon source corpus into Harbor tasks."""
+
+    _convert_paperrecon(
+        "physics", source=source, output_dir=output_dir, upstream_revision=upstream_revision,
+        overview=overview, limit=limit, overwrite=overwrite, audit=audit,
+        semantic_review=semantic_review,
+    )
+
+
+@app.command("chemistry-paperrecon")
+def chemistry_paperrecon_command(
+    source: Annotated[Path, typer.Option(exists=True, file_okay=False, resolve_path=True)],
+    output_dir: Annotated[Path, typer.Option(resolve_path=True)],
+    upstream_revision: Annotated[str, typer.Option(help="Pinned construction-pipeline revision; required")],
+    overview: Annotated[str, typer.Option()] = "short",
+    limit: Annotated[int | None, typer.Option(min=1)] = None,
+    overwrite: Annotated[bool, typer.Option()] = False,
+    audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
+    semantic_review: Annotated[bool, typer.Option(help=_SEMANTIC_REVIEW_HELP)] = True,
+) -> None:
+    """Convert a Chemistry-PaperRecon source corpus into Harbor tasks."""
+
+    _convert_paperrecon(
+        "chemistry", source=source, output_dir=output_dir, upstream_revision=upstream_revision,
+        overview=overview, limit=limit, overwrite=overwrite, audit=audit,
+        semantic_review=semantic_review,
+    )
+
+
+@app.command("mathematics-paperrecon")
+def mathematics_paperrecon_command(
+    source: Annotated[Path, typer.Option(exists=True, file_okay=False, resolve_path=True)],
+    output_dir: Annotated[Path, typer.Option(resolve_path=True)],
+    upstream_revision: Annotated[str, typer.Option(help="Pinned construction-pipeline revision; required")],
+    overview: Annotated[str, typer.Option()] = "short",
+    limit: Annotated[int | None, typer.Option(min=1)] = None,
+    overwrite: Annotated[bool, typer.Option()] = False,
+    audit: Annotated[bool, typer.Option(help=_AUDIT_HELP)] = True,
+    semantic_review: Annotated[bool, typer.Option(help=_SEMANTIC_REVIEW_HELP)] = True,
+) -> None:
+    """Convert a Mathematics-PaperRecon source corpus into Harbor tasks."""
+
+    _convert_paperrecon(
+        "mathematics", source=source, output_dir=output_dir, upstream_revision=upstream_revision,
+        overview=overview, limit=limit, overwrite=overwrite, audit=audit,
+        semantic_review=semantic_review,
+    )
 
 
 if __name__ == "__main__":

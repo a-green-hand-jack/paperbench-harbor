@@ -71,30 +71,36 @@ flowchart TD
 
 ### Build tasks from papers
 
-`papersmith-lifesci` is the current LifeSci implementation of the PaperSmith
-paper-to-task pipeline. Its same screening, human approval, construction,
-conversion, and audit contracts are intended for domain plugins, so the pattern
-can serve future Physics, Chemistry, Mathematics, and other paper corpora.
+PaperSmith has four human-gated paper-to-task agents: `papersmith-lifesci`,
+`papersmith-physics`, `papersmith-chemistry`, and `papersmith-mathematics`.
+They share a public-materials-to-paper-reconstruction protocol while retaining
+domain-specific screening policies and writing instructions. LKM is the first
+candidate-discovery provider for PaperSmith: it improves recall and ranking,
+but never establishes source, license, code, or reconstructability facts.
 
 ```mermaid
 flowchart TD
-    request([Natural-language paper request]) --> papersmith[OpenCode: PaperSmith domain workflow]
+    request([Natural-language paper request]) --> papersmith[OpenCode: one of four PaperSmith domain agents]
     papersmith --> kind{Collect new papers or rebuild a published corpus?}
 
-    kind -- collect --> parse[Parse target count, domain guidance, and explicit paper IDs]
-    parse --> screen[Screen candidates in isolated scratch]
+    kind -- collect --> parse[Parse domain, target count, guidance, and explicit paper IDs]
+    parse --> lkm[LKM discovery and ranked candidate snapshot]
+    lkm --> fallback{LKM available?}
+    fallback -- no --> searchfallback[Record failure; query arXiv and Semantic Scholar]
+    fallback -- yes --> screen[Screen LKM candidates in isolated scratch]
+    searchfallback --> screen
     screen --> liveverify[Independently verify paper and code provenance, licenses, and eligibility]
     liveverify --> valid{Eligible and verifiable?}
     valid -- no --> reportrejected([Report rejected or unverifiable candidates])
     valid -- yes --> humanapproval{Human SHA-bound approval?}
     humanapproval -- not yet --> hold([Stop at the approval gate])
-    humanapproval -- yes --> promote[Promote approved paper IDs]
+    humanapproval -- yes --> promote[Promote approved paper IDs and immutable approval SHA]
     promote --> construct[Construct source corpus with one isolated OpenCode build and review session per paper]
     construct --> convert[Convert the corpus to Harbor tasks]
     convert --> fidelity[Fidelity, determinism, and semantic audits]
     fidelity --> collectionpassed{All audits pass?}
     collectionpassed -- no --> failed([Report evidence; do not publish])
-    collectionpassed -- yes --> collectionreport([Report auditable task-design evidence])
+    collectionpassed -- yes --> collectionreport([Stage auditable candidate release evidence])
 
     kind -- rebuild --> manifest[Download the current immutable published manifest]
     manifest --> supervisor[Run the release-candidate supervisor]
@@ -112,9 +118,15 @@ flowchart TD
 These workflows establish task-construction correctness only. They do not score
 or make claims about the performance of a paper-writing agent.
 
+For Physics, Chemistry, and Mathematics, a domain is not ready for public
+release until it has at least 20 human-approved, fully rebuilt tasks that pass
+the same conversion, fidelity, determinism, and semantic audits. Candidate
+revisions are review artifacts identified by immutable SHAs, not public version
+tags.
+
 ## Benchmark families
 
-The current task release has four configurations:
+The current published task release has four configurations:
 
 - `paperwrite-bench-short`: Harbor adaptation of PaperWrite-Bench.
 - `paperwritingbench-sparse-plotoff`: Harbor adaptation of PaperWritingBench.
@@ -122,6 +134,10 @@ The current task release has four configurations:
   tasks.
 - `hello-world`: a first-party integration smoke task, not a source-paper
   benchmark.
+
+The next candidate-release generation adds `physics-paperrecon-short`,
+`chemistry-paperrecon-short`, and `mathematics-paperrecon-short`. They remain
+unpublished until their 20-task per-domain acceptance gates have passed.
 
 The precise task counts, release revision, compatibility notes, and task IDs
 are maintained in the [Paper-Writing-Exam dataset card](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam).
@@ -149,10 +165,16 @@ uv run --all-extras python scripts/build_source_archive.py \
   --paperwrite-source <paperwrite-bench-source> \
   --paperwritingbench-source <paperwritingbench-source> \
   --lifesci-source <lifesci-source-corpus> \
+  --physics-source <physics-source-corpus> \
+  --chemistry-source <chemistry-source-corpus> \
+  --mathematics-source <mathematics-source-corpus> \
   --config hello-world \
   --config paperwrite-bench-short \
   --config paperwritingbench-sparse-plotoff \
-  --config lifesci-paperrecon-short
+  --config lifesci-paperrecon-short \
+  --config physics-paperrecon-short \
+  --config chemistry-paperrecon-short \
+  --config mathematics-paperrecon-short
 ```
 
 The command writes a registry and original-source archive but never copies a

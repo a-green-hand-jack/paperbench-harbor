@@ -12,6 +12,7 @@ failure names the check that regressed.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import subprocess
 import sys
@@ -95,9 +96,11 @@ def _provenance(**overrides: object) -> dict:
         "license_url": "https://creativecommons.org/licenses/by/4.0/",
         "source_url": SPEC.arxiv_eprint_url,
         "fetch_date": "2026-08-30",
+        "code_status": "available",
         "code_repo": SPEC.code_repo,
         "code_commit": "0123456789abcdef0123456789abcdef01234567",
         "code_license": "MIT License",
+        "code_not_applicable_reason": "",
     }
     record.update(overrides)
     return record
@@ -175,13 +178,63 @@ def _validate(paper: Path, spec: PaperSpec = SPEC):
     )
 
 
-def _codes(paper: Path) -> set[str]:
-    return {issue.code for issue in _validate(paper).issues}
+def _codes(paper: Path, spec: PaperSpec = SPEC) -> set[str]:
+    return {issue.code for issue in _validate(paper, spec).issues}
 
 
 def test_a_well_formed_sample_passes(paper: Path) -> None:
     report = _validate(paper)
     assert report.ok, report.summary()
+
+
+def test_a_reviewed_no_code_paper_passes_without_a_code_directory(paper: Path) -> None:
+    (paper / "resources" / "code").rename(paper / "resources" / "former-code")
+    for path in (paper / "resources" / "former-code").rglob("*"):
+        if path.is_file():
+            path.unlink()
+    (paper / "resources" / "former-code").rmdir()
+    no_code_spec = dataclasses.replace(
+        SPEC,
+        code_repo="",
+        code_status="not_applicable",
+        code_not_applicable_reason="The result is a proof and has no code input.",
+    )
+    (paper / "original" / "provenance.json").write_text(
+        json.dumps(
+            _provenance(
+                code_status="not_applicable",
+                code_repo="",
+                code_commit="",
+                code_license="",
+                code_not_applicable_reason=no_code_spec.code_not_applicable_reason,
+            )
+        ),
+        encoding="utf-8",
+    )
+    report = _validate(paper, no_code_spec)
+    assert report.ok, report.summary()
+
+
+def test_no_code_paper_rejects_a_code_directory(paper: Path) -> None:
+    no_code_spec = dataclasses.replace(
+        SPEC,
+        code_repo="",
+        code_status="not_applicable",
+        code_not_applicable_reason="The result is a proof and has no code input.",
+    )
+    (paper / "original" / "provenance.json").write_text(
+        json.dumps(
+            _provenance(
+                code_status="not_applicable",
+                code_repo="",
+                code_commit="",
+                code_license="",
+                code_not_applicable_reason=no_code_spec.code_not_applicable_reason,
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert "unexpected-code-resource" in _codes(paper, no_code_spec)
 
 
 def test_table_coverage_cli_reports_source_and_public_counts(paper: Path, tmp_path: Path) -> None:

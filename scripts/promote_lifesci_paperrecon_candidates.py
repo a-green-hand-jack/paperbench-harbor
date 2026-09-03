@@ -344,17 +344,20 @@ def fetch_live_facts(candidate: Candidate) -> tuple[LiveFacts, tuple[str, ...]]:
         _http_get(f"{ARXIV_ABS_URL}/{candidate.arxiv_id}"), candidate.arxiv_id
     )
 
-    headers = {"Accept": "application/vnd.github+json"}
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    code_licenses = _parse_github_license(
-        _http_get(
-            f"{GITHUB_API_URL}/{_repo_slug(candidate.code_repo, candidate.arxiv_id)}",
-            headers=headers,
-        ),
-        candidate.arxiv_id,
-    )
+    if candidate.code_status == "available":
+        headers = {"Accept": "application/vnd.github+json"}
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        code_licenses = _parse_github_license(
+            _http_get(
+                f"{GITHUB_API_URL}/{_repo_slug(candidate.code_repo, candidate.arxiv_id)}",
+                headers=headers,
+            ),
+            candidate.arxiv_id,
+        )
+    else:
+        code_licenses = ("",)
 
     facts = LiveFacts(
         primary_category=category,
@@ -399,9 +402,10 @@ def verify_candidate(candidate: Candidate) -> Outcome:
         mismatches.append(
             Mismatch("expected_category", candidate.expected_category, facts.primary_category)
         )
-    claimed_code_license = candidate.code_license.strip().lower()
-    if claimed_code_license not in {spelling.lower() for spelling in code_licenses}:
-        mismatches.append(Mismatch("code_license", candidate.code_license, facts.code_license))
+    if candidate.code_status == "available":
+        claimed_code_license = candidate.code_license.strip().lower()
+        if claimed_code_license not in {spelling.lower() for spelling in code_licenses}:
+            mismatches.append(Mismatch("code_license", candidate.code_license, facts.code_license))
 
     if mismatches:
         return Outcome(
@@ -462,6 +466,8 @@ def spec_from_candidate(candidate: Candidate, paper_id: str) -> PaperSpec:
         expected_version=candidate.expected_version,
         expected_category=candidate.expected_category,
         note=candidate.note,
+        code_status=candidate.code_status,
+        code_not_applicable_reason=candidate.code_not_applicable_reason,
     )
 
 
@@ -537,6 +543,7 @@ def promote(
     limit: int | None,
     approved_arxiv_ids: frozenset[str] | None = None,
     human_reviewer: str | None = None,
+    existing_specs: tuple[PaperSpec, ...] = APPROVED_PAPERS,
 ) -> tuple[list[Outcome], list[PaperSpec], dict]:
     """Verify every candidate, then write the accepted ones if asked to.
 
@@ -547,11 +554,18 @@ def promote(
 
     promoted_records = read_promoted(approved_file)
     seen_arxiv_ids = {str(record.get("arxiv_id", "")).strip() for record in promoted_records}
-    seen_arxiv_ids |= {spec.arxiv_id for spec in APPROVED_PAPERS}
+    seen_arxiv_ids |= {spec.arxiv_id for spec in existing_specs}
 
     outcomes: list[Outcome] = []
     accepted: list[PaperSpec] = []
-    next_index = next_paper_index(promoted_records)
+    highest = 0
+    for paper_id in [spec.paper_id for spec in existing_specs] + [
+        str(record.get("paper_id", "")) for record in promoted_records
+    ]:
+        match = re.fullmatch(r"paper_(\d+)", paper_id.strip())
+        if match:
+            highest = max(highest, int(match.group(1)))
+    next_index = highest + 1
 
     for candidate in candidates:
         if candidate.arxiv_id in seen_arxiv_ids:
@@ -594,7 +608,9 @@ def promote(
                     "paper_id": spec.paper_id,
                     "arxiv_id": spec.arxiv_id,
                     "paper_type": spec.paper_type,
+                    "code_status": spec.code_status,
                     "code_repo": spec.code_repo,
+                    "code_not_applicable_reason": spec.code_not_applicable_reason,
                     "expected_license": spec.expected_license,
                     "expected_version": spec.expected_version,
                     "expected_category": spec.expected_category,

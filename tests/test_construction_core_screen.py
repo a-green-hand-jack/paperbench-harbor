@@ -60,9 +60,11 @@ def _candidate(**overrides: object) -> dict:
     record = {
         "arxiv_id": "2503.19375",
         "expected_version": "v2",
+        "code_status": "available",
         "code_repo": "https://github.com/owner/repo",
         "expected_license": "CC BY 4.0",
         "code_license": "none declared",
+        "code_not_applicable_reason": "",
         "expected_category": "q-bio.CB",
         "paper_type": "computational",
         "note": "Morphogenesis simulation study.",
@@ -219,8 +221,50 @@ def test_an_unrecorded_code_license_is_a_failure(tmp_path: Path) -> None:
     a licensed one by the time the dataset card is written.
     """
 
-    with pytest.raises(ScreeningError, match="'code_license' is empty"):
+    with pytest.raises(ScreeningError, match="'code_license' is required"):
         parse_candidates(_write(tmp_path, [_candidate(code_license="  ")]))
+
+
+def test_a_reviewed_no_code_candidate_is_valid(tmp_path: Path) -> None:
+    candidate = parse_candidates(
+        _write(
+            tmp_path,
+            [
+                _candidate(
+                    code_status="not_applicable",
+                    code_repo="",
+                    code_license="",
+                    code_not_applicable_reason="The theorem and proof have no code input.",
+                )
+            ],
+        )
+    )[0]
+    assert candidate.code_status == "not_applicable"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"code_status": "unknown"}, "code_status 'unknown'"),
+        ({"code_status": "not_applicable", "code_repo": "https://github.com/x/y"}, "must be empty"),
+        ({"code_status": "not_applicable", "code_license": "MIT"}, "must be empty"),
+        (
+            {
+                "code_status": "not_applicable",
+                "code_repo": "",
+                "code_license": "",
+            },
+            "code_not_applicable_reason is required",
+        ),
+        ({"code_not_applicable_reason": "not needed"}, "must be empty when code_status"),
+    ],
+)
+def test_code_evidence_branch_is_strict(
+    tmp_path: Path, overrides: dict[str, str], message: str
+) -> None:
+    record = _candidate(**overrides)
+    with pytest.raises(ScreeningError, match=message):
+        parse_candidates(_write(tmp_path, [record]))
 
 
 def test_an_empty_note_is_allowed(tmp_path: Path) -> None:

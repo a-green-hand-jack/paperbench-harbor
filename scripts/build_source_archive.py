@@ -20,6 +20,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--paperwritingbench-source", type=Path)
     parser.add_argument("--lifesci-source", type=Path)
     parser.add_argument(
+        "--paperrecon-source",
+        action="append",
+        default=[],
+        metavar="DOMAIN=PATH",
+        help=(
+            "PaperRecon corpus source root for a domain. Repeat for physics, chemistry, "
+            "or mathematics; lifesci continues to use --lifesci-source."
+        ),
+    )
+    parser.add_argument(
         "--config",
         dest="configs",
         action="append",
@@ -35,6 +45,14 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
+    paperrecon_sources: dict[str, Path] = {}
+    for value in args.paperrecon_source:
+        domain, separator, raw_path = value.partition("=")
+        if not separator or not domain.strip() or not raw_path.strip():
+            _parser().error("--paperrecon-source must be DOMAIN=PATH")
+        if domain in paperrecon_sources:
+            _parser().error(f"--paperrecon-source repeats domain {domain!r}")
+        paperrecon_sources[domain.strip()] = Path(raw_path).expanduser().resolve()
     if args.verify_only:
         result = verify_source_archive(args.output_dir)
     else:
@@ -59,6 +77,7 @@ def main() -> None:
             paperwrite_source=args.paperwrite_source,
             paperwritingbench_source=args.paperwritingbench_source,
             lifesci_source=args.lifesci_source,
+            paperrecon_sources=paperrecon_sources,
             included_configs=set(args.configs) if args.configs else None,
         )
     print(json.dumps(result, sort_keys=True))

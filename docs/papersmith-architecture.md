@@ -1,14 +1,10 @@
 # PaperSmith architecture: a domain-agnostic core and per-domain plugins
 
-**Status (2026-08-31):** the split described here is implemented, with exactly
-one domain plugin — `lifesci`. All three pipeline stages — screen, construct,
-review — now exist; see "The three stages" below. **Math, physics and chemistry are deferred, not
-promised.** A second plugin gets written when Phase 4's scale-up produces a
-concrete second-domain paper set to pressure-test this interface against real
-friction; adding one speculatively would tune the seam to imagined
-requirements. What exists today is an extraction with **zero behaviour change**
-for biology: the prompt the construction agent receives is byte-identical to
-the pre-split one, and the validation gate reaches the same verdicts.
+**Status (2026-09-03):** the shared core and LifeSci plugin are implemented;
+Physics, Chemistry, and Mathematics are being added as separate plugins using
+the same PaperRecon protocol. All three pipeline stages — screen, construct,
+review — remain shared. LifeSci keeps its existing task behavior while the new
+domains pressure-test the plugin contract with concrete paper sets.
 
 PaperSmith is the `opencode`-driven pipeline that turns arXiv papers into
 PaperRecon benchmark samples. It has two halves:
@@ -21,6 +17,39 @@ PaperRecon benchmark samples. It has two halves:
 - **DomainPaperSmith** — `src/paperbench_harbor/construction/lifesci_paperrecon/`.
   One `DomainPlugin` instance, one `ScreeningPolicy`, and that domain's approved
   paper set. Contains no machinery.
+
+## Three-domain candidate-release expansion
+
+Physics, Chemistry, and Mathematics use the same public-materials-to-full-paper
+reconstruction protocol as LifeSci. Domain plugins specialize paper types,
+overview contracts, screening policy, and writing instructions; the core owns
+source boundaries, compilation, leakage, provenance, retry, conversion, and
+audit invariants.
+
+Candidate discovery is LKM-first through a Harbor-owned Bohrium CLI provider.
+Each run records the `bohr` client version, query text, normalized candidates,
+timestamp, and every error or arXiv/Semantic Scholar fallback. LKM is a ranking
+input only, never proof of source, license, code, or reconstructability.
+Promotion independently verifies those facts before a human approves the exact
+candidate JSON through a SHA-256-bound approval record.
+
+| Domain | Paper types |
+|---|---|
+| Physics | theory, simulation, experiment-or-instrument |
+| Chemistry | synthesis-and-characterization, computational-chemistry, cheminformatics-or-ML |
+| Mathematics | theorem-and-proof, numerical-computation, formal-or-computer-assisted-proof |
+
+Code provenance is a discriminated contract. `code_status: available` requires
+a repository URL, immutable revision, license, and non-empty archived code.
+`code_status: not_applicable` requires a human-reviewed reason that code is not
+needed to reconstruct the paper; it never means missing or undiscovered code.
+The status propagates through candidate records, `PaperSpec`, validation,
+conversion provenance, and the source-archive registry.
+
+New domain corpora first stage reviewable candidate revisions. No public version
+tag is created until each has at least 20 human-approved tasks that pass
+construction, conversion, fidelity, deterministic regeneration, semantic
+review, and source-archive verification.
 
 ## The three stages
 
