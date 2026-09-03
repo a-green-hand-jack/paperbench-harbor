@@ -15,7 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-DOMAINS = ("lifesci", "physics", "chemistry", "mathematics")
+DOMAINS = ("physics", "chemistry", "mathematics")
+OPTIONAL_DOMAINS = ("lifesci",)
 CONFIGS = {
     "lifesci": "lifesci-paperrecon-short",
     "physics": "physics-paperrecon-short",
@@ -108,6 +109,11 @@ def load_gate(run_roots: dict[str, Path]) -> dict[str, Any]:
     if missing:
         raise ReleasePublisherError(f"missing required domain run(s): {', '.join(missing)}")
     domains = [_domain_run(run_roots[domain].resolve(), domain) for domain in DOMAINS]
+    domains.extend(
+        _domain_run(run_roots[domain].resolve(), domain)
+        for domain in OPTIONAL_DOMAINS
+        if domain in run_roots
+    )
     return {"schema_version": 1, "minimum_tasks_per_domain": MIN_TASKS, "domains": domains}
 
 
@@ -163,8 +169,8 @@ def publish(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    for domain in DOMAINS:
-        parser.add_argument(f"--{domain}-run", type=Path, required=(domain != "lifesci"))
+    for domain in (*DOMAINS, *OPTIONAL_DOMAINS):
+        parser.add_argument(f"--{domain}-run", type=Path, required=(domain in DOMAINS))
     parser.add_argument("--task-repo", default="Jack-Jieke-Wu/Paper-Writing-Exam")
     parser.add_argument("--archive-repo", default="Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive")
     parser.add_argument("--candidate-revision", default="paperrecon-v0.1.0-candidate")
@@ -176,7 +182,11 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
-    roots = {domain: getattr(args, f"{domain}_run") for domain in DOMAINS if getattr(args, f"{domain}_run")}
+    roots = {
+        domain: getattr(args, f"{domain}_run")
+        for domain in (*DOMAINS, *OPTIONAL_DOMAINS)
+        if getattr(args, f"{domain}_run")
+    }
     try:
         evidence = load_gate(roots)
         result = publish(
