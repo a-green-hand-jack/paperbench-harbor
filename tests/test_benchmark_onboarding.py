@@ -143,6 +143,7 @@ def test_benchmark_onboard_policy_cannot_edit_or_bypass_required_audits() -> Non
     assert '    "* --no-audit": deny' in text
     assert '    "* --no-semantic-review": deny' in text
     assert "hostname && pwd && git rev-parse --show-toplevel" in text
+    assert "git rev-parse --is-inside-work-tree && git status --short" in text
     assert "screen_benchmark_candidate.py" in text
     assert "verify_benchmark_candidate.py" in text
     assert "human approval" in text

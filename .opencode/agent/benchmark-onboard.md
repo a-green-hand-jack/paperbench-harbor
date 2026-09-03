@@ -32,6 +32,7 @@ permission:
     "uv run scripts/audit_fidelity.py *": allow
     "python scripts/audit_fidelity.py *": allow
     "hostname && pwd && git rev-parse --show-toplevel && git rev-parse --abbrev-ref HEAD && git rev-parse --is-inside-work-tree && git rev-parse --git-common-dir": allow
+    "pwd && git rev-parse --show-toplevel && git rev-parse --abbrev-ref HEAD && git rev-parse --is-inside-work-tree && git status --short": allow
     "git rev-parse HEAD": allow
     "cat *": allow
     "ls *": allow
