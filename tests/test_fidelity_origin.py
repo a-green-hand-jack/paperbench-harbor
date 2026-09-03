@@ -188,9 +188,12 @@ def test_a_sanitized_template_is_not_a_missing_file(tmp_path: Path) -> None:
     assert compare_to_expectation(report, expected, paper_dir, rewritable=rewritable) == []
 
 
-def test_only_template_tex_may_be_rewritten(tmp_path: Path) -> None:
-    """The exemption stays narrow. Everything else must match upstream bytes."""
-    assert rewritable_targets(pwb_spec.SPEC) == {"environment/materials/template.tex"}
+def test_only_declared_writer_material_may_be_rewritten(tmp_path: Path) -> None:
+    """The exemption stays narrow and names every audited transformation."""
+    assert rewritable_targets(pwb_spec.SPEC) == {
+        "environment/materials/template.tex",
+        "environment/materials/code/README.md",
+    }
 
 
 def test_tree_copies_exclude_build_environment_residue(tmp_path: Path) -> None:
