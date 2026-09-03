@@ -364,6 +364,71 @@ def collect_source_tables(original: Path) -> list[SourceTable]:
     ]
 
 
+def synchronize_source_table_materials(paper_dir: Path) -> list[SourceTable]:
+    """Regenerate public table evidence from the verifier-only TeX source.
+
+    Table fragments and their inventory are mechanical projections of the
+    source tree, not a reconstruction task for the construction agent.  Keeping
+    this projection here means the exact source traversal, escaping and byte
+    hashing are shared by the writer pipeline and the validation gate.
+    """
+
+    resources = paper_dir / "resources"
+    tables = collect_source_tables(paper_dir / "original")
+    table_dir = resources / "tables"
+    if table_dir.exists():
+        shutil.rmtree(table_dir)
+    table_dir.mkdir(parents=True, exist_ok=True)
+
+    records: list[dict[str, object]] = []
+    ledger: list[str] = []
+    for table in tables:
+        public_path = f"tables/{table.id}.tex"
+        (resources / public_path).write_text(table.content, encoding="utf-8")
+        records.append(
+            {
+                "id": table.id,
+                "source_path": table.source_path,
+                "line_start": table.line_start,
+                "environment": table.environment,
+                "caption": table.caption,
+                "label": table.label,
+                "content_sha256": table.content_sha256,
+                "public_path": public_path,
+            }
+        )
+        ledger.append(f"{public_path}: {table.caption}")
+
+    resources.mkdir(parents=True, exist_ok=True)
+    (resources / TABLE_INVENTORY_FILENAME).write_text(
+        json.dumps({"schema_version": 1, "tables": records}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    summary_path = resources / "table_summary.txt"
+    existing_lines = (
+        summary_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if summary_path.is_file()
+        else []
+    )
+    if tables:
+        # Keep qualitative descriptions from the agent, but remove the stale
+        # no-tables claim that would contradict the regenerated source ledger.
+        preserved = [
+            line
+            for line in existing_lines
+            if line.strip() and "no table" not in line.lower() and line not in ledger
+        ]
+        summary_lines = ledger + preserved
+    else:
+        preserved = [line for line in existing_lines if line.strip()]
+        summary_lines = ["The source has no tables."] + [
+            line for line in preserved if "no table" not in line.lower()
+        ]
+    summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return tables
+
+
 def _citation_keys(text: str) -> set[str]:
     keys: set[str] = set()
     for match in _CITE_RE.finditer(text):

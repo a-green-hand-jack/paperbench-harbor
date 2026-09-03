@@ -85,12 +85,18 @@ prose into them.
 Only when the source inventory is empty may `tables/` be omitted and the
 inventory contain an empty `tables` list. This is a release-blocking contract:
 the deterministic gate recomputes the inventory from `original/` and rejects a
-missing, incomplete or altered public table material."""
+missing, incomplete or altered public table material. After each construction
+turn, the pipeline regenerates the table fragments and inventory from that
+same source traversal. Treat those generated values as authoritative; use
+`table_summary.txt` to explain what the tables report rather than trying to
+hand-compute source metadata or hashes."""
         table_summary_contract = """Every file in `figures/` must be mentioned by name in `figure_summary.txt`, and
 every `public_path` from `table_inventory.json` must be mentioned in
 `table_summary.txt`, with its caption and what results it reports. Generate the
 table summary from the inventory, not from a directory listing. Only if the
-inventory is empty may the table summary say that the paper has no tables."""
+inventory is empty may the table summary say that the paper has no tables. The
+pipeline adds the canonical source-caption ledger after each turn; retain or
+add the qualitative interpretation of each table's result."""
     else:
         table_tree = """    ├── figures/
     ├── tables/          (omit if the paper has no tables as separate assets)

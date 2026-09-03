@@ -21,7 +21,11 @@ import pytest
 
 from paperbench_harbor.construction.core.prompt import build_prompt
 from paperbench_harbor.construction.core.spec import PaperSpec
-from paperbench_harbor.construction.core.validate import collect_source_tables, validate_paper
+from paperbench_harbor.construction.core.validate import (
+    collect_source_tables,
+    synchronize_source_table_materials,
+    validate_paper,
+)
 from paperbench_harbor.construction.lifesci_paperrecon.papers import APPROVED_BY_ID
 from paperbench_harbor.construction.lifesci_paperrecon.plugin import LIFESCI_PLUGIN
 
@@ -227,6 +231,32 @@ def test_a_table_summary_must_include_the_source_caption(paper: Path) -> None:
     )
 
     assert "table-summary-incomplete" in _codes(paper)
+
+
+def test_source_table_synchronization_restores_canonical_public_evidence(paper: Path) -> None:
+    """The workflow, not an agent, owns byte-exact table material metadata."""
+
+    resources = paper / "resources"
+    (resources / "tables" / "table-001.tex").write_text("stale table\n", encoding="utf-8")
+    (resources / "table_inventory.json").write_text(
+        '{"schema_version": 1, "tables": []}\n', encoding="utf-8"
+    )
+    (resources / "table_summary.txt").write_text(
+        "The source has no tables.\nThe runtime comparison is reproducible.\n",
+        encoding="utf-8",
+    )
+
+    tables = synchronize_source_table_materials(paper)
+
+    assert len(tables) == 1
+    assert (resources / "tables" / "table-001.tex").read_text(encoding="utf-8") == tables[0].content
+    inventory = json.loads((resources / "table_inventory.json").read_text(encoding="utf-8"))
+    assert inventory["tables"][0]["content_sha256"] == tables[0].content_sha256
+    summary = (resources / "table_summary.txt").read_text(encoding="utf-8")
+    assert tables[0].caption in summary
+    assert "runtime comparison is reproducible" in summary
+    assert "no tables" not in summary.lower()
+    assert _validate(paper).ok
 
 
 def test_tables_reached_through_input_are_inventoried(paper: Path) -> None:

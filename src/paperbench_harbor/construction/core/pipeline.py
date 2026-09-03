@@ -62,7 +62,11 @@ from paperbench_harbor.construction.core.review import (
     write_review_record,
 )
 from paperbench_harbor.construction.core.spec import PaperSpec
-from paperbench_harbor.construction.core.validate import ValidationReport, validate_paper
+from paperbench_harbor.construction.core.validate import (
+    ValidationReport,
+    synchronize_source_table_materials,
+    validate_paper,
+)
 
 #: Where a paper's own build log goes. `print` by default, so the existing CLI
 #: behaves exactly as it did; :func:`build_corpus` swaps in a prefixing logger
@@ -171,6 +175,10 @@ def build_paper(
                 "workspace": str(workspace),
                 "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
             }
+
+        if plugin.require_table_inventory and not validate_only:
+            tables = synchronize_source_table_materials(workspace)
+            log(f"  turn {turn}: synchronized {len(tables)} source table(s)")
 
         log(f"  turn {turn}: validating")
         report = validate_paper(
