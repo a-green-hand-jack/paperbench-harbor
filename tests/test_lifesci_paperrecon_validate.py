@@ -507,6 +507,18 @@ def test_a_template_without_a_skeleton_fails(paper: Path) -> None:
     assert "template-no-skeleton" in _codes(paper)
 
 
+def test_a_short_paper_template_preserves_its_skeleton(paper: Path) -> None:
+    short_main = _MAIN_TEX.replace("\\section{Introduction}\n", "").replace(
+        "\\section{Materials and Methods}\n", ""
+    )
+    (paper / "original" / "main.tex").write_text(short_main, encoding="utf-8")
+    short_template = _TEMPLATE_TEX.replace("\\section{Introduction}\n", "").replace(
+        "\\section{Materials and Methods}\n", ""
+    )
+    (paper / "resources" / "template.tex").write_text(short_template, encoding="utf-8")
+    assert "template-no-skeleton" not in _codes(paper)
+
+
 def test_an_overview_missing_the_biology_skeleton_fails(paper: Path) -> None:
     (paper / "resources" / "research_overview_short.md").write_text(
         "# Title\n\n## Motivation\n\n## Proposed Method\n\n## Contributions\n" + "x " * 500,

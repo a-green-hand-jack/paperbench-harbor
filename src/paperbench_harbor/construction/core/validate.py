@@ -726,10 +726,15 @@ def _check_template(report: ValidationReport) -> None:
             "\\begin{document}...\\end{document} body, and compile on its own.",
         )
     sections = len(_SECTION_RE.findall(text))
-    if sections < 3:
+    main_sections = 0
+    if main.is_file():
+        main_sections = len(_SECTION_RE.findall(main.read_text(encoding="utf-8", errors="replace")))
+    # Short papers can legitimately have fewer than three headings.  The
+    # contract is that the template preserves the paper's full skeleton.
+    if sections < main_sections:
         report.fail(
             "template-no-skeleton",
-            f"resources/template.tex declares only {sections} sectioning commands",
+            f"resources/template.tex declares {sections} sectioning commands but the ground-truth paper has {main_sections}",
             "The template is the paper's section skeleton: keep every "
             "\\section/\\subsection heading from the ground truth, with the "
             "prose removed.",
