@@ -73,6 +73,39 @@ flowchart TD
 
 ### PaperRecon domain onboarding and release
 
+#### Three-node workflow at a glance
+
+PaperRecon has three core nodes. Each node has one explicit review gate and
+produces the artifact consumed by the next node; publication is the final
+release gate, not a fourth construction node.
+
+```mermaid
+flowchart LR
+    n1["Node 1<br/>Discover papers and approve candidates"] -->|"SHA-bound candidate set"| n2["Node 2<br/>Build public materials and review reconstructability"]
+    n2 -->|"Validated source corpus"| n3["Node 3<br/>Convert to Harbor tasks and audit conversion"]
+    n3 -->|"Audited Harbor tasks"| gate{"Every domain has >=20 passed tasks?"}
+    gate -- "no" --> hold["Keep candidate evidence and continue building"]
+    gate -- "yes" --> release["Publish immutable dataset revision"]
+```
+
+- **Node 1 - paper discovery and candidate approval:** LKM discovery, source
+  checks, candidate consolidation, and two independent verifier agents bound to
+  the exact candidate-file SHA. This gate answers whether a paper is eligible
+  for construction; it does not certify a Harbor task.
+- **Node 2 - public-material construction and reconstructability review:** the
+  constructor preserves the hidden ground-truth paper and creates the public
+  `resources/` package (template, overviews, figures, tables, references, and
+  any required code). A separate reviewer checks that those materials are
+  faithful, sufficient, compilable, and free of answer leakage.
+- **Node 3 - Harbor conversion and conversion audit:** the deterministic
+  converter creates Harbor tasks, then independent semantic review plus
+  structural, provenance, leakage, fidelity, and deterministic-regeneration
+  checks decide whether the converted task is valid.
+
+The detailed operational branches below show LKM fallback, iterative candidate
+collection, retries, candidate revisions, source-archive generation, and the
+public version gate.
+
 The paper-to-dataset workflow is named `paperrecon-domain-release`. It starts
 from a paper request and ends with an immutable Hugging Face candidate revision
 or, only after the release gate passes for all required domains, a public
