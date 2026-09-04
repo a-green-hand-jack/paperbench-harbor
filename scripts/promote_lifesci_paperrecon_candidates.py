@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -75,7 +76,8 @@ GITHUB_API_URL = "https://api.github.com/repos"
 #: side of the same bargain that gets us unauthenticated access at all.
 USER_AGENT = "paperbench-harbor-promote/1.0 (+https://github.com/Jack-Jieke-Wu)"
 
-HTTP_TIMEOUT_SECONDS = 30
+HTTP_TIMEOUT_SECONDS = 60
+HTTP_RETRIES = 3
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
@@ -224,8 +226,24 @@ def _http_get(url: str, *, headers: dict[str, str] | None = None) -> str:
     """The single network seam in this script, so tests replace exactly one thing."""
 
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
-    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-        return response.read().decode("utf-8", errors="replace")
+    last_error: Exception | None = None
+    for attempt in range(HTTP_RETRIES):
+        try:
+            with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as error:
+            last_error = error
+            if attempt + 1 < HTTP_RETRIES:
+                time.sleep(2**attempt)
+    assert last_error is not None
+    raise last_error
+
+
+def _canonical_category(value: str) -> str:
+    """Compare arXiv category codes even when a screen copied the display name."""
+
+    match = re.search(r"\(([^()]+)\)\s*$", value.strip())
+    return (match.group(1) if match else value).strip().lower()
 
 
 def license_name_from_url(url: str) -> str:
@@ -306,9 +324,14 @@ def _parse_abs_metadata(payload: str, arxiv_id: str) -> tuple[str, str]:
     if len(categories) != 1:
         raise PromotionError(f"{arxiv_id}: abstract page has no unique primary category")
     versions = tuple(dict.fromkeys(ABS_VERSION_PATTERN.findall(payload)))
-    if len(versions) != 1:
-        raise PromotionError(f"{arxiv_id}: abstract page has no unique latest version")
-    return categories[0], versions[0]
+    if not versions:
+        versions = tuple(dict.fromkeys(re.findall(r"\[v(\d+)\]", payload, re.IGNORECASE)))
+        versions = tuple(f"v{value}" for value in versions)
+    if not versions:
+        raise PromotionError(f"{arxiv_id}: abstract page has no version history")
+    # The page repeats "this version" in history entries; the highest version
+    # is the current submission, so duplicate matches are not ambiguity.
+    return categories[0], max(versions, key=lambda value: int(value[1:]))
 
 
 def _repo_slug(code_repo: str, arxiv_id: str) -> str:
@@ -429,7 +452,7 @@ def verify_candidate(candidate: Candidate) -> Outcome:
         mismatches.append(
             Mismatch("expected_license", candidate.expected_license, facts.license_name)
         )
-    if candidate.expected_category.strip().lower() != facts.primary_category.lower():
+    if _canonical_category(candidate.expected_category) != _canonical_category(facts.primary_category):
         mismatches.append(
             Mismatch("expected_category", candidate.expected_category, facts.primary_category)
         )

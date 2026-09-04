@@ -485,6 +485,10 @@ def _check_layout(report: ValidationReport, spec: PaperSpec) -> None:
                 "them by exact name.",
             )
     for dirname in REQUIRED_RESOURCE_DIRS:
+        # Proof-only PaperRecon samples may have structured results without
+        # extractable image assets; the overview and source remain the inputs.
+        if dirname == "figures" and spec.code_status == "not_applicable":
+            continue
         directory = resources / dirname
         if not directory.is_dir() or not any(directory.rglob("*")):
             report.fail(
