@@ -11,9 +11,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from paperbench_harbor.construction.core.evidence import contained_path, tree_hash
+from paperbench_harbor.construction.core.knowledge import get_knowledge_package
+from paperbench_harbor.construction.core.trial import verify_trial_evidence
 
 DOMAINS = ("physics", "chemistry", "mathematics")
 OPTIONAL_DOMAINS = ("lifesci",)
@@ -49,26 +54,27 @@ def _digest(path: Path) -> str:
 
 
 def _tree_digest(root: Path) -> str:
-    if not root.is_dir():
-        return "missing"
-    digest = hashlib.sha256()
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
-        digest.update(_digest(path).encode("ascii"))
-    return digest.hexdigest()
+    try:
+        return tree_hash(root)
+    except ValueError as error:
+        raise ReleasePublisherError(str(error)) from error
 
 
 def _domain_run(root: Path, domain: str) -> dict[str, Any]:
-    summary_path = root / "run-summary.json"
+    root = contained_path(root, root, directory=True)
+    summary_path = contained_path(root, root / "run-summary.json")
     summary = _read_json(summary_path, label=f"{domain} run summary")
     built = summary.get("built_tasks")
     converted = summary.get("converted_tasks")
-    if not isinstance(built, int) or built < MIN_TASKS:
+    if type(built) is not int or built < MIN_TASKS:
         raise ReleasePublisherError(f"{domain} has only {built!r} built tasks; need {MIN_TASKS}")
     if not isinstance(converted, int) or converted != built:
         raise ReleasePublisherError(f"{domain} converted_tasks must equal built_tasks ({built})")
-    dataset = Path(summary.get("dataset", ""))
-    archive = Path(summary.get("source_archive", ""))
+    config = CONFIGS[domain]
+    dataset = contained_path(root, root / "dataset" / config, directory=True)
+    archive = contained_path(root, root / "source-archive", directory=True)
+    if summary.get("dataset") != str(dataset) or summary.get("source_archive") != str(archive):
+        raise ReleasePublisherError(f"{domain}: summary paths must match expected run-root layout")
     if not dataset.is_dir():
         raise ReleasePublisherError(f"{domain} dataset staging directory is missing: {dataset}")
     if not archive.is_dir():
@@ -76,7 +82,7 @@ def _domain_run(root: Path, domain: str) -> dict[str, Any]:
     config = CONFIGS[domain]
     if dataset.name != config:
         raise ReleasePublisherError(f"{domain} dataset directory must be {config!r}, got {dataset}")
-    fidelity = root / "reports" / "fidelity" / "summary.json"
+    fidelity = contained_path(root, root / "reports" / "fidelity" / "summary.json")
     audit = _read_json(fidelity, label=f"{domain} fidelity summary")
     for key, expected in {
         "total_tasks": built,
@@ -90,6 +96,44 @@ def _domain_run(root: Path, domain: str) -> dict[str, Any]:
             raise ReleasePublisherError(
                 f"{domain} fidelity summary {key}={audit.get(key)!r}, expected {expected!r}"
             )
+    for key, actual in {
+        "dataset_tree_sha256": _tree_digest(dataset),
+        "archive_tree_sha256": _tree_digest(archive),
+        "fidelity_summary_sha256": _digest(fidelity),
+    }.items():
+        if summary.get(key) != actual:
+            raise ReleasePublisherError(f"{domain}: missing or stale evidence binding {key}")
+    if summary.get("status") != "passed" or summary.get("approved_count") != built:
+        raise ReleasePublisherError(f"{domain}: delivery acceptance is incomplete")
+    manifest = contained_path(root, dataset / "dataset-manifest.jsonl")
+    try:
+        entries = [json.loads(line) for line in manifest.read_text().splitlines() if line]
+        ids = [entry["task_id"] for entry in entries]
+    except (OSError, ValueError, KeyError) as error:
+        raise ReleasePublisherError(f"{domain}: invalid task manifest") from error
+    if len(ids) != built or len(set(ids)) != built:
+        raise ReleasePublisherError(f"{domain}: task manifest does not match accepted count")
+    trials = summary.get("trials", [])
+    if len(trials) != built:
+        raise ReleasePublisherError(f"{domain}: missing real trial evidence")
+    execution_path = contained_path(root, root / "execution.json")
+    if _digest(execution_path) != summary.get("execution_sha256"):
+        raise ReleasePublisherError(f"{domain}: execution configuration binding mismatch")
+    execution = _read_json(execution_path, label="execution")
+    knowledge = get_knowledge_package(domain, summary["research_type"]).as_dict()
+    # Normalize dataclass tuple fields to their persisted JSON representation.
+    knowledge = json.loads(json.dumps(knowledge))
+    by_task = {trial["task_id"]: trial for trial in trials}
+    if set(by_task) != set(ids) or len(by_task) != len(trials):
+        raise ReleasePublisherError(f"{domain}: trial task identities mismatch")
+    for entry in entries:
+        task_id, paper_id = entry["task_id"], entry["upstream_paper_id"]
+        if not all(isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in (task_id, paper_id)):
+            raise ReleasePublisherError("unsafe task/paper identity")
+        task = contained_path(dataset, dataset / task_id, directory=True)
+        paper = contained_path(root / "corpus", root / "corpus" / paper_id, directory=True)
+        verify_trial_evidence(by_task[task_id], root=root, task=task, paper=paper,
+                              knowledge=knowledge, execution=execution)
     return {
         "domain": domain,
         "config": config,
@@ -108,12 +152,12 @@ def load_gate(run_roots: dict[str, Path]) -> dict[str, Any]:
     missing = [domain for domain in DOMAINS if domain not in run_roots]
     if missing:
         raise ReleasePublisherError(f"missing required domain run(s): {', '.join(missing)}")
-    domains = [_domain_run(run_roots[domain].resolve(), domain) for domain in DOMAINS]
-    domains.extend(
-        _domain_run(run_roots[domain].resolve(), domain)
-        for domain in OPTIONAL_DOMAINS
-        if domain in run_roots
-    )
+    try:
+        domains = [_domain_run(run_roots[domain].absolute(), domain) for domain in DOMAINS]
+        domains.extend(_domain_run(run_roots[domain].absolute(), domain)
+                       for domain in OPTIONAL_DOMAINS if domain in run_roots)
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+        raise ReleasePublisherError(f"invalid bound release evidence: {error}") from error
     return {"schema_version": 1, "minimum_tasks_per_domain": MIN_TASKS, "domains": domains}
 
 
@@ -134,10 +178,19 @@ def publish(
     release_tag: str,
     publish_public: bool,
     evidence_path: Path,
+    upload_candidate: bool = False,
 ) -> dict[str, Any]:
-    """Upload staged bytes and optionally create the public tag."""
+    """Validate locally by default; each remote operation needs explicit intent."""
+    if publish_public and not upload_candidate:
+        raise ReleasePublisherError("--publish requires explicit --upload-candidate")
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if not upload_candidate:
+        return {"uploaded": False, "published": False, "evidence": str(evidence_path)}
+    # Recheck the evidence at the write boundary, not only when it was produced.
+    current = load_gate({item["domain"]: Path(item["run_root"]) for item in evidence["domains"]})
+    if current != evidence:
+        raise ReleasePublisherError("release evidence no longer matches staged artifacts")
     branch_args = ["hf", "repos", "branch", "create", task_repo, candidate_revision, "--type", "dataset", "--exist-ok"]
     _run(branch_args)
     _run(["hf", "repos", "branch", "create", archive_repo, candidate_revision, "--type", "dataset", "--exist-ok"])
@@ -154,13 +207,22 @@ def publish(
         "hf", "upload", task_repo, str(evidence_path), "release-evidence/paperrecon-gate.json",
         "--type", "dataset", "--revision", candidate_revision, "--commit-message", "Record PaperRecon release gate",
     ])
+    commits = {}
+    for repo in (task_repo, archive_repo):
+        info = json.loads(_run(["hf", "datasets", "info", repo, "--revision", candidate_revision, "--expand", "sha", "--format", "json"]))
+        sha = info.get("sha", "")
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise ReleasePublisherError(f"missing immutable remote commit for {repo}")
+        commits[repo] = sha
     if publish_public:
-        _run(["hf", "repos", "tag", "create", task_repo, release_tag, "--type", "dataset", "--revision", candidate_revision, "--message", "PaperRecon multi-domain release"])
-        _run(["hf", "repos", "tag", "create", archive_repo, release_tag, "--type", "dataset", "--revision", candidate_revision, "--message", "PaperRecon source archive release"])
+        for repo in (task_repo, archive_repo):
+            _run(["hf", "repos", "tag", "create", repo, release_tag, "--type", "dataset", "--revision", commits[repo], "--message", "PaperRecon evidence-bound release"])
     return {
         "candidate_revision": candidate_revision,
         "release_tag": release_tag if publish_public else None,
         "published": publish_public,
+        "uploaded": True,
+        "remote_commits": commits,
         "task_repo": task_repo,
         "archive_repo": archive_repo,
         "evidence": str(evidence_path),
@@ -177,6 +239,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-tag", default="v0.5.0")
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--publish", action="store_true", help="create the public release tag after upload")
+    parser.add_argument("--upload-candidate", action="store_true", help="explicitly authorize remote candidate writes")
     return parser
 
 
@@ -197,6 +260,7 @@ def main() -> int:
             release_tag=args.release_tag,
             publish_public=args.publish,
             evidence_path=args.evidence,
+            upload_candidate=args.upload_candidate,
         )
     except ReleasePublisherError as error:
         print(f"ERROR: {error}")

@@ -665,6 +665,7 @@ def promote(
                     "code_status": spec.code_status,
                     "code_repo": spec.code_repo,
                     "code_not_applicable_reason": spec.code_not_applicable_reason,
+                    "research_type": spec.research_type,
                     "expected_license": spec.expected_license,
                     "expected_version": spec.expected_version,
                     "expected_category": spec.expected_category,
@@ -777,7 +778,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Promote at most this many eligible candidates, in file order.",
     )
     parser.add_argument("--report", type=Path, default=None, help="Write the summary here as JSON.")
+    parser.add_argument("--agent-approval", type=Path, help="SHA-bound independent verifier approval")
     args = parser.parse_args(argv)
+
+    if args.agent_approval and args.human_approval:
+        parser.error("choose --agent-approval or --human-approval, not both")
 
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be >= 1")
@@ -799,11 +804,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.promote:
         approval_path = args.human_approval or _default_human_approval_path(args.candidates)
         try:
-            approval = read_human_approval(
-                approval_path,
-                candidates_path=args.candidates,
-                candidates=candidates,
-            )
+            if args.agent_approval:
+                from scripts.verify_paperrecon_candidates import (
+                    VerifierError,
+                    read_agent_approval,
+                )
+
+                try:
+                    record = read_agent_approval(
+                        args.agent_approval, candidates_path=args.candidates, candidates=candidates
+                    )
+                except VerifierError as error:
+                    raise PromotionError(str(error)) from error
+                approval = HumanApproval(
+                    candidate_sha256=record["candidate_sha256"],
+                    approved_arxiv_ids=frozenset(record["approved_arxiv_ids"]),
+                    reviewer=record["reviewer"],
+                )
+            else:
+                approval = read_human_approval(
+                    approval_path,
+                    candidates_path=args.candidates,
+                    candidates=candidates,
+                )
         except PromotionError as error:
             _log(f"cannot promote: {error}")
             return 1

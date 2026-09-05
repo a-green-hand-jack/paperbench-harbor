@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,6 +68,7 @@ def _parse_args() -> argparse.Namespace:
         help="Hugging Face dataset repository supplying the published manifest.",
     )
     parser.add_argument("--model", default=DEFAULT_WORKER_MODEL)
+    parser.add_argument("--dataset-revision", required=True, help="Immutable published dataset commit SHA")
     parser.add_argument("--reviewer-model", default=DEFAULT_REVIEWER_MODEL)
     parser.add_argument(
         "--max-turns",
@@ -85,6 +87,8 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
+    if not re.fullmatch(r"[0-9a-f]{40}", args.dataset_revision):
+        raise SystemExit("--dataset-revision must be a full immutable commit SHA")
     if args.concurrency < 1:
         raise SystemExit("--concurrency must be at least 1")
     run_root = args.run_root.resolve()
@@ -115,6 +119,7 @@ def main() -> int:
     summary: dict = {
         "generated_at": _timestamp(),
         "dataset_repository": args.dataset_repository,
+        "dataset_revision": args.dataset_revision,
         "upstream_revision": revision,
         "worker_model": args.model,
         "reviewer_model": args.reviewer_model,
@@ -135,6 +140,8 @@ def main() -> int:
                 "lifesci-paperrecon-short/dataset-manifest.jsonl",
                 "--repo-type",
                 "dataset",
+                "--revision",
+                args.dataset_revision,
                 "--local-dir",
                 str(manifest_root),
             ],

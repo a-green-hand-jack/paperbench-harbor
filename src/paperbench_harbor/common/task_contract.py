@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +48,33 @@ def validate_task_contract(task_dir: Path) -> list[ContractFinding]:
     if not instruction_path.is_file():
         return [ContractFinding("missing_instruction", "instruction.md is absent")]
     instruction = instruction_path.read_text(encoding="utf-8")
+
+    requirements_path = materials / "writing_requirements.json"
+    if requirements_path.is_file():
+        from paperbench_harbor.construction.core.evidence import (
+            file_hash,
+            safe_file,
+            validate_locator,
+        )
+
+        try:
+            requirements = json.loads(requirements_path.read_text())
+            if not isinstance(requirements, list) or not requirements:
+                raise ValueError("writing requirements must be a nonempty array")
+            for requirement in requirements:
+                if not requirement.get("public_support"):
+                    raise ValueError("writing requirement lacks public support")
+                for location in requirement["public_support"]:
+                    prefix = "/workspace/materials/"
+                    if not location["path"].startswith(prefix):
+                        raise ValueError("support must name its actual writer-visible path")
+                    relative = location["path"][len(prefix):]
+                    path = safe_file(materials, relative)
+                    if file_hash(path) != location["sha256"]:
+                        raise ValueError("writer support hash mismatch")
+                    validate_locator(materials, relative, location["locator"])
+        except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+            findings.append(ContractFinding("invalid_writing_requirements", str(error)))
 
     for reference in sorted(set(_MATERIAL_PATH_RE.findall(instruction))):
         if "..." in reference:

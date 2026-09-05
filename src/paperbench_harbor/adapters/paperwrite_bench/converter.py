@@ -167,6 +167,25 @@ def _referenced_style_files(
     """
     text = template_tex.read_text(encoding="utf-8", errors="replace")
     found: dict[str, Path] = {}
+    if prefer_local_styles:
+        # A local class/style may itself require additional non-TeX-Live packages.
+        pending = [template_tex, *_referenced_class_files(template_tex).values()]
+        seen = set()
+        while pending:
+            source = pending.pop()
+            if source in seen:
+                continue
+            seen.add(source)
+            content = source.read_text(encoding="utf-8", errors="replace")
+            for match in re.finditer(r"\\(?:usepackage|RequirePackage)(?:\[[^]]*\])?\{([^}]+)\}", content):
+                for name in match[1].split(","):
+                    name = name.strip()
+                    if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+                        continue
+                    local = template_tex.parent / f"{name}.sty"
+                    if local.is_file() and not local.is_symlink():
+                        found[name] = local
+                        pending.append(local)
     for match in re.finditer(r"\\usepackage(?:\[[^]]*\])?\{([^}]+)\}", text):
         for raw_name in match.group(1).split(","):
             name = raw_name.strip()
@@ -574,6 +593,13 @@ def _convert_paper(
     agents_md = _preserve_existing_acknowledgement_heading(
         agents_md, environment_dir / "materials" / "template.tex"
     )
+    if (environment_dir / "materials" / "writing_requirements.json").is_file():
+        agents_md += (
+            "\nFollow the evidence-backed requirements in "
+            "`/workspace/materials/writing_requirements.json`. Its support locations are "
+            "absolute paths in this writer environment. Reconstruct the supported scientific "
+            "content; no exact original wording or hidden facts are required.\n"
+        )
     agents_destination = environment_dir / "materials" / "AGENTS.md"
     agents_destination.write_text(agents_md, encoding="utf-8")
     public_files.append(agents_destination)

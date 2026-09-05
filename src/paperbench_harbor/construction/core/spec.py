@@ -58,6 +58,8 @@ class PaperSpec:
     note: str = ""
     code_status: CodeStatus = "available"
     code_not_applicable_reason: str = ""
+    # Empty only for persisted legacy corpora. New structured requests set this.
+    research_type: str = ""
 
     def __post_init__(self) -> None:
         if self.code_status not in CODE_STATUSES:

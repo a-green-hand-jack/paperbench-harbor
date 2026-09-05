@@ -8,7 +8,7 @@ Your goal is to write up the following idea into a complete scientific paper:
 The research overview is in `/workspace/materials/research_overview.md`; read it in full before starting.
 ```
 
-Note that the overview represents a preliminary hypothesis and may not necessarily align with the experiments that were eventually performed.
+{{ "The overview and writing requirements describe the supplied research evidence. Preserve their factual claims and limitations; do not invent missing results or assume access to the original paper." if "writing_requirements.json" in agents_md else "Note that the overview represents a preliminary hypothesis and may not necessarily align with the experiments that were eventually performed." }}
 
 {% if has_tables %}
 First, make sure to refer to the experiment data contained in `/workspace/materials/tables/`.

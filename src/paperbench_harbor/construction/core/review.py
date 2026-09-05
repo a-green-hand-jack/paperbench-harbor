@@ -23,9 +23,9 @@ prompt:
   ``opencode run --auto`` mode as construction, which is unsupervised
   filesystem write access to whatever ``--dir`` points at. A reviewer that can
   edit the sample it is reviewing is not a reviewer. :func:`run_review` copies
-  the three files it needs into a throwaway scratch directory and points the
-  agent at *that*; the live workspace is never reachable from the review
-  session.
+   review materials into a separate working directory. This avoids ordinary
+   accidental edits, but is NOT an OS sandbox: --auto does not restrict host
+   filesystem access. Input hashes are checked after the session.
 
 * **Its verdict is not trusted, only parsed.** ``verdict.json`` is checked for
   shape the same way `provenance.json` is in :mod:`.validate` — malformed JSON,
@@ -49,6 +49,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from paperbench_harbor.adapters.paperwrite_bench.converter import OVERVIEW_FILENAMES
+from paperbench_harbor.construction.core.evidence import tree_hash, validate_locator
+from paperbench_harbor.construction.core.knowledge import get_knowledge_package
 from paperbench_harbor.construction.core.opencode_agent import (
     AgentRun,
     run_agent_session,
@@ -108,9 +110,21 @@ class ReviewVerdict:
     ok: bool
     reasoning: str
     concerns: list[str] = field(default_factory=list)
+    defects: list[dict] = field(default_factory=list)
+    materials_sha256: str = ""
+    model: str = ""
+    knowledge: dict = field(default_factory=dict)
+    blocked: bool = False
 
     def as_dict(self) -> dict:
-        return {"ok": self.ok, "reasoning": self.reasoning, "concerns": list(self.concerns)}
+        record = {"ok": self.ok, "reasoning": self.reasoning, "concerns": list(self.concerns)}
+        if self.defects or self.materials_sha256 or self.model:
+            record.update(defects=self.defects, materials_sha256=self.materials_sha256, model=self.model)
+            if self.knowledge:
+                record["knowledge"] = self.knowledge
+        if self.blocked:
+            record["blocked"] = True
+        return record
 
     def remedy(self) -> str:
         """The retry instruction attached to a failing verdict."""
@@ -119,9 +133,10 @@ class ReviewVerdict:
             "Revise the overview so it is faithful and sufficient without leaking "
             "prose/citations"
         )
-        if not self.concerns:
+        repairs = [*self.concerns, *(d["repair"] for d in self.defects)]
+        if not repairs:
             return base + "."
-        return base + "; specific concerns: " + "; ".join(self.concerns)
+        return base + "; specific concerns: " + "; ".join(repairs)
 
 
 def default_reviewer_model() -> str:
@@ -150,6 +165,23 @@ def build_review_prompt(spec: PaperSpec, plugin: DomainPlugin, review_dir: Path)
     long = OVERVIEW_FILENAMES["long"]
     skeleton_headings = ", ".join(plugin.overview_skeleton_headings)
 
+    structured = ""
+    if spec.research_type:
+        from .knowledge import get_knowledge_package
+
+        structured = f"""
+Also return a `defects` array. Each defect must have category (structure,
+scientific_fact, material_insufficiency, leakage, eligibility), severity
+(blocking, major, minor), source_evidence (a nonempty list of staged relative
+file paths with locators such as `original/main.tex:lines:10-12` or
+`original/main.pdf:page:2` or `resources/figures/panel.png:image` for an entire
+raster image), and repair (a specific nonempty instruction).
+ok must be false for any blocking/major defect. Do not infer completeness from
+compilation or one successful trial. Check every public writing requirement
+against the full public materials and the private research evidence. Treat the
+source as reference evidence, not mandatory wording or narrative order.
+Knowledge package: {json.dumps(get_knowledge_package(plugin.name, spec.research_type).as_dict())}
+"""
     return f"""\
 You are reviewing one sample of a paper-reconstruction benchmark before it is
 admitted to the corpus. You are not building anything and you are not fixing
@@ -158,7 +190,7 @@ anything. You answer one question and write one file.
 # The question
 
 A writing agent will be given **only** the research overview (plus the paper's
-figures, tables and bibliography, which you do not need to see) and asked to
+figures, tables and bibliography) and asked to
 reconstruct the paper. Judge whether that is possible from what is written
 here, and whether what is written here is true.
 
@@ -173,6 +205,13 @@ Read all three in full before judging. The overviews follow a fixed skeleton
 ({skeleton_headings}); the skeleton itself is already checked by other code, so
 do not spend the review on formatting.
 
+The complete `original/` and `resources/` material trees are also staged here,
+including figures, tables, bibliography, supplementary assets and source maps.
+Inspect all materials needed to substantiate each claim, including images/PDFs.
+If your tools cannot inspect a necessary asset, report material insufficiency;
+do not guess its content or approve an unseen quantitative claim.
+{structured}
+
 # The three tests
 
 1. **Faithful.** Every specific claim in the overviews is supported by the
@@ -183,15 +222,8 @@ do not spend the review on formatting.
    does not make at all — invented specificity is worse than vagueness, because
    the writing agent will reproduce it.
 
-   One asymmetry to hold onto here: **you are not shown the paper's figures, and
-   the overviews' author was.** It was explicitly instructed to read values off
-   the plots. So a quantity that is not in `main.tex`'s prose is not, on its
-   own, invented — it may have been read from a figure you cannot see. Treat a
-   value as unfaithful only when it *contradicts* something the text states, is
-   impossible given the text, or describes something the paper has no figure or
-   table for. Where the text states a bound, a point value that violates that
-   bound is a contradiction no matter which figure it came from; where the text
-   is merely silent, a plausible plotted value is not.
+    A value absent from prose may come from a staged figure or table. Inspect
+    that evidence and its uncertainty; plausibility alone is not support.
 
 2. **Sufficient.** Someone who has read only the overview could write a paper
    with this paper's scientific content: the same question, the same approach in
@@ -200,14 +232,13 @@ do not spend the review on formatting.
    invent, and name it. The long variant must carry strictly more real detail
    than the short one, not the same content restated at greater length.
 
-3. **No literal leakage.** The overview must describe the study, not reproduce
-   the paper. Sentences or clauses lifted verbatim from `main.tex`, the paper's
-   own section headings used as overview structure, citation keys, `\\cite`
-   commands or LaTeX markup all mean the answer has been handed over rather
-   than described. Paraphrase is expected and fine; shared technical terms,
-   named methods, gene/species/dataset names and numeric values are not leakage
-   — those are the content. Judge whether prose was copied, not whether
-   vocabulary overlaps.
+3. **No literal leakage.** Reject copied answer narrative, hidden evaluation
+   labels and private paths. Necessary scientific equations and definitions,
+   including their LaTeX math notation, are legitimate research evidence, not
+   leakage. Identical symbols, term ordering, numeric values and technical terms
+   do not establish copied narrative. Preserve equations needed to understand
+   the method; never demand mathematically different formulas merely to reduce
+   textual overlap. Check surrounding prose for actual answer copying.
 
 # How to judge
 
@@ -231,7 +262,8 @@ shape and nothing else:
 {{
   "ok": true,
   "reasoning": "...",
-  "concerns": []
+  "concerns": [],
+  "defects": []
 }}
 ```
 
@@ -250,7 +282,7 @@ them defeats the point of the review. Write `{VERDICT_FILENAME}` and stop.
 """
 
 
-def parse_verdict(path: Path) -> ReviewVerdict:
+def parse_verdict(path: Path, *, require_structured: bool = False) -> ReviewVerdict:
     """Read `verdict.json` and validate its shape. Raises, never guesses.
 
     The reviewer is an LLM and its output file is untrusted input, exactly like
@@ -288,12 +320,41 @@ def parse_verdict(path: Path) -> ReviewVerdict:
     if not reasoning:
         raise ReviewError(f"{path.name} 'reasoning' is empty")
 
+    defects = record.get("defects", [])
+    if require_structured and "defects" not in record:
+        raise ReviewError("structured review requires defects")
+    if not isinstance(defects, list):
+        raise ReviewError("defects must be a list")
+    for defect in defects:
+        if (not isinstance(defect, dict)
+            or defect.get("category") not in ("structure", "scientific_fact", "material_insufficiency", "leakage", "eligibility")
+            or defect.get("severity") not in ("blocking", "major", "minor")
+            or not isinstance(defect.get("repair"), str) or not defect["repair"].strip()
+            or not isinstance(defect.get("source_evidence"), list) or not defect["source_evidence"]
+            or not all(isinstance(item, str) and item.strip() for item in defect["source_evidence"])):
+            raise ReviewError("invalid structured defect")
+    if record["ok"] and any(d["severity"] in ("blocking", "major") for d in defects):
+        raise ReviewError("passing verdict contradicts blocking defects")
+    if require_structured and not record["ok"] and not defects:
+        raise ReviewError("failed structured review requires located defects")
+    if require_structured:
+        for defect in defects:
+            for reference in defect["source_evidence"]:
+                try:
+                    if reference.endswith(":image"):
+                        validate_locator(path.parent, reference.removesuffix(":image"), "image")
+                    else:
+                        relative, kind, location = reference.rsplit(":", 2)
+                        validate_locator(path.parent, relative, f"{kind}:{location}")
+                except (ValueError, OSError) as error:
+                    raise ReviewError(f"invalid defect source_evidence: {reference}") from error
     verdict = ReviewVerdict(
         ok=record["ok"],
         reasoning=reasoning,
         concerns=[entry.strip() for entry in concerns if entry.strip()],
+        defects=defects,
     )
-    if not verdict.ok and not verdict.concerns:
+    if not verdict.ok and not verdict.concerns and not verdict.defects:
         raise ReviewError(
             f"{path.name} rejects the sample but lists no concerns; the retry turn "
             "would have nothing to act on"
@@ -323,6 +384,10 @@ def prepare_review_dir(paper_dir: Path, review_dir: Path) -> Path:
         raise ReviewError(
             "cannot review a sample that is missing " + ", ".join(missing)
         )
+    for name in ("original", "resources"):
+        source = paper_dir / name
+        tree_hash(source)  # Reject links instead of following private/outside targets.
+        shutil.copytree(source, review_dir / name, ignore=shutil.ignore_patterns("reconstructability_review.json"))
     return review_dir
 
 
@@ -353,8 +418,10 @@ def run_review(
 
     review_dir = (build_root / spec.paper_id / "review").resolve()
     try:
+        input_hash = tree_hash(paper_dir, exclude=("original/reconstructability_review.json",))
         prepare_review_dir(paper_dir, review_dir)
-    except ReviewError as error:
+        staged_hash = tree_hash(review_dir)
+    except (ReviewError, ValueError, OSError) as error:
         return ReviewVerdict(ok=False, reasoning=str(error), concerns=[str(error)])
 
     if dry_run:
@@ -380,8 +447,13 @@ def run_review(
 
     verdict_path = review_dir / VERDICT_FILENAME
     try:
-        verdict = parse_verdict(verdict_path)
-    except ReviewError as error:
+        if not run.ok:
+            raise ReviewError(f"review process failed: {run.returncode}, timed_out={run.timed_out}")
+        if (tree_hash(paper_dir, exclude=("original/reconstructability_review.json",)) != input_hash
+            or tree_hash(review_dir, exclude=(VERDICT_FILENAME,)) != staged_hash):
+            raise ReviewError("review material changed during independent review")
+        verdict = parse_verdict(verdict_path, require_structured=bool(spec.research_type))
+    except (ReviewError, ValueError, OSError) as error:
         # An agent that exited badly usually also wrote no verdict; report the
         # run failure, since it is the cause and the verdict error is the
         # symptom.
@@ -393,9 +465,14 @@ def run_review(
             )
         else:
             reason = f"the reviewer produced an unusable verdict: {error}"
-        return ReviewVerdict(ok=False, reasoning=reason, concerns=[str(error)])
+        return ReviewVerdict(ok=False, reasoning=reason, concerns=[str(error)], blocked=True)
 
-    return verdict
+    return ReviewVerdict(
+        ok=verdict.ok, reasoning=verdict.reasoning, concerns=verdict.concerns,
+        defects=verdict.defects, materials_sha256=input_hash,
+        model=model or default_reviewer_model(),
+        knowledge=get_knowledge_package(plugin.name, spec.research_type).as_dict() if spec.research_type else {},
+    )
 
 
 def write_review_record(paper_dir: Path, verdict: ReviewVerdict) -> Path:

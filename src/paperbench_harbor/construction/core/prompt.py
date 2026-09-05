@@ -31,6 +31,8 @@ arrive through :class:`~.plugin.DomainPlugin` and are spliced in below.
 
 from __future__ import annotations
 
+import json
+
 from paperbench_harbor.adapters.paperwrite_bench.converter import OVERVIEW_FILENAMES
 from paperbench_harbor.construction.core.plugin import DomainPlugin
 from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpec
@@ -152,10 +154,41 @@ add the qualitative interpretation of each table's result."""
 likewise for tables. If the paper has no separate table assets, say so
 explicitly in `table_summary.txt` rather than leaving it empty."""
 
+    evidence_contract = ""
+    math_policy = "Do not include LaTeX."
+    if spec.research_type:
+        from .knowledge import get_knowledge_package
+
+        math_policy = "Necessary equations and definitions may use LaTeX math notation; do not copy surrounding answer narrative."
+
+        evidence_contract = f"""
+# Evidence-first construction
+
+The core has already extracted and checked `original/research_evidence.json`.
+Read it before drafting. Generate the overviews, assets and template from those
+located facts, not directly from a guessed narrative. Preserve the question,
+methods, assumptions and claim targets. Bind every public_support location to
+an actual public file and valid locator after generating the materials. This run
+uses the short protocol: the long overview is verifier-only after conversion,
+so no required fact may depend on it. Use the short overview and common assets.
+The core computes public SHA-256 bindings and writes the JSON array
+`resources/writing_requirements.json` from requirement IDs, statements and
+public_support (never sources or private paths). Do not hand-maintain those hashes.
+Use the pinned assets already fetched by extraction; do not replace archived code
+with a newer HEAD or re-fetch source files already present. Preserve all private
+source directories and archives at their recorded paths; compiling a normalized
+main.tex does not authorize deleting the immutable extraction assets. This is the
+public task contract; no requirement may depend only on private evidence.
+The private research_evidence.json remains the evaluation basis, not an exact
+wording target. Update asset hashes when faithfully normalizing source files.
+Knowledge package: {json.dumps(get_knowledge_package(plugin.name, spec.research_type).as_dict())}
+"""
+
     return f"""\
 {plugin.benchmark_intro} Your job
 is to turn one published arXiv paper into that sample. You are not writing a
 paper; you are preparing source material.
+{evidence_contract}
 
 Work autonomously. Fetch what you need, inspect it, and fix whatever does not
 fit. Nothing below tells you which LaTeX problems this paper has, because every
@@ -194,7 +227,8 @@ human, it does not get replaced by you.
 
 # What to produce
 
-Create exactly this tree under `{output_dir}` (absolute path; create it):
+Create this tree under `{output_dir}` (absolute path; create it), preserving any
+additional immutable source assets already retained under `original/`:
 
 ```
 {output_dir}/
@@ -297,7 +331,7 @@ literal too, spelled as shown.
 
 This is the **only** description of the study the writing agent receives, so
 it must be sufficient to reconstruct the paper's scientific content — and it
-must not be the paper. {plugin.overview_content_guidance} Do not include LaTeX. Do not name
+must not be the paper. {plugin.overview_content_guidance} {math_policy} Do not name
 section headings from the paper. Do not include citations.
 
 Aim for {plugin.overview_length_targets}; the long variant must carry strictly more detail, not the

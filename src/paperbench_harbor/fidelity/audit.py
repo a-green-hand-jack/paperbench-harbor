@@ -99,6 +99,14 @@ def _layout_spec(benchmark: str) -> UpstreamLayoutSpec:
         from paperbench_harbor.adapters.paperwritingbench.spec import SPEC
 
         return SPEC
+    from paperbench_harbor.adapters.paperrecon import get_paperrecon_adapter, paperrecon_domains
+
+    for domain in paperrecon_domains():
+        adapter = get_paperrecon_adapter(domain)
+        if adapter.benchmark == benchmark:
+            spec = adapter.build_config(source=Path("."), output_dir=Path("."), upstream_revision=None).layout_spec
+            assert spec is not None
+            return spec
     raise FidelityError(f"unsupported benchmark for fidelity audit: {benchmark}")
 
 

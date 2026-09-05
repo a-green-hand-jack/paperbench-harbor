@@ -46,6 +46,7 @@ PUBLIC_RULES = (
     # Optional on the historical corpus; required by LifeSci's source-table
     # contract once a constructed sample declares it.
     CopyRule("resources/table_inventory.json", "environment/materials/table_inventory.json"),
+    CopyRule("resources/writing_requirements.json", "environment/materials/writing_requirements.json"),
     CopyRule("resources/figures", "environment/materials/figures", kind="tree"),
     CopyRule("resources/tables", "environment/materials/tables", kind="tree"),
     # README files can contain a direct locator for the source paper. Stage it
@@ -110,7 +111,8 @@ SPEC = UpstreamLayoutSpec(
     public=PUBLIC_RULES,
     private=PRIVATE_RULES,
     forbidden_public_names=frozenset(
-        {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json"}
+        {"main.tex", "main.pdf", "config.yaml", "eval_points.json", "source_manifest.json",
+         "research_evidence.json", "reconstructability_review.json"}
     ),
     forbidden_public_ignore_globs=("materials/code/**",),
     generated_public=(

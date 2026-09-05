@@ -1186,6 +1186,14 @@ def validate_paper(
     _check_summaries(report)
     _check_citations(report)
 
+    if spec.research_type:
+        from .evidence import validate_research_evidence
+
+        try:
+            validate_research_evidence(paper_dir, plugin.name, spec.research_type)
+        except (ValueError, OSError) as error:
+            report.fail("research-evidence", str(error), remedy="Repair located evidence and public support; do not weaken requirements.")
+
     if run_compile:
         _check_compiles(report, build_root)
     else:

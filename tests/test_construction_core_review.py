@@ -168,15 +168,15 @@ def test_a_rejection_without_concerns_is_a_failure(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_only_the_three_reviewable_files_are_staged(tmp_path: Path) -> None:
+def test_full_material_trees_are_staged(tmp_path: Path) -> None:
     paper_dir = _built_sample(tmp_path)
     review_dir = prepare_review_dir(paper_dir, tmp_path / "build" / "review")
 
     assert sorted(path.name for path in review_dir.iterdir()) == sorted(
-        ["main.tex", SHORT, LONG]
+        ["main.tex", SHORT, LONG, "original", "resources"]
     )
-    # provenance.json would tell the reviewer what the constructor claims, and
-    # template.tex is a different question entirely.
+    assert (review_dir / "original" / "main.tex").is_file()
+    assert (review_dir / "resources" / SHORT).is_file()
     assert not (review_dir / "provenance.json").exists()
     assert not (review_dir / "template.tex").exists()
 
@@ -193,6 +193,19 @@ def test_the_review_dir_is_rebuilt_from_scratch(tmp_path: Path) -> None:
     prepare_review_dir(paper_dir, review_dir)
     assert not (review_dir / "verdict.json").exists()
     assert (review_dir / SHORT).read_text(encoding="utf-8") == "# Title\n\nBEAGLE\n"
+
+
+@pytest.mark.parametrize("name", ["main.tex", SHORT, LONG])
+def test_root_review_input_mutation_is_rejected(tmp_path, monkeypatch, name):
+    paper_dir = _built_sample(tmp_path)
+    def mutate(workspace):
+        (workspace / name).write_text("changed review input")
+        _write_verdict(workspace, {"ok": True, "reasoning": "looks fine", "concerns": []})
+        return 0
+    _stub_agent(monkeypatch, mutate)
+    verdict = run_review(SPEC, LIFESCI_PLUGIN, paper_dir, build_root=tmp_path / "build", log_dir=tmp_path / "logs")
+    assert not verdict.ok
+    assert "changed" in verdict.reasoning
 
 
 def test_a_sample_missing_an_overview_cannot_be_reviewed(tmp_path: Path) -> None:

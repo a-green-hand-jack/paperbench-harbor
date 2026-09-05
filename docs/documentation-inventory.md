@@ -21,6 +21,8 @@ must cite an immutable release, tag, or current code revision.
 | `docs/non-ml-benchmark-survey.md` | Maintainers | GitHub | Historical research | Issue #2 scope only; no task usage guide |
 | `docs/paper-orchestra-sidecar.md` | Maintainers | GitHub | Keep | Sidecar operation |
 | `docs/papersmith-architecture.md` | Maintainers | GitHub | Keep | Construction architecture |
+| `docs/issue-70-todo.md` | Maintainers | GitHub | In progress | Full six-phase implementation and verification checklist |
+| `docs/papersmith-workflow.md` | Maintainers | GitHub | New | Structured request, evidence, resume, trials and explicit release operations |
 | `docs/release-regression-deltas.md` | Release maintainers | GitHub | Keep | Document expected task-byte changes by release |
 | `docs/scholarly-search-sidecar.md` | Maintainers | GitHub | Keep | Sidecar operation |
 | `docs/source-archive.md` | Release maintainers | GitHub | Keep | Source-archive release gate and evidence requirements |

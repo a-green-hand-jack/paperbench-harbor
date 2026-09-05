@@ -40,7 +40,7 @@ def test_supervisor_runs_all_release_candidate_stages(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         sys,
         "argv",
-        ["supervisor", "--run-root", str(run_root)],
+        ["supervisor", "--run-root", str(run_root), "--dataset-revision", "a" * 40],
     )
 
     assert supervisor.main() == 0
@@ -56,6 +56,8 @@ def test_supervisor_runs_all_release_candidate_stages(monkeypatch, tmp_path: Pat
     ]
     assert commands[0][:4] == ["hf", "download", "Jack-Jieke-Wu/Paper-Writing-Exam", "lifesci-paperrecon-short/dataset-manifest.jsonl"]
     assert "--fresh" in commands[1]
+    assert commands[0][commands[0].index("--revision") + 1] == "a" * 40
+    assert summary["dataset_revision"] == "a" * 40
     assert commands[1][commands[1].index("--max-turns") + 1] == "5"
     assert commands[1][commands[1].index("--concurrency") + 1] == "4"
     assert commands[2][2] == "scripts/audit_lifesci_table_coverage.py"
