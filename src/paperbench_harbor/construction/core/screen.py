@@ -53,7 +53,7 @@ DEFAULT_SCREENING_MODEL = DEFAULT_MODEL
 
 #: Fetching and checking a few dozen candidates is a long job, but it is network
 #: waiting rather than compile iteration.
-DEFAULT_SCREENING_TIMEOUT_SECONDS = 5400
+DEFAULT_SCREENING_TIMEOUT_SECONDS = None
 
 CANDIDATES_FILENAME = "candidates.json"
 
@@ -485,7 +485,7 @@ def run_screening(
     discovery_context: str = "",
     model: str = DEFAULT_SCREENING_MODEL,
     log_dir: Path,
-    timeout: int = DEFAULT_SCREENING_TIMEOUT_SECONDS,
+    timeout: int | None = DEFAULT_SCREENING_TIMEOUT_SECONDS,
     dry_run: bool = False,
 ) -> list[Candidate]:
     """Run one screening pass and return the validated proposal.

@@ -18,7 +18,7 @@ class ConstructionRequest(BaseModel):
     target_count: int = Field(default=1, ge=1)
     material_policy: Literal["sufficient_public_evidence"] = "sufficient_public_evidence"
     difficulty: Literal["reconstruct scientific writing from supplied evidence"] = "reconstruct scientific writing from supplied evidence"
-    timeout_seconds: int = Field(default=5400, ge=1)
+    timeout_seconds: int | None = Field(default=None, ge=1)
     max_turns: int = Field(default=3, ge=1)
     concurrency: int = Field(default=1, ge=1)
     trial_timeout_seconds: int = Field(default=1800, ge=1)

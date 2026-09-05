@@ -47,6 +47,7 @@ import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+from uuid import uuid4
 
 from paperbench_harbor.adapters.paperwrite_bench.converter import OVERVIEW_FILENAMES
 from paperbench_harbor.construction.core.evidence import tree_hash, validate_locator
@@ -66,9 +67,8 @@ from paperbench_harbor.construction.core.spec import PaperSpec
 #: matters for a check that runs on every paper of every turn.
 DEFAULT_REVIEWER_MODEL = "apex-claude/claude-sonnet-5"
 
-#: Reading two overviews and a paper is a much smaller job than building a
-#: sample, so review does not inherit construction's 90-minute budget.
-DEFAULT_REVIEW_TIMEOUT_SECONDS = 1800
+#: No stage duration limit unless explicitly requested.
+DEFAULT_REVIEW_TIMEOUT_SECONDS = None
 
 #: The verdict's required keys and their required types. Shape is validated
 #: rather than assumed, for the same reason `provenance.json`'s is.
@@ -399,7 +399,7 @@ def run_review(
     build_root: Path,
     model: str | None = None,
     log_dir: Path,
-    timeout: int = DEFAULT_REVIEW_TIMEOUT_SECONDS,
+    timeout: int | None = DEFAULT_REVIEW_TIMEOUT_SECONDS,
     dry_run: bool = False,
 ) -> ReviewVerdict:
     """Run the reconstructability review for one built sample.
@@ -416,7 +416,7 @@ def run_review(
     location itself is unsafe and is a bug in the caller, not a verdict.
     """
 
-    review_dir = (build_root / spec.paper_id / "review").resolve()
+    review_dir = (build_root / spec.paper_id / "review" / uuid4().hex).resolve()
     try:
         input_hash = tree_hash(paper_dir, exclude=("original/reconstructability_review.json",))
         prepare_review_dir(paper_dir, review_dir)

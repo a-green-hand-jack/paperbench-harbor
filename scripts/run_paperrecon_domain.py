@@ -38,10 +38,19 @@ from paperbench_harbor.construction.core.request import ConstructionRequest
 from paperbench_harbor.construction.core.review import default_reviewer_model
 from paperbench_harbor.construction.core.screen import Candidate, ScreeningError, run_screening
 from paperbench_harbor.construction.core.spec import PaperSpec
-from paperbench_harbor.construction.core.trial import run_trial
+from paperbench_harbor.construction.core.state import (
+    StageState,
+    atomic_json,
+    fingerprint,
+    function_hash,
+    implementation_hash,
+)
+from paperbench_harbor.construction.core.trial import run_trial, verify_trial_evidence
 from paperbench_harbor.construction.domains import get_domain
 from paperbench_harbor.fidelity.dataset import DatasetAuditError
+from paperbench_harbor.fidelity.review import default_conversion_reviewer_model
 from paperbench_harbor.provenance.archive import build_source_archive
+from paperbench_harbor.provenance.implementation import implementation_provenance
 from scripts.promote_lifesci_paperrecon_candidates import (
     PromotionError,
     promote,
@@ -61,10 +70,14 @@ def _summary(candidates: list[Candidate]) -> dict[str, object]:
 
 
 def _write(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if path.name == "run-summary.json":
-        keys = ("status", "target_count", "approved_count", "failed_count", "blocked_count",
+        payload = {"checkpoint_path": str(path.parent / "stages.json"), **payload}
+        execution = path.parent / "execution.json"
+        if "implementation" not in payload and execution.is_file():
+            payload["implementation"] = json.loads(execution.read_text()).get("implementation")
+    atomic_json(path, payload)
+    if path.name == "run-summary.json":
+        keys = ("status", "construction_status", "task_ready_count", "trial_status", "checkpoint_path", "target_count", "approved_count", "failed_count", "blocked_count",
                 "unfinished_count", "candidate_count", "dataset", "source_archive", "tasks", "reason")
         print(json.dumps({"summary_path": str(path), **{k: payload[k] for k in keys if k in payload}}))
 
@@ -92,6 +105,20 @@ def _stage_source_archive(run_root: Path, **options) -> Path:
     return destination
 
 
+def _checkpoint(state: StageState, stage: str, inputs: str, output: Path, action, *, resume: bool):
+    digest = tree_hash(output) if output.is_dir() else ""
+    if resume and state.reusable(stage, inputs, digest):
+        return state.record["stages"][stage]["result"]
+    state.save(stage, "running", inputs)
+    try:
+        result = action()
+        state.save(stage, "passed", inputs, tree_hash(output), result=result)
+        return result
+    except Exception as error:
+        state.save(stage, "failed", inputs, error=f"{type(error).__name__}: {error}")
+        raise
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--domain", choices=("lifesci", "physics", "chemistry", "mathematics"), required=True)
@@ -102,8 +129,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-lkm", dest="lkm_default", action="store_false")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--reviewer-model", default=None)
+    parser.add_argument("--conversion-reviewer-model", default=None)
     parser.add_argument("--max-turns", type=int, default=3)
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="Optional construction subprocess seconds; default unlimited")
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--candidates", type=Path)
     parser.add_argument("--human-approval", type=Path, help="legacy LifeSci approval record")
@@ -117,8 +145,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--research-type", help="Explicit supported research type")
     parser.add_argument("--describe-request", action="store_true", help="Validate/display request without execution")
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--rerun-stage", choices=("evidence", "build", "materials", "validate", "review"))
-    parser.add_argument("--trial-model", help="Required for accepted delivery; no model trial is silently implied")
+    parser.add_argument("--rerun-stage", choices=("evidence", "build", "materials", "validate", "review", "conversion", "audit", "archive"))
+    parser.add_argument("--trial-model", help="Optional downstream trial, required for trial acceptance/release, not task_ready")
     parser.add_argument("--trial-agent", choices=("codex", "opencode", "claude-code"), default="codex")
     parser.add_argument("--trial-agent-version", help="Pinned trial CLI version")
     parser.add_argument("--source-id", action="append", dest="source_ids", default=[])
@@ -243,8 +271,13 @@ def _promote_and_build(args: argparse.Namespace) -> int:
             raise ValueError(f"persisted promotion conflicts with approved candidate: {spec.arxiv_id}")
     if len(specs) < args.target_count:
         raise ValueError(f"only {len(specs)} approved papers for target {args.target_count}")
-    check_opencode_available(args.model)
     run_root = args.run_root.resolve()
+    if bool(args.trial_model) != bool(args.trial_agent_version):
+        raise ValueError("downstream trial requires both --trial-model and --trial-agent-version")
+    implementation = implementation_provenance()
+    state = StageState(run_root / "stages.json", {"domain": domain.name, "research_type": args.research_type, "implementation": implementation})
+    if args.rerun_stage in ("conversion", "audit", "archive"):
+        state.save(args.rerun_stage, "pending", "")
     corpus_root = run_root / "corpus"
     outcomes_build = build_corpus(
         specs,
@@ -259,55 +292,81 @@ def _promote_and_build(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         fresh=False,
         resume=args.resume,
-        rerun_stage=args.rerun_stage,
+        rerun_stage=args.rerun_stage if args.rerun_stage not in ("conversion", "audit", "archive") else None,
         reviewer_model=args.reviewer_model or default_reviewer_model(),
     )
     batch = {**batch_counts(outcomes_build, [], [], args.target_count),
-             "build": outcomes_build, "research_type": args.research_type}
+             "build": outcomes_build, "research_type": args.research_type, "implementation": implementation}
     failed = [item for item in outcomes_build if item["status"] != "ok"]
     if failed:
         _write(run_root / "run-summary.json", {"promotion": promotion_summary, **batch})
         return 1
     output_dir = run_root / "dataset" / domain.benchmark_config
-    revision = __import__("subprocess").check_output(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
-    ).strip()
-    converted = convert_paperwrite_bench(
-        paperrecon_conversion_config(
-            domain.name,
-            source=corpus_root,
-            output_dir=output_dir,
-            upstream_revision=revision,
-            overview="short",
-            overwrite=True,
+    revision = implementation["revision"]
+    library = REPO_ROOT / "src" / "paperbench_harbor"
+    if {p.name for p in corpus_root.iterdir() if p.is_dir()} != {spec.paper_id for spec in specs}:
+        raise ValueError("corpus contains papers outside this approval; use a separate run-root for a different selection")
+    conversion_options = {"source": corpus_root, "upstream_revision": revision, "overview": "short", "overwrite": True}
+
+    def convert():
+        staging = output_dir.with_name(f".conversion-{uuid4().hex}")
+        converted = convert_paperwrite_bench(
+            paperrecon_conversion_config(
+                domain.name, output_dir=staging, **conversion_options,
+            )
         )
-    )
-    audit_result = subprocess.run(
-        [
-            sys.executable,
-            str(REPO_ROOT / "scripts" / "audit_fidelity.py"),
-            "paperrecon",
-            "--domain",
-            domain.name,
-            "--source",
-            str(corpus_root),
-            "--dataset",
-            str(output_dir),
-            "--upstream-revision",
-            revision,
-            "--overview",
-            "short",
-            "--output",
-            str(run_root / "reports" / "fidelity"),
-        ],
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    if audit_result.returncode:
-        _write(run_root / "run-summary.json", {**batch, "blocked_reason": "fidelity audit failed"})
-        return audit_result.returncode
+        if output_dir.exists():
+            history = run_root / "conversion-history" / uuid4().hex
+            history.parent.mkdir(parents=True, exist_ok=True)
+            output_dir.rename(history)
+        staging.rename(output_dir)
+        return converted
+
+    conversion_inputs = fingerprint([domain.name, conversion_options, tree_hash(corpus_root),
+                                     function_hash(convert, _checkpoint),
+                                     implementation_hash(library / "adapters", library / "common", REPO_ROOT / "packaging")])
+    converted = _checkpoint(state, "conversion", conversion_inputs, output_dir, convert, resume=args.resume)
+    audit_dir = run_root / "reports" / "fidelity"
+    conversion_reviewer = args.conversion_reviewer_model or default_conversion_reviewer_model()
+    audit_options = ["paperrecon", "--domain", domain.name, "--source", str(corpus_root),
+                     "--dataset", str(output_dir), "--upstream-revision", revision,
+                     "--overview", "short", "--output", str(audit_dir),
+                     "--reviewer-model", conversion_reviewer, "--semantic-review"]
+
+    def audit():
+        input_hashes = (tree_hash(corpus_root), tree_hash(output_dir))
+        if audit_dir.exists():
+            audit_dir.rename(audit_dir.with_name(f"fidelity-{uuid4().hex}"))
+        audit_result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "audit_fidelity.py"),
+                *audit_options,
+                *(["--timeout", str(args.timeout)] if args.timeout is not None else []),
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            timeout=args.timeout,
+        )
+        if audit_result.returncode:
+            raise ValueError(f"fidelity/semantic/determinism audit failed; inspect {audit_dir}")
+        if input_hashes != (tree_hash(corpus_root), tree_hash(output_dir)):
+            raise ValueError("source or Harbor task changed during conversion audit")
+        summary = json.loads((audit_dir / "summary.json").read_text())
+        if (summary.get("failed_tasks") != 0 or summary.get("determinism_ok") is not True
+            or summary.get("semantic_review_failures") != 0
+            or summary.get("semantic_reviews") != converted):
+            raise ValueError(f"incomplete fidelity/semantic/determinism evidence: {audit_dir}")
+        return summary
+
+    audit_inputs = fingerprint([conversion_inputs, tree_hash(output_dir), audit_options,
+                                function_hash(audit, _checkpoint),
+                                implementation_hash(library / "fidelity", REPO_ROOT / "scripts" / "audit_fidelity.py")])
+    _checkpoint(state, "audit", audit_inputs, audit_dir, audit, resume=args.resume)
     trials = []
     manifest = [json.loads(line) for line in (output_dir / "dataset-manifest.jsonl").read_text().splitlines() if line]
+    if {entry["upstream_paper_id"] for entry in manifest} != {spec.paper_id for spec in specs} or len(manifest) != len(specs):
+        raise ValueError("converted task coverage does not match the approved construction selection")
     package = get_knowledge_package(domain.name, args.research_type)
     if args.trial_model and args.trial_agent_version:
         builds = {item["paper_id"]: item for item in outcomes_build}
@@ -315,38 +374,82 @@ def _promote_and_build(args: argparse.Namespace) -> int:
             task = output_dir / entry["task_id"]
             build = builds[entry["upstream_paper_id"]]
             trial_root = run_root / "trials" / entry["task_id"]
+            paper = corpus_root / entry["upstream_paper_id"]
+            review_path = paper / "original" / "reconstructability_review.json"
+            execution = {"trial_model": args.trial_model, "trial_agent": args.trial_agent,
+                         "trial_agent_version": args.trial_agent_version,
+                         "reviewer_model": args.reviewer_model or default_reviewer_model()}
+            knowledge = json.loads(json.dumps(package.as_dict()))
+            trial_inputs = fingerprint([tree_hash(task), file_hash(review_path), knowledge, execution,
+                                        implementation_hash(library / "construction" / "core" / "trial.py")])
+            trial_state = StageState(trial_root / "stages.json", execution)
+            previous = trial_state.record["stages"].get("trial", {})
+            if args.resume and trial_state.reusable("trial", trial_inputs, fingerprint(previous.get("result"))):
+                try:
+                    verified = verify_trial_evidence(previous["result"], root=run_root, task=task, paper=paper,
+                                                     knowledge=knowledge, execution=execution)
+                except (ValueError, OSError, KeyError, TypeError, AttributeError):
+                    pass
+                else:
+                    trials.append({**previous["result"], **verified})
+                    continue
             # Each attempt gets its own directory; never overwrite a trajectory.
             attempt = 1
             while (trial_root / str(attempt)).exists():
                 attempt += 1
-            trials.append(run_trial(
+            trial_state.save("trial", "running", trial_inputs)
+            trial = run_trial(
                 task, output=trial_root / str(attempt), model=args.trial_model,
                 agent=args.trial_agent, agent_version=args.trial_agent_version,
                 knowledge=package.as_dict(), material_review=build.get("review", {}),
-                review_path=corpus_root / entry["upstream_paper_id"] / "original" / "reconstructability_review.json",
+                review_path=review_path,
                 timeout=args.trial_timeout,
-            ))
-    batch.update(batch_counts(outcomes_build, trials, manifest, args.target_count))
+            )
+            try:
+                verify_trial_evidence(trial, root=run_root, task=task, paper=paper, knowledge=knowledge, execution=execution)
+            except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+                trial = {**trial, "status": "blocked", "exception": f"invalid_trial_evidence:{type(error).__name__}", "diagnosis": "environment"}
+                trial_state.save("trial", "failed", trial_inputs, result=trial, error=str(error))
+            else:
+                trial_state.save("trial", "passed", trial_inputs, fingerprint(trial), result=trial)
+            trials.append(trial)
+    trial_counts = batch_counts(outcomes_build, trials, manifest, args.target_count)
+    batch.update(trial_counts)
     batch["trials"] = trials
-    if not trials:
-        batch["blocked_reason"] = "real trial requires --trial-model and --trial-agent-version"
+    batch["trial_status"] = trial_counts["status"] if trials else "not_run"
+    batch["trial_acceptance"] = trial_counts
     source_archive = None
     if args.stage_candidate:
-        source_archive_dir = _stage_source_archive(
-            run_root,
-            release_root=run_root / "dataset",
-            dataset_repo=f"candidate/{domain.benchmark_config}",
-            dataset_revision=revision,
-            converter_revision=revision,
-            paperwrite_source=corpus_root,
-            paperwritingbench_source=corpus_root,
-            lifesci_source=corpus_root,
-            paperrecon_sources={domain.name: corpus_root},
-            included_configs={domain.benchmark_config},
-        )
+        archive_options = {
+            "release_root": run_root / "dataset",
+            "dataset_repo": f"candidate/{domain.benchmark_config}",
+            "dataset_revision": revision,
+            "converter_revision": revision,
+            "paperwrite_source": corpus_root,
+            "paperwritingbench_source": corpus_root,
+            "lifesci_source": corpus_root,
+            "paperrecon_sources": {domain.name: corpus_root},
+            "included_configs": {domain.benchmark_config},
+            "implementation": implementation,
+        }
+        archive_inputs = fingerprint([tree_hash(output_dir), tree_hash(corpus_root), archive_options,
+                                      function_hash(_stage_source_archive, _checkpoint),
+                                      implementation_hash(library / "provenance", library / "source_archive")])
+        source_archive_dir = _checkpoint(state, "archive", archive_inputs, run_root / "source-archive",
+                                        lambda: str(_stage_source_archive(run_root, **archive_options)), resume=args.resume)
         source_archive = str(source_archive_dir)
     result = {
         **batch,
+        "status": "passed" if trial_counts["status"] == "passed" else "task_ready",
+        "construction_status": "task_ready",
+        "task_ready_count": len(manifest),
+        "construction_unfinished_count": max(0, args.target_count - len(manifest)),
+        "failed_count": 0,
+        "blocked_count": 0,
+        "unfinished_count": max(0, args.target_count - len(manifest)),
+        "tasks": [{**task, "status": "approved" if task["status"] == "approved" else "task_ready", "construction_status": "task_ready", "reason": "construction, independent review and conversion audits passed",
+                   "trial_status": task["status"] if trials else "not_run", "trial_reason": task["reason"]} for task in trial_counts["tasks"]],
+        "checkpoint_path": str(state.path),
         "promotion": promotion_summary,
         "approval_sha256": approval["candidate_sha256"],
         "built_tasks": len(outcomes_build),
@@ -361,8 +464,8 @@ def _promote_and_build(args: argparse.Namespace) -> int:
         "execution_sha256": file_hash(run_root / "execution.json"),
     }
     _write(run_root / "run-summary.json", result)
-    print(f"candidate corpus {batch['status']} -> {run_root}")
-    return 0 if batch["status"] == "passed" else 2
+    print(f"Harbor tasks task_ready -> {output_dir}")
+    return 2 if trials and trial_counts["status"] != "passed" else 0
 
 
 def main() -> int:
@@ -395,7 +498,9 @@ def main() -> int:
             raise ValueError(f"run-root must be outside every Git working tree: {git_root}")
         _write(args.run_root.resolve() / "request.json", request.model_dump())
         _write(args.run_root.resolve() / "execution.json", {
+            "implementation": implementation_provenance(),
             "worker_model": args.model, "reviewer_model": args.reviewer_model or default_reviewer_model(),
+            "conversion_reviewer_model": args.conversion_reviewer_model or default_conversion_reviewer_model(),
             "trial_model": args.trial_model, "trial_agent": args.trial_agent,
             "trial_agent_version": args.trial_agent_version,
         })
@@ -407,7 +512,7 @@ def main() -> int:
         _write(args.run_root.resolve() / "release-handoff.json", handoff)
         print(json.dumps({"release_handoff": handoff}))
         return _promote_and_build(args) if args.candidates else _screen(args)
-    except (ValueError, PromotionError, ScreeningError, DatasetAuditError, VerifierError) as error:
+    except (ValueError, OSError, RuntimeError, subprocess.TimeoutExpired, PromotionError, ScreeningError, DatasetAuditError, VerifierError) as error:
         print(f"ERROR: {error}")
         root = args.run_root.resolve()
         if _enclosing_git_root(root) is None and (root / "request.json").is_file():

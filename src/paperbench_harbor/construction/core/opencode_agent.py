@@ -32,13 +32,12 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 DEFAULT_MODEL = "openai/gpt-5.6-terra"
 
-#: Long enough for a full fetch/build/compile-iterate cycle on a 50-page paper
-#: with a large figure set; short enough that a wedged run does not hold the
-#: pilot open indefinitely.
-DEFAULT_TIMEOUT_SECONDS = 5400
+#: Construction duration is unknown. Only an explicit caller budget limits it.
+DEFAULT_TIMEOUT_SECONDS = None
 
 
 class ScratchLocationError(RuntimeError):
@@ -103,7 +102,7 @@ def run_agent_session(
     model: str = DEFAULT_MODEL,
     turn: int = 1,
     continue_session: bool = False,
-    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    timeout: int | None = DEFAULT_TIMEOUT_SECONDS,
     dry_run: bool = False,
 ) -> AgentRun:
     """Invoke `opencode run` for one agent turn and record it.
@@ -113,11 +112,13 @@ def run_agent_session(
     be able to copy the recorded command line verbatim.
     """
 
+    if timeout is not None and timeout <= 0:
+        raise ValueError("timeout must be positive seconds or None (unlimited)")
     if _enclosing_git_root(workspace) is not None:
         raise ScratchLocationError(f"{workspace} is inside a git working tree")
 
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{paper_id}.turn{turn}.log"
+    log_path = log_dir / f"{paper_id}.turn{turn}.{uuid4().hex}.log"
 
     command: tuple[str, ...] = (
         "opencode",

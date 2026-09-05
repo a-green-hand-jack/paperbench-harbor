@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from paperbench_harbor.provenance.implementation import implementation_provenance
+
 SCHEMA_VERSION = "1.0"
 REGISTRY_FILENAME = "task-paper-registry.jsonl"
 ARCHIVE_MANIFEST_FILENAME = "source-archive-manifest.jsonl"
@@ -268,6 +270,7 @@ def build_source_archive(
     lifesci_source: Path,
     paperrecon_sources: Mapping[str, Path] | None = None,
     included_configs: set[str] | None = None,
+    implementation: dict | None = None,
 ) -> dict[str, int]:
     """Build a release-level registry and a source-only archive.
 
@@ -279,6 +282,7 @@ def build_source_archive(
         raise ValueError(f"output directory already exists: {output_dir}")
     if not dataset_revision or not converter_revision:
         raise ValueError("dataset_revision and converter_revision are required")
+    implementation = implementation or implementation_provenance()
 
     output_dir.mkdir(parents=True)
     source_cache: dict[str, tuple[SourceLocation, list[dict[str, Any]]]] = {}
@@ -307,6 +311,7 @@ def build_source_archive(
                         "upstream_id": source_manifest.get("upstream_id"),
                         "upstream_revision": source_manifest.get("upstream_revision"),
                         "converter_revision": converter_revision,
+                        "implementation": implementation,
                     },
                     "paper": {
                         "source_identity_kind": "first_party_smoke_task",
@@ -352,6 +357,7 @@ def build_source_archive(
                     "upstream_id": upstream_id,
                     "upstream_revision": source_manifest.get("upstream_revision"),
                     "converter_revision": converter_revision,
+                    "implementation": implementation,
                 },
                 "paper": source_cache[key][0].provenance,
                 "source_archive": {
@@ -387,6 +393,7 @@ def build_source_archive(
         "dataset_repo": dataset_repo,
         "dataset_revision": dataset_revision,
         "converter_revision": converter_revision,
+        "implementation": implementation,
         "task_count": len(registry_records),
         "source_tree_count": len(source_cache),
         "source_file_count": len(archive_records),

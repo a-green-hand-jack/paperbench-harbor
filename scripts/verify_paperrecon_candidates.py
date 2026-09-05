@@ -100,7 +100,7 @@ def _read_verdict(path: Path, *, candidate_sha: str, domain: str, model: str, id
 
 def verify(
     *, candidate_path: Path, domain_name: str, run_root: Path, screening_model: str,
-    verifier_models: tuple[str, str], timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    verifier_models: tuple[str, str], timeout: int | None = DEFAULT_TIMEOUT_SECONDS,
     minimum_approved: int = 20,
 ) -> dict:
     if verifier_models[0] == verifier_models[1] or screening_model in verifier_models:

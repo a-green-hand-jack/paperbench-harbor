@@ -55,6 +55,7 @@ def audit_dataset(
     review_log_dir: Path | None = None,
     layout_spec: UpstreamLayoutSpec | None = None,
     workers: int = 1,
+    review_timeout: int | None = None,
 ) -> list[TaskReport]:
     """Run the per-task fidelity audit across one generated dataset.
 
@@ -83,6 +84,7 @@ def audit_dataset(
             reviewer_model=reviewer_model,
             review_log_dir=review_log_dir,
             layout_spec=layout_spec,
+            review_timeout=review_timeout,
         )
 
     if workers == 1:

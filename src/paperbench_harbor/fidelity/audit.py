@@ -361,6 +361,7 @@ def run_fidelity_audit(
     venue: str | None,
     semantic_review: bool = False,
     reviewer_model: str | None = None,
+    review_timeout: int | None = None,
     review_log_dir: Path | None = None,
     layout_spec: UpstreamLayoutSpec | None = None,
 ) -> TaskReport:
@@ -391,6 +392,7 @@ def run_fidelity_audit(
             task_dir=task_dir,
             protocol=protocol,
             model=reviewer_model,
+            timeout=review_timeout,
             log_dir=review_log_dir
             or Path(tempfile.gettempdir()) / "paperbench-harbor-fidelity-review-logs",
         )

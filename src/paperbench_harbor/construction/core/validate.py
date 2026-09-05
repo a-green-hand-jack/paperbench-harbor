@@ -1088,7 +1088,7 @@ def _check_citations(report: ValidationReport) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _check_compiles(report: ValidationReport, build_root: Path) -> None:
+def _check_compiles(report: ValidationReport, build_root: Path, timeout: int | None = None) -> None:
     resources = report.paper_dir / "resources"
     if not (resources / "template.tex").is_file():
         return
@@ -1098,7 +1098,7 @@ def _check_compiles(report: ValidationReport, build_root: Path) -> None:
     # 1. The writer's starting point. The task is unsolvable if the skeleton
     #    handed to the agent does not compile before it writes a word.
     report.compiles.append(
-        compile_restricted(resources, "template.tex", build_root / "template")
+        compile_restricted(resources, "template.tex", build_root / "template", timeout=timeout)
     )
 
     # 2. The oracle. Reproduced rather than approximated: the converter's own
@@ -1145,7 +1145,7 @@ def _check_compiles(report: ValidationReport, build_root: Path) -> None:
         )
         return
 
-    report.compiles.append(compile_restricted(submission, "main.tex", build_root / "oracle-build"))
+    report.compiles.append(compile_restricted(submission, "main.tex", build_root / "oracle-build", timeout=timeout))
 
 
 # --------------------------------------------------------------------------- #
@@ -1160,6 +1160,7 @@ def validate_paper(
     *,
     build_root: Path,
     run_compile: bool = True,
+    timeout: int | None = None,
 ) -> ValidationReport:
     """Check one constructed paper against everything downstream assumes.
 
@@ -1195,7 +1196,7 @@ def validate_paper(
             report.fail("research-evidence", str(error), remedy="Repair located evidence and public support; do not weaken requirements.")
 
     if run_compile:
-        _check_compiles(report, build_root)
+        _check_compiles(report, build_root, timeout)
     else:
         report.compile_skipped_reason = "run_compile=False"
 

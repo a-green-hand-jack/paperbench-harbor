@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from paperbench_harbor.construction.core.evidence import tree_hash
 from paperbench_harbor.construction.core.opencode_agent import (
     DEFAULT_TIMEOUT_SECONDS,
     run_agent_session,
@@ -160,7 +161,7 @@ def run_conversion_review(
     protocol: str,
     model: str | None = None,
     log_dir: Path,
-    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    timeout: int | None = DEFAULT_TIMEOUT_SECONDS,
     dry_run: bool = False,
 ) -> ReviewVerdict:
     """Run one isolated reviewer and return a strictly parsed verdict."""
@@ -168,6 +169,7 @@ def run_conversion_review(
         prefix="paperbench-conversion-review-", dir=_review_scratch_root()
     ) as temporary:
         review_dir = prepare_conversion_review_dir(paper_dir, task_dir, Path(temporary))
+        input_hashes = (tree_hash(paper_dir), tree_hash(task_dir), tree_hash(review_dir))
         prompt = build_conversion_review_prompt(review_dir, benchmark, protocol)
         try:
             run = run_agent_session(
@@ -185,6 +187,8 @@ def run_conversion_review(
             reason = f"semantic reviewer exited {run.returncode} (timed_out={run.timed_out})"
             return ReviewVerdict(ok=False, reasoning=reason, concerns=[reason])
         try:
+            if input_hashes != (tree_hash(paper_dir), tree_hash(task_dir), tree_hash(review_dir, exclude=(VERDICT_FILENAME,))):
+                raise ValueError("conversion review inputs changed during independent review")
             return parse_verdict(review_dir / VERDICT_FILENAME)
         except Exception as error:  # noqa: BLE001 - hostile reviewer output is a failed review.
             return ReviewVerdict(ok=False, reasoning=str(error), concerns=[str(error)])

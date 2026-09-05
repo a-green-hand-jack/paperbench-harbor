@@ -35,6 +35,8 @@ case "$action" in
             '       sh scripts/papersmith-docker.sh exec <command> [arguments...]' \
             'Use /runs/<name> for run roots. Source is mounted read-only at its host path.' \
             'Optional: PAPERSMITH_IMAGE, PAPERSMITH_VOLUME_PREFIX.' \
+            'PAPERSMITH_DETACH=1 runs detached and retains the container for status inspection.' \
+            'PAPERSMITH_CONTAINER_NAME: optional Docker container name.' \
             'PAPERSMITH_NETWORK: bridge (default, network ALLOWED) or none (opt out).' \
             'PAPERSMITH_HOST_CONFIG=1 mounts host OpenCode and Codex config/dependencies read-only.' \
             'PAPERSMITH_READONLY_PATHS: newline-separated additional absolute file/dependency paths.' \
@@ -68,7 +70,7 @@ docker run --rm --network none --read-only --cap-drop ALL --user "$uid:$gid" \
     "$image" sh -ec 'umask 077; mkdir -p "$HOME/.local/share/opencode" "$HOME/.config/opencode" "$HOME/.codex"; chmod 700 "$HOME"'
 
 case "$action" in
-    run) set -- python "$repo/scripts/run_paperrecon_domain.py" "$@" ;;
+    run) set -- python -u "$repo/scripts/run_paperrecon_domain.py" "$@" ;;
     shell) [ "$#" -eq 0 ] || { printf '%s\n' 'shell takes no arguments' >&2; exit 2; }; set -- bash ;;
     exec) [ "$#" -gt 0 ] || { printf '%s\n' 'exec requires a command' >&2; exit 2; } ;;
 esac
@@ -154,12 +156,21 @@ if [ -n "${PAPERSMITH_INPUT:-}" ]; then
     [ -d "$PAPERSMITH_INPUT" ] || exit 2
     set -- --mount "type=bind,src=$PAPERSMITH_INPUT,dst=/input,readonly" "$@"
 fi
-if [ -t 0 ] && [ -t 1 ]; then
-    set -- -it "$@"
-else
-    set -- -i "$@"
+if [ -n "${PAPERSMITH_CONTAINER_NAME:-}" ]; then
+    set -- --name "$PAPERSMITH_CONTAINER_NAME" "$@"
 fi
-exec docker run --rm --init --read-only --user "$uid:$gid" \
+case "${PAPERSMITH_DETACH:-0}" in
+    1) set -- --detach "$@" ;;
+    0)
+        if [ -t 0 ] && [ -t 1 ]; then
+            set -- --rm -it "$@"
+        else
+            set -- --rm -i "$@"
+        fi
+        ;;
+    *) printf '%s\n' 'PAPERSMITH_DETACH must be 0 or 1.' >&2; exit 2 ;;
+esac
+exec docker run --init --read-only --user "$uid:$gid" \
     --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
     --network "$network" \
     --tmpfs /tmp:rw,nosuid,nodev,mode=1777 \

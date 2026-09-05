@@ -123,7 +123,7 @@ def compile_restricted(
     tex_name: str,
     build_dir: Path,
     *,
-    timeout: int = 600,
+    timeout: int | None = None,
 ) -> CompileResult:
     """Copy `source_root` into `build_dir` and recompile `tex_name` there.
 
@@ -132,6 +132,8 @@ def compile_restricted(
     absolute `\\input` path) left in the author's own directory.
     """
 
+    if timeout is not None and timeout <= 0:
+        raise ValueError("timeout must be positive seconds or None (unlimited)")
     if build_dir.exists():
         shutil.rmtree(build_dir)
     # `symlinks=True`: a checked-out `resources/code/` third-party repo can

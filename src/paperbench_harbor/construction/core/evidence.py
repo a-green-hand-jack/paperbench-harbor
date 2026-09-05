@@ -130,10 +130,22 @@ def contained_path(root: Path, path: Path, *, directory: bool = False) -> Path:
 
 
 def source_fingerprint(root: Path) -> str:
-    """Extraction depends on actual private assets and archived source code."""
-    trees = {"original": tree_hash(root / "original")}
+    """Private extraction, excluding construction metadata and public bindings."""
+    trees = {"original": tree_hash(root / "original", exclude=(
+        "research_evidence.json", "reconstructability_review.json", "config.yaml", "provenance.json",
+    ))}
     if (root / "resources" / "code").exists():
         trees["code"] = tree_hash(root / "resources" / "code")
+    path = root / "original" / "research_evidence.json"
+    if path.is_file():
+        raw = json.loads(path.read_text())
+        for fact in [raw.get("question"), *(f for group in ("methods", "assumptions", "facts", "claims", "requirements") for f in raw.get(group, []))]:
+            if isinstance(fact, dict):
+                fact.pop("public_support", None)
+        trees["evidence"] = raw
+        # Hash included assets wherever they live, including pinned source code.
+        trees["assets"] = {asset["path"]: file_hash(safe_file(root, asset["path"]))
+                           for asset in raw.get("assets", []) if asset.get("status") == "included"}
     return hashlib.sha256(json.dumps(trees, sort_keys=True).encode()).hexdigest()
 
 

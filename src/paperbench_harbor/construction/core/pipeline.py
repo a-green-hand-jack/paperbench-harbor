@@ -47,13 +47,13 @@ from pathlib import Path
 
 from paperbench_harbor.construction.core.evidence import (
     ResearchEvidence,
-    file_hash,
     source_fingerprint,
     synchronize_research_materials,
     tree_hash,
     validate_research_evidence,
 )
 from paperbench_harbor.construction.core.knowledge import get_knowledge_package
+from paperbench_harbor.construction.core.latex import CompileResult
 from paperbench_harbor.construction.core.opencode_agent import (
     DEFAULT_MODEL,
     DEFAULT_TIMEOUT_SECONDS,
@@ -71,12 +71,14 @@ from paperbench_harbor.construction.core.review import (
     write_review_record,
 )
 from paperbench_harbor.construction.core.spec import PaperSpec
-from paperbench_harbor.construction.core.state import StageState, fingerprint
+from paperbench_harbor.construction.core.state import StageState, fingerprint, implementation_hash
 from paperbench_harbor.construction.core.validate import (
+    ValidationIssue,
     ValidationReport,
     synchronize_source_table_materials,
     validate_paper,
 )
+from paperbench_harbor.provenance.implementation import implementation_provenance
 
 #: Where a paper's own build log goes. `print` by default, so the existing CLI
 #: behaves exactly as it did; :func:`build_corpus` swaps in a prefixing logger
@@ -109,6 +111,23 @@ def blocked_reason(workspace: Path) -> str:
     return ""
 
 
+def _material_hash(workspace: Path) -> str:
+    return tree_hash(workspace, exclude=("original/reconstructability_review.json",))
+
+
+def _build_hash(workspace: Path, structured: bool, tables: bool) -> str:
+    # Mechanical binding/table writes must not turn an interrupted materials node
+    # into another generative build. All bytes are still checked by later nodes.
+    excluded = ["original/reconstructability_review.json"]
+    if structured:
+        excluded += ["original/research_evidence.json", "resources/writing_requirements.json"]
+    if tables:
+        excluded += ["resources/table_inventory.json", "resources/table_summary.txt"]
+        excluded += [p.relative_to(workspace).as_posix() for p in (workspace / "resources" / "tables").rglob("*")]
+    return fingerprint([tree_hash(workspace, exclude=tuple(excluded)),
+                        source_fingerprint(workspace) if structured and (workspace / "original").is_dir() else None])
+
+
 def build_paper(
     spec: PaperSpec,
     plugin: DomainPlugin,
@@ -119,7 +138,7 @@ def build_paper(
     log_dir: Path,
     model: str = DEFAULT_MODEL,
     max_turns: int = 3,
-    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    timeout: int | None = DEFAULT_TIMEOUT_SECONDS,
     fresh: bool = False,
     dry_run: bool = False,
     validate_only: bool = False,
@@ -143,37 +162,40 @@ def build_paper(
     workspace = prepare_scratch(scratch_root, spec.paper_id, fresh=fresh)
     if max_turns < 1:
         raise ValueError("max_turns must be positive")
+    if not skip_review and model.split("/", 1)[-1] == (reviewer_model or default_reviewer_model()).split("/", 1)[-1]:
+        raise ValueError("material reviewer must be a different model, not another account for the constructor")
     package = get_knowledge_package(plugin.name, spec.research_type) if spec.research_type else None
-    state = StageState(build_root / spec.paper_id / "stages.json", {
+    core = Path(__file__).parent
+    library = core.parents[1]
+    common = {
         "spec": asdict(spec), "package": package.as_dict() if package else None,
         "plugin": fingerprint(asdict(plugin)),
-        "packaging": tree_hash(Path(__file__).parents[4] / "packaging"),
-        "model": model, "reviewer_model": reviewer_model or default_reviewer_model(),
-        "timeout": timeout, "max_turns": max_turns, "skip_review": skip_review,
-        "implementation": fingerprint({str(p.relative_to(Path(__file__).parents[2])): file_hash(p)
-                                       for p in Path(__file__).parents[2].rglob("*")
-                                       if p.is_file() and p.suffix in (".py", ".j2", ".md", ".json")
-                                       and not {"vendor", "__pycache__"} & set(p.parts)}),
+    }
+    implementation = implementation_provenance()
+    state = StageState(build_root / spec.paper_id / "stages.json", {
+        "implementation": implementation,
+        **common, "model": model, "reviewer_model": reviewer_model or default_reviewer_model(),
+        "timeout": timeout, "max_turns": max_turns,
     })
-    inputs = fingerprint(state.config)
+    resume = resume and not fresh and not dry_run
+    previous_review = state.record["stages"].get("review", {})
+    if rerun_stage in state.ORDER:
+        state.save(rerun_stage, "pending", "")
+    inputs = fingerprint([common, model, implementation_hash(core / "evidence.py", core / "knowledge.py", core / "pipeline.py", core / "opencode_agent.py")])
+    build_code = implementation_hash(core / "prompt.py", plugin.agents_md_dir, Path(__file__).parents[4] / "packaging")
+    materials_code = implementation_hash(core / "evidence.py", core / "validate.py")
+    validation_code = implementation_hash(core / "validate.py", core / "latex.py", library / "common", library / "adapters", Path(__file__).parents[4] / "packaging")
+    review_code = implementation_hash(core / "review.py", core / "opencode_agent.py")
     destination = corpus_root / spec.paper_id
-    if resume and not fresh and not rerun_stage and destination.is_dir():
-        digest = tree_hash(destination)
-        if state.reusable("delivery", inputs, digest) and tree_hash(workspace) == digest:
-            return state.record["stages"]["delivery"]["outcome"]
-    if rerun_stage in ("materials", "validate", "review"):
-        validate_only = True
     if package and not validate_only and not dry_run:
         extraction_path = workspace / "original" / "research_evidence.json"
-        existing_hash = source_fingerprint(workspace) if extraction_path.is_file() else ""
+        try:
+            existing_hash = source_fingerprint(workspace) if extraction_path.is_file() else ""
+        except (ValueError, OSError, TypeError, AttributeError):
+            existing_hash = ""
         reuse = resume and rerun_stage not in ("evidence",) and state.reusable("evidence", inputs, existing_hash)
-        if rerun_stage == "build" and extraction_path.is_file():
-            # An explicit material rebuild rechecks the current extraction and every source hash.
-            # It does not need another generative extraction of unchanged pinned assets.
-            validate_research_evidence(workspace, plugin.name, spec.research_type, public_ready=False)
-            state.save("evidence", "passed", inputs, source_fingerprint(workspace))
-            reuse = True
         if not reuse:
+            extraction_error = state.record["stages"].get("evidence", {}).get("error", "")
             state.save("evidence", "running", inputs)
             extraction_prompt = (
                 f"Extract research evidence for {spec.arxiv_abs_url} into {workspace}. "
@@ -198,8 +220,8 @@ def build_paper(
                 "located in the actual source. Never invent absent facts. For an ineligible "
                 "paper write original/provenance.json with a blocked reason and stop."
             )
-            extraction_error = ""
             for attempt in range(1, max_turns + 1):
+                state.save("evidence", "running", inputs, error=extraction_error)
                 run = run_agent_session(
                     paper_id=f"{spec.paper_id}.evidence", prompt=extraction_prompt + extraction_error,
                     workspace=workspace, log_dir=log_dir, model=model, turn=attempt,
@@ -209,23 +231,40 @@ def build_paper(
                     if not run.ok:
                         raise ValueError(f"extraction process failed: {run.returncode}")
                     validate_research_evidence(workspace, plugin.name, spec.research_type, public_ready=False)
-                    state.save("evidence", "passed", inputs, source_fingerprint(workspace))
+                    state.save("evidence", "passed", inputs, source_fingerprint(workspace), log_path=str(run.log_path))
                     break
                 except (ValueError, OSError) as error:
                     extraction_error = f"\nRepair the previous extraction failure: {error}"
-                    state.save("evidence", "failed", inputs, error=str(error))
+                    state.save("evidence", "failed", inputs, error=str(error), log_path=str(run.log_path))
             else:
+                if not run.ok:
+                    return {"paper_id": spec.paper_id, "status": "failed", "failure_kind": "process", "reason": extraction_error.strip(), "returncode": run.returncode, "log_path": str(run.log_path)}
                 reason = blocked_reason(workspace) or extraction_error.strip()
                 return {"paper_id": spec.paper_id, "status": "blocked" if blocked_reason(workspace) else "failed", "reason": reason}
     runs: list[AgentRun] = []
     report: ValidationReport | None = None
     verdict: ReviewVerdict | None = None
-    if resume and (workspace / "resources" / "template.tex").is_file():
-        report = validate_paper(workspace, spec, plugin, build_root=build_root / spec.paper_id)
+    if resume and previous_review.get("status") == "failed" and previous_review.get("materials_sha256") == _material_hash(workspace):
+        rejected = ReviewVerdict(**previous_review["report"])
+        report = ValidationReport(spec.paper_id, workspace)
+        report.fail("reconstructability-review", rejected.reasoning, rejected.remedy())
+    previous_validation = state.record["stages"].get("validate", {})
+    if resume and report is None and previous_validation.get("status") == "failed":
+        report = ValidationReport(spec.paper_id, workspace,
+                                  issues=[ValidationIssue(**issue) for issue in previous_validation.get("issues", [])],
+                                  compiles=[CompileResult(**item) for item in previous_validation.get("compiles", [])])
+    previous_build = state.record["stages"].get("build", {})
+    if resume and report is None and previous_build.get("status") in ("running", "failed") and previous_build.get("feedback"):
+        report = ValidationReport(spec.paper_id, workspace)
+        report.fail("interrupted-repair", previous_build["feedback"])
 
     for turn in range(1, max_turns + 1):
-        if not validate_only:
-            state.save("build", "running", inputs, turn=turn)
+        verdict = None
+        build_inputs = fingerprint([inputs, source_fingerprint(workspace) if package and (workspace / "original").is_dir() else common, build_code])
+        reuse_build = resume and state.reusable("build", build_inputs, _build_hash(workspace, bool(package), plugin.require_table_inventory)) and (report is None or report.ok)
+        if not validate_only and not reuse_build:
+            feedback = report.agent_feedback() if report is not None and not report.ok else ""
+            state.save("build", "running", build_inputs, turn=turn, feedback=feedback)
             if turn == 1 and (report is None or report.ok):
                 prompt = build_prompt(spec, str(workspace), plugin)
             else:
@@ -244,8 +283,8 @@ def build_paper(
                 dry_run=dry_run,
             )
             runs.append(run)
-            state.save("build", "passed" if run.ok else "failed", inputs, tree_hash(workspace),
-                       returncode=run.returncode, log_path=str(run.log_path))
+            state.save("build", "passed" if run.ok and not dry_run else "failed", build_inputs, _build_hash(workspace, bool(package), plugin.require_table_inventory),
+                       returncode=run.returncode, log_path=str(run.log_path), feedback=feedback)
             if not run.ok:
                 log(f"  turn {turn}: agent exited {run.returncode} (timed_out={run.timed_out})")
                 log("  --- agent log tail ---")
@@ -257,6 +296,8 @@ def build_paper(
                     "workspace": str(workspace),
                     "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
                 }
+            if not run.ok:
+                return {"paper_id": spec.paper_id, "status": "failed", "reason": "construction process failed; retry build", "failure_kind": "process", "returncode": run.returncode, "timed_out": run.timed_out, "workspace": str(workspace), "log_path": str(run.log_path)}
 
         blocked = blocked_reason(workspace)
         if blocked:
@@ -269,25 +310,34 @@ def build_paper(
                 "runs": [asdict(run) | {"log_path": str(run.log_path)} for run in runs],
             }
 
-        if plugin.require_table_inventory and not validate_only:
-            tables = synchronize_source_table_materials(workspace)
-            log(f"  turn {turn}: synchronized {len(tables)} source table(s)")
-
         synchronization_error = None
-        if spec.research_type and (not validate_only or rerun_stage == "materials"):
+        material_inputs = fingerprint([common, materials_code, _build_hash(workspace, bool(package), plugin.require_table_inventory)])
+        if not (resume and state.reusable("materials", material_inputs, _material_hash(workspace))):
+            state.save("materials", "running", material_inputs)
             try:
-                synchronize_research_materials(workspace)
+                if plugin.require_table_inventory:
+                    synchronize_source_table_materials(workspace)
+                if spec.research_type:
+                    synchronize_research_materials(workspace)
             except (ValueError, OSError) as error:
                 synchronization_error = str(error)
+            state.save("materials", "failed" if synchronization_error else "passed", material_inputs,
+                       _material_hash(workspace), error=synchronization_error)
 
         log(f"  turn {turn}: validating")
-        report = validate_paper(
-            workspace, spec, plugin, build_root=build_root / spec.paper_id
-        )
-        if synchronization_error:
-            report.fail("public-material-bindings", synchronization_error, remedy="Supply the located public material; do not substitute private evidence.")
-        state.save("validate", "passed" if report.ok else "failed", tree_hash(workspace),
-                   issues=[asdict(issue) for issue in report.issues])
+        validation_inputs = fingerprint([common, validation_code, _material_hash(workspace)])
+        if resume and state.reusable("validate", validation_inputs, _material_hash(workspace)):
+            entry = state.record["stages"]["validate"]
+            report = ValidationReport(spec.paper_id, workspace, compiles=[CompileResult(**item) for item in entry["compiles"]])
+        else:
+            state.save("validate", "running", validation_inputs)
+            report = validate_paper(
+                workspace, spec, plugin, build_root=build_root / spec.paper_id / "validation" / state.record["stages"]["validate"]["attempt_id"], timeout=timeout,
+            )
+            if synchronization_error:
+                report.fail("public-material-bindings", synchronization_error, remedy="Supply the located public material; do not substitute private evidence.")
+            state.save("validate", "passed" if report.ok else "failed", validation_inputs, _material_hash(workspace),
+                       issues=[asdict(issue) for issue in report.issues], compiles=[asdict(item) for item in report.compiles])
         # Stage 3 runs only on a structurally sound sample: asking a model
         # whether an overview is faithful is pointless when the gate already
         # knows a required file is missing, and it would burn a reviewer call
@@ -295,18 +345,23 @@ def build_paper(
         if report.ok and not skip_review:
             log(f"  turn {turn}: reconstructability review "
                 f"({reviewer_model or default_reviewer_model()})")
-            verdict = run_review(
-                spec,
-                plugin,
-                workspace,
-                build_root=build_root,
-                model=reviewer_model,
-                log_dir=log_dir,
-                dry_run=dry_run,
-                timeout=timeout,
-            )
-            state.save("review", "passed" if verdict.ok else "blocked" if verdict.blocked else "failed", tree_hash(workspace),
-                       report=verdict.as_dict())
+            review_inputs = fingerprint([common, review_code, reviewer_model or default_reviewer_model(), _material_hash(workspace)])
+            if resume and state.reusable("review", review_inputs, _material_hash(workspace)):
+                verdict = ReviewVerdict(**state.record["stages"]["review"]["report"])
+            else:
+                state.save("review", "running", review_inputs)
+                verdict = run_review(
+                    spec,
+                    plugin,
+                    workspace,
+                    build_root=build_root,
+                    model=reviewer_model,
+                    log_dir=log_dir,
+                    dry_run=dry_run,
+                    timeout=timeout,
+                )
+                state.save("review", "passed" if verdict.ok else "blocked" if verdict.blocked else "failed", review_inputs, _material_hash(workspace),
+                           materials_sha256=_material_hash(workspace), report=verdict.as_dict())
             if not verdict.ok:
                 report.fail(
                     "reconstructability-review",
@@ -321,6 +376,8 @@ def build_paper(
 
     assert report is not None
     outcome = {
+        "implementation": implementation,
+        "stage_implementations": {name: entry.get("implementation") for name, entry in state.record["stages"].items()},
         "paper_id": spec.paper_id,
         "status": "ok" if report.ok else "blocked" if verdict is not None and verdict.blocked else "failed",
         "workspace": str(workspace),
@@ -336,6 +393,10 @@ def build_paper(
 
     if report.ok:
         destination = corpus_root / spec.paper_id
+        delivery_inputs = fingerprint([validation_inputs, review_inputs if not skip_review else "unreviewed", _material_hash(workspace)])
+        if resume and destination.is_dir() and state.reusable("delivery", delivery_inputs, tree_hash(destination)) and tree_hash(workspace) == tree_hash(destination):
+            return state.record["stages"]["delivery"]["outcome"]
+        state.save("delivery", "running", delivery_inputs)
         if destination.exists():
             shutil.rmtree(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -357,7 +418,7 @@ def build_paper(
             ignore=shutil.ignore_patterns(".git", "__pycache__", ".opencode"),
         )
         outcome["corpus_dir"] = str(destination)
-        state.save("delivery", "passed", inputs, tree_hash(destination), outcome=outcome)
+        state.save("delivery", "passed", delivery_inputs, tree_hash(destination), outcome=outcome)
         log(f"  admitted -> {destination}")
     else:
         log("  NOT admitted to the corpus")
@@ -376,7 +437,7 @@ def build_corpus(
     concurrency: int = 1,
     model: str = DEFAULT_MODEL,
     max_turns: int = 3,
-    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    timeout: int | None = DEFAULT_TIMEOUT_SECONDS,
     fresh: bool = False,
     dry_run: bool = False,
     validate_only: bool = False,

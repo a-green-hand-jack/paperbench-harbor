@@ -19,6 +19,7 @@ from typing import Any
 from paperbench_harbor.construction.core.evidence import contained_path, tree_hash
 from paperbench_harbor.construction.core.knowledge import get_knowledge_package
 from paperbench_harbor.construction.core.trial import verify_trial_evidence
+from paperbench_harbor.provenance.implementation import require_clean_implementation
 
 DOMAINS = ("physics", "chemistry", "mathematics")
 OPTIONAL_DOMAINS = ("lifesci",)
@@ -64,6 +65,11 @@ def _domain_run(root: Path, domain: str) -> dict[str, Any]:
     root = contained_path(root, root, directory=True)
     summary_path = contained_path(root, root / "run-summary.json")
     summary = _read_json(summary_path, label=f"{domain} run summary")
+    implementation = require_clean_implementation(summary.get("implementation"))
+    for build in summary.get("build", []):
+        require_clean_implementation(build.get("implementation"))
+        for stage in ("evidence", "build", "materials", "validate", "review"):
+            require_clean_implementation(build.get("stage_implementations", {}).get(stage))
     built = summary.get("built_tasks")
     converted = summary.get("converted_tasks")
     if type(built) is not int or built < MIN_TASKS:
@@ -84,6 +90,10 @@ def _domain_run(root: Path, domain: str) -> dict[str, Any]:
         raise ReleasePublisherError(f"{domain} dataset directory must be {config!r}, got {dataset}")
     fidelity = contained_path(root, root / "reports" / "fidelity" / "summary.json")
     audit = _read_json(fidelity, label=f"{domain} fidelity summary")
+    archive_metadata = _read_json(archive / "archive-metadata.json", label="archive metadata")
+    for metadata in (audit.get("evidence", {}), archive_metadata):
+        if require_clean_implementation(metadata.get("implementation")) != implementation or metadata.get("converter_revision") != implementation["base_commit"]:
+            raise ReleasePublisherError(f"{domain}: implementation provenance mismatch")
     for key, expected in {
         "total_tasks": built,
         "passed_tasks": built,
@@ -120,6 +130,8 @@ def _domain_run(root: Path, domain: str) -> dict[str, Any]:
     if _digest(execution_path) != summary.get("execution_sha256"):
         raise ReleasePublisherError(f"{domain}: execution configuration binding mismatch")
     execution = _read_json(execution_path, label="execution")
+    if require_clean_implementation(execution.get("implementation")) != implementation:
+        raise ReleasePublisherError(f"{domain}: execution implementation mismatch")
     knowledge = get_knowledge_package(domain, summary["research_type"]).as_dict()
     # Normalize dataclass tuple fields to their persisted JSON representation.
     knowledge = json.loads(json.dumps(knowledge))
@@ -136,6 +148,7 @@ def _domain_run(root: Path, domain: str) -> dict[str, Any]:
                               knowledge=knowledge, execution=execution)
     return {
         "domain": domain,
+        "implementation": implementation,
         "config": config,
         "run_root": str(root),
         "dataset": str(dataset),

@@ -27,7 +27,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -53,6 +52,7 @@ from paperbench_harbor.fidelity.audit import summarize
 from paperbench_harbor.fidelity.dataset import DatasetAuditError, audit_dataset
 from paperbench_harbor.fidelity.review import default_conversion_reviewer_model
 from paperbench_harbor.fidelity.transforms import sha256
+from paperbench_harbor.provenance.implementation import implementation_provenance
 
 
 def _tree_digest(root: Path) -> str:
@@ -65,21 +65,8 @@ def _tree_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def _code_revision() -> str | None:
-    """The converter source revision that produced this audit evidence."""
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parents[1],
-            capture_output=True,
-            check=True,
-            encoding="utf-8",
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
 def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn) -> int:
+    implementation = implementation_provenance()
     source_tree_sha256 = _tree_digest(args.source)
     reviewer_model = args.reviewer_model or default_conversion_reviewer_model()
     try:
@@ -92,6 +79,7 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
             reviewer_model=reviewer_model,
             review_log_dir=args.output / "review-logs",
             workers=args.workers,
+            review_timeout=args.timeout,
         )
     except DatasetAuditError as exc:
         raise SystemExit(str(exc)) from exc
@@ -101,6 +89,7 @@ def _run(args: argparse.Namespace, benchmark: str, protocol: str, determinism_fn
         determinism_fn,
         source_tree_sha256=source_tree_sha256,
         reviewer_model=reviewer_model,
+        implementation=implementation,
     )
 
 
@@ -255,6 +244,7 @@ def _write_reports(
     *,
     source_tree_sha256: str | None = None,
     reviewer_model: str | None = None,
+    implementation: dict | None = None,
 ) -> int:
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -270,13 +260,18 @@ def _write_reports(
         (output_dir / f"{report.task_id}.json").write_text(
             json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8"
         )
+    current_implementation = implementation_provenance()
+    if implementation is not None and implementation != current_implementation:
+        raise RuntimeError("implementation changed during fidelity audit; retry with stable source")
+    implementation = implementation or current_implementation
     summary["evidence"] = {
         "schema_version": 1,
         "benchmark": reports[0].benchmark if reports else None,
         "upstream_revision": args.upstream_revision,
         "upstream_tree_sha256": source_tree_sha256 or final_source_tree_sha256,
         "dataset_tree_sha256": _tree_digest(args.dataset),
-        "converter_revision": _code_revision(),
+        "converter_revision": implementation["revision"],
+        "implementation": implementation,
         "semantic_review_required": args.semantic_review,
         "reviewer_model": (
             reviewer_model
@@ -306,6 +301,7 @@ def _write_reports(
 
 
 def _add_semantic_review_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--timeout", type=int, default=None, help="Optional semantic-review seconds; default unlimited")
     parser.add_argument(
         "--semantic-review",
         action=argparse.BooleanOptionalAction,
