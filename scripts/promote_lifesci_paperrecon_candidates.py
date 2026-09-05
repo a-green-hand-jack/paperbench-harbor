@@ -695,8 +695,7 @@ def read_candidates(
     """Read a proposal file, accepting either shape screening can produce.
 
     `core.screen.run_screening()` writes and reads back a bare JSON array — that
-    contract is validated by `tests/test_construction_core_screen.py` and must
-    not change. But `scripts/screen_lifesci_paperrecon_candidates.py --output`
+    contract must not change. But `scripts/screen_lifesci_paperrecon_candidates.py --output`
     writes a human-readable *report* around the same candidates: an object with
     `generated_at`, `summary`, and a `candidates` array among its keys. A human
     (or the one-command agent) naturally hands this script whichever file

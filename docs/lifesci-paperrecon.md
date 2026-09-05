@@ -157,8 +157,9 @@ project-original. Dataset directory:
   defaults that reproduce PaperWrite-Bench byte-for-byte;
   `adapters/lifesci_paperrecon/harbor.py` supplies the biology values and
   `paperbench-harbor lifesci-paperrecon` drives it. No second Harbor converter
-  exists. `tests/test_lifesci_paperrecon_converter.py` pins both the biology
-  output and the unchanged PaperWrite-Bench defaults.
+   exists. The now-retired converter unit check covered both the biology
+   output and the unchanged PaperWrite-Bench defaults; current verification uses
+   the [isolated construction environment](papersmith-docker.md).
 - **Phase 3 (LLM judge verifier / official benchmark metrics)**:
   **explicitly deferred, and NOT going to be built from scratch.** Per
   2026-08-30 decision, the plan to hand-build a bespoke

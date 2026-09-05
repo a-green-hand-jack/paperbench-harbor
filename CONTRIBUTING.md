@@ -16,8 +16,13 @@
 ```bash
 make install
 make lint
-make test
+make papersmith-build
+make papersmith-describe
 ```
+
+The repository-level `tests/` suite is retired; do not recreate it. Validate
+PaperSmith construction in the [live-source Docker environment](docs/papersmith-docker.md).
+Request display is a no-model CLI check, not full construction acceptance.
 
 Do not commit generated benchmark datasets, source papers, API keys, evaluator
 outputs, agent trajectories, trial artifacts, or model credentials. Use the

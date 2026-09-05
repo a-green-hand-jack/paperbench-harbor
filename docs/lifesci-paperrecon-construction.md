@@ -279,8 +279,9 @@ biology-specific logic; the only thing that changed to support a second corpus
 was turning previously-hardcoded identity metadata into parameters
 (`benchmark`, `task_id_prefix`, `category`, `tags`, `relevant_experience`,
 `agents_md_dir`, `include_official_grader`), with defaults that reproduce
-PaperWrite-Bench byte-for-byte. `tests/test_lifesci_paperrecon_converter.py`
-pins both halves of that: the biology output *and* the unchanged defaults.
+PaperWrite-Bench byte-for-byte. The now-retired converter unit check covered
+both the biology output and unchanged defaults. Current verification uses the
+[isolated construction environment](papersmith-docker.md).
 
 `include_official_grader=False`: the pilot ships the Layer-1 binary smoke check
 only. There is no upstream evaluator to reproduce here, and fabricating an

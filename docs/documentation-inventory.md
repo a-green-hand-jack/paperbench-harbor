@@ -8,6 +8,7 @@ must cite an immutable release, tag, or current code revision.
 | Document | Audience | Canonical home | Status | Maintenance rule |
 |---|---|---|---|---|
 | `README.md` | Maintainers | GitHub | Updated | Link to dataset cards; do not duplicate task tutorials |
+| `DEV.md` | Developers | GitHub | New | Chinese Docker development entry point and explicit construction commands |
 | `CONTRIBUTING.md` | Contributors | GitHub | Keep | Repository contribution process |
 | `docs/dataset-versioning.md` | Release maintainers | GitHub | Updated | Record task and source-archive revisions |
 | `docs/documentation-inventory.md` | Maintainers | GitHub | New | Update when a document is added or migrated |
@@ -21,6 +22,7 @@ must cite an immutable release, tag, or current code revision.
 | `docs/non-ml-benchmark-survey.md` | Maintainers | GitHub | Historical research | Issue #2 scope only; no task usage guide |
 | `docs/paper-orchestra-sidecar.md` | Maintainers | GitHub | Keep | Sidecar operation |
 | `docs/papersmith-architecture.md` | Maintainers | GitHub | Keep | Construction architecture |
+| `docs/papersmith-docker.md` | Developers | GitHub | Updated | Docker isolation, live source, bridge default, host config/auth mounts and CLI probe evidence |
 | `docs/issue-70-todo.md` | Maintainers | GitHub | In progress | Full six-phase implementation and verification checklist |
 | `docs/papersmith-workflow.md` | Maintainers | GitHub | New | Structured request, evidence, resume, trials and explicit release operations |
 | `docs/release-regression-deltas.md` | Release maintainers | GitHub | Keep | Document expected task-byte changes by release |
@@ -37,5 +39,8 @@ must cite an immutable release, tag, or current code revision.
 Before publishing a documentation update, verify that the task card's task
 counts and revision match the task manifest, the trial card links the correct
 task dataset, and the source-archive card links the matching registry/revision.
-`tests/test_documentation_references.py` enforces the stable cross-dataset
-navigation in this repository; it does not replace release-specific review.
+`scripts/check_documentation_references.py` checks required dataset references
+and `docs/*.md` inventory coverage, not arbitrary Markdown link validity;
+it does not replace release-specific review. The repository-level
+`tests/` suite is retired. `docs/papersmith-docker.md` owns isolated construction
+usage and live-source development guidance.

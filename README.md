@@ -19,6 +19,8 @@ Harbor task may read it at runtime.
 
 ## Maintainer documentation
 
+- [Development guide (中文)](DEV.md): Docker development, verified CLI probes,
+  explicit model selection, and staged construction commands.
 - [Dataset versioning](docs/dataset-versioning.md): release records, immutable
   revisions, and source-archive publication.
 - [Documentation inventory](docs/documentation-inventory.md): ownership and
@@ -30,6 +32,9 @@ Harbor task may read it at runtime.
   trial records without exposing private task material.
 - [Architecture](docs/papersmith-architecture.md): the construction core and
   domain-plugin contracts.
+- [PaperSmith Docker](docs/papersmith-docker.md): current usage, isolated
+  construction, live source mounts, default bridge networking, and opt-in host
+  configuration/authentication.
 
 For task execution, configuration-specific materials, and trajectory analysis,
 use the dataset cards linked above. GitHub keeps only the construction and
@@ -255,8 +260,9 @@ Install the development dependencies and run the repository checks:
 
 ```bash
 uv sync --all-extras
-uv run --all-extras pytest -q
 uv run --all-extras ruff check .
+make papersmith-build
+make papersmith-describe
 ```
 
 Build a source-only provenance archive from a fixed task release and retained

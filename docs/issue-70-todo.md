@@ -29,19 +29,15 @@ accepted until its complete criteria, including applicable live checks, pass.
 Historical first-round checks on Linux using the existing Python 3.12 repository
 environment (not verification of the latest fixes, and not task-production acceptance):
 
-```text
-.venv/bin/python -m pytest tests/test_papersmith_evidence.py tests/test_construction_core_review.py tests/test_release_candidate_supervisor.py scripts/test_publish_paperrecon_release.py tests/test_promote_lifesci_paperrecon_candidates.py -q
-93 passed in 2.81s
+The repository-level `tests/` paths are retired and unavailable. The historical
+commands are intentionally omitted; these counts are records, not runnable
+verification instructions:
 
-.venv/bin/python -m pytest -q
-461 passed in 7.10s
-
-.venv/bin/python -m pytest scripts/test_publish_paperrecon_release.py scripts/test_promote_lifesci_paperrecon_candidates.py -q
-45 passed in 0.97s
-
-.venv/bin/python -m ruff check .
-All checks passed!
-```
+- Focused first-round checks: 93 passed in 2.81s.
+- Full first-round suite: 461 passed in 7.10s.
+- Publication/promotion script checks: 45 passed in 0.97s; scripts remain, but
+  pytest execution is no longer part of this workflow.
+- First-round Ruff check: all checks passed.
 
 The structured CLI describe-request check displayed target=1 and both remote
 write intents=false without executing a build. The credential-safe provider

@@ -29,7 +29,8 @@ uv run scripts/run_paperrecon_domain.py --domain physics \
 
 运行根目录必须由操作者在获准位置提供，且不能位于 Git 工作树内。入口不会
 越权创建外部工作区、读取凭证或手写批准文件。任何权限拒绝都必须报告为阻塞。
-`--auto` 和独立工作目录不是 OS sandbox；不可信构建需要操作者提供额外主机隔离。
+`--auto` 和独立工作目录不是 OS sandbox；不可信构建使用
+[Docker 制题环境](papersmith-docker.md)，源码只读挂载，产物写入独立 volume。
 
 ## 核验到交付
 

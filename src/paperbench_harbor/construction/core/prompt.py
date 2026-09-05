@@ -181,6 +181,15 @@ main.tex does not authorize deleting the immutable extraction assets. This is th
 public task contract; no requirement may depend only on private evidence.
 The private research_evidence.json remains the evaluation basis, not an exact
 wording target. Update asset hashes when faithfully normalizing source files.
+For numerical studies, resolve the actual experiment parameters, initial/boundary
+conditions, domains, solver and quadrature tolerances, and error normalization
+from the pinned experiment script and its called defaults, not just article prose.
+Put these facts and their versioned code locations in the short overview/common
+assets and bind them in research_evidence.json. Distinguish different experiments'
+settings and measured timings from defaults; never invent undocumented settings.
+If a previous original/reconstructability_review.json exists, read its concerns
+and repair the materials using located source evidence. Do not edit that verdict;
+the independent reviewer will evaluate the changed materials again.
 Knowledge package: {json.dumps(get_knowledge_package(plugin.name, spec.research_type).as_dict())}
 """
 

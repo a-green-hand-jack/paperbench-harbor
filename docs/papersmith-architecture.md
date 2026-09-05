@@ -350,7 +350,7 @@ both landed on top of it:
    promotion — yields the empty tuple, so this is byte-for-byte a no-op change
    for every existing caller: confirmed by re-running the full suite immediately
    after landing the loader, before touching anything else, and by a dedicated
-   test (`tests/test_lifesci_paperrecon_papers_loader.py`) that asserts
+   now-retired test (`tests/test_lifesci_paperrecon_papers_loader.py`) that asserted
    `APPROVED_PAPERS` equals the hand-curated tuple when the file is absent. A
    malformed line (bad JSON, a JSON array instead of an object, a missing
    field) raises by name rather than silently dropping a promoted paper — the
@@ -508,7 +508,11 @@ Its two containment rules apply to all three stages: the working directory must
 be outside any git working tree, and nothing an agent produces enters the corpus
 until the gate has passed it.
 
-## Evidence the split is real
+## Historical Split Evidence
+
+The repository-level `tests/` suite named below was retired in September 2026.
+These are historical checks, not currently runnable acceptance commands. Use
+[isolated PaperSmith construction](papersmith-docker.md) for current validation.
 
 - `tests/test_lifesci_paperrecon_validate.py` — unchanged assertions, updated
   imports and call signature only. Proves zero behaviour change for biology.

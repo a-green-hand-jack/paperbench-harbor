@@ -1,0 +1,6 @@
+**
+!pyproject.toml
+!docker/
+!docker/papersmith/
+!docker/papersmith/Dockerfile
+!docker/papersmith/Dockerfile.dockerignore

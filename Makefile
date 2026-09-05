@@ -1,10 +1,13 @@
-.PHONY: install test lint format
+.PHONY: install lint format papersmith-build papersmith-describe
 
 install:
 	python -m pip install -e '.[dev,datasets]'
 
-test:
-	pytest -q
+papersmith-build:
+	sh scripts/papersmith-docker.sh build
+
+papersmith-describe:
+	PAPERSMITH_NETWORK=none sh scripts/papersmith-docker.sh run --domain physics --run-root /runs/describe --research-type simulation --describe-request
 
 lint:
 	ruff check .

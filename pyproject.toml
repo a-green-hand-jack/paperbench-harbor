@@ -51,10 +51,6 @@ paperbench-trial-export = "paperbench_harbor.trials.orchestrator:SanitizedTrialE
 [tool.hatch.build.targets.wheel]
 packages = ["src/paperbench_harbor"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
