@@ -109,3 +109,36 @@ sh scripts/papersmith-docker.sh exec ruff check .
 
 此检查覆盖必需的数据集引用和 `docs/*.md` 清单，不是构造验收。
 根目录 `tests/` 已退役；本开发流程不运行 pytest 或 Hello World。
+
+## 本轮物理验证记录
+
+2026-09-05，基于提交 `a4f37bc`，在容器中复用论文
+`2608.24682v1`（Chebyshev interpolation in Einstein-Boltzmann codes）的既有
+材料，分别调用原生构建和独立评审接口，各执行一轮、限时 60 秒，没有连续重试。
+
+| 项目 | 结果 |
+| --- | --- |
+| 既有研究证据、结构与材料检查 | 通过 |
+| 模板与原论文 LaTeX 编译 | 均通过 |
+| OpenCode 构建模型 `openai-evelyn/gpt-6-astra` | 超时，退出码 124 |
+| 独立评审模型 `openai-jieke/gpt-5.6-terra` | 超时，退出码 124，无有效 verdict |
+| 本轮制题验收 | 未通过；未执行下游 trial、上传或发布 |
+
+这是一轮有界诊断，不是从筛选到交付的完整验收。仅
+`resources/writing_requirements.json` 发生变化，没有完成新的材料构建。
+诊断将集成评审关闭后单独运行独立评审，因此构建函数返回的 `status: ok`
+只表示既有材料通过结构检查；必须同时读取构建阶段失败和独立评审阻塞记录，
+不能把该状态作为 accepted task。
+
+产物保存在 volume `papersmith-physics-docker-01-runs`：
+
+```sh
+PAPERSMITH_VOLUME_PREFIX=papersmith-physics-docker-01 \
+sh scripts/papersmith-docker.sh exec python -m json.tool \
+  /runs/physics-docker-01/bounded-summary.json
+```
+
+同目录下的 `execution.json` 保存调用参数，`build-result.json`、
+`review-result.json`、`construction-evidence.json` 和
+`build/paper_1/stages.json` 保存分阶段证据。`logs/` 保留原始调用日志，
+不要直接公开或无筛选地打印。验证结束后没有遗留此轮容器进程。
