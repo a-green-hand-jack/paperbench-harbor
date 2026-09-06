@@ -1,5 +1,53 @@
 # PaperSmith Handoff
 
+## 2026-09-07 Current Contract-v3 Progress
+
+This handoff records the latest live push toward the ideal PaperSmith shape.
+The working tree is Ubuntu `main`; no credentials or auth-file contents were
+read or copied. The wrapper repair and this handoff are delivered together in
+the commit that contains this section.
+
+### Shipped wrapper repair
+
+`docker/e2e.sh` now keeps the `/runs` volume non-empty during root
+initialization, preventing Docker from copying root-owned image workdir metadata
+over the caller-owned volume when the controller uses `--workdir /runs`. It also
+passes the validator-approved `RUFF_CACHE_DIR=/cache/ruff` value. The provider's
+Node dependency directory must be supplied as an explicit read-only mount; a
+direct import check succeeded inside the image.
+
+### Live evidence
+
+The fresh contract-v3 run is retained in the private acceptance state under
+`papersmith-current-v3-real3-2004351`, with run root `/runs/current-v3-one`.
+The model provider initialized and the run reached proposal, original-PDF
+acquisition, checkpoint reuse and gate1 independent review. Gate1 correctly
+rejected several candidate/reviewer outputs for source-bound provenance,
+original-availability citations, HTTP 202 evidence and malformed/truncated JSON.
+The latest container was stopped after it became orphaned, so the run is
+`interrupted`, not accepted. No five-task extension and no Harbor oracle/nop
+acceptance are claimed.
+
+### Verification
+
+- `sh docker/e2e.sh build` passed.
+- `sh -n docker/e2e.sh` passed.
+- `.venv/bin/ruff check .` passed (`All checks passed!`).
+- `python -m compileall -q src` passed (only pre-existing vendor escape warnings).
+- `git diff --check` passed.
+
+### Next operator action
+
+Resume `/runs/current-v3-one` with the same locked provider/model configuration
+and narrow read-only provider mounts. First address the gate1 reviewer contract
+format/provenance failures; then continue through gate2, conversion, gate3,
+actual Harbor `oracle=1`/`nop=0`, and only afterward extend the target to five.
+Keep all prior attempts and volumes; do not force-migrate historical runs.
+
+GitHub tracking issue for the ideal end-state: create separately from this code
+delivery and keep it open until the current contract-v3 acceptance criteria are
+met.
+
 ## FD9 Lifecycle Integration Verified
 
 The installer-held environment lock now survives detached `acceptance.launch`

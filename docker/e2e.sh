@@ -120,13 +120,15 @@ fi
 
 # Only these dedicated volume directories are initialized as root; payloads run
 # as the caller, with no capabilities and no writable image filesystem.
+# Keep /runs non-empty so Docker does not copy the image's root-owned workdir
+# metadata back over the caller-owned volume on the controller launch.
 docker run --rm --network none --read-only --user 0:0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE \
     --security-opt no-new-privileges \
     --mount "type=volume,src=$prefix-runs,dst=/runs" \
     --mount "type=volume,src=$prefix-state,dst=/state" \
     --mount "type=volume,src=$prefix-cache,dst=/cache" \
     --mount "type=volume,src=$prefix-acceptance,dst=/acceptance" \
-    "$image" sh -ec 'mkdir -p /state/home; chown "$1:$2" /runs /cache /state /state/home /acceptance' sh "$uid" "$gid"
+    "$image" sh -ec 'mkdir -p /state/home; touch /runs/.papersmith-volume; chown "$1:$2" /runs /cache /state /state/home /acceptance' sh "$uid" "$gid"
 docker run --rm --network none --read-only --cap-drop ALL --user "$uid:$gid" \
     --security-opt no-new-privileges --mount "type=volume,src=$prefix-state,dst=/state" \
     "$image" sh -ec 'umask 077; mkdir -p "$HOME/.local/share/opencode" "$HOME/.config/opencode" "$HOME/.codex"; chmod 700 "$HOME"'
