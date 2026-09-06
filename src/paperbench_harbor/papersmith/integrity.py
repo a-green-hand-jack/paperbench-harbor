@@ -13,6 +13,7 @@ from .schema import Locator
 MODEL_ROLES = {
     "proposal": "proposal builder",
     "materials": "materials builder",
+    "oracle": "oracle builder",
     **{gate: f"independent {gate} reviewer" for gate in ("gate1", "gate2", "gate3")},
 }
 
@@ -23,6 +24,8 @@ CONVERSION_EVIDENCE = {
     "submission": "instruction.md",
     "layout": "harbor-validation.json",
     "determinism": "checks.json",
+    "ground_truth_packaging": "tests/private/ground_truth/manifest.json",
+    "oracle": "solution/provenance.json",
 }
 
 
@@ -142,14 +145,42 @@ def terminal_integrity(root, state):
                 if entry.get("output_sha256") != artifact_hash(Path(entry["path"])):
                     raise ValueError("terminal output hash missing or mismatched")
                 if phase in MODEL_ROLES:
+                    attempt = Path(entry["path"])
+                    if (
+                        entry["status"] in {"blocked", "interrupted", "failed"}
+                        and not receipt_path.exists()
+                        and not (attempt / "request.txt").exists()
+                        and not (attempt / "response.json").exists()
+                    ):
+                        # Preparation can fail before call() creates any model artifacts.
+                        # This preserves failed evidence for retry, never a gate decision.
+                        continue
                     receipt = model_receipt(root, state["request"], phase, entry)
                     for session in receipt["sessions"]:
                         if session in session_owners and session_owners[session] != entry["path"]:
                             raise ValueError("independent attempts reused an OpenCode session")
                         session_owners[session] = entry["path"]
+                if phase == "convert":
+                    receipt = oracle_receipt(root, state["request"], entry)
+                    for session in receipt.get("sessions", []):
+                        owner = str(Path(entry["path"]) / "oracle")
+                        if session in session_owners and session_owners[session] != owner:
+                            raise ValueError("oracle reused another model/review session")
+                        session_owners[session] = owner
             except (ValueError, OSError, KeyError, TypeError) as error:
                 failures.append({**label, "reason": str(error)})
     return failures, legacy
+
+
+def oracle_receipt(root, request, entry):
+    attempt = Path(entry["path"]) / "oracle"
+    if not (attempt / "receipt.json").is_file():
+        if entry["status"] == "passed" and (Path(entry["path"]) / "task/tests/private/ground_truth/manifest.json").is_file():
+            raise ValueError("synthetic oracle has no model receipt")
+        return {}
+    return model_receipt(root, request, "oracle", {
+        **entry, "path": str(attempt), "output_sha256": artifact_hash(attempt),
+    })
 
 
 def contained(root: Path, path: Path) -> Path:
@@ -348,7 +379,14 @@ def catalog_paths(root, paths, prefix="E"):
                     "quote": quote,
                 }
             if path.name == "provenance.json":
-                for record in json.loads(text):
+                records = json.loads(text)
+                # Synthetic oracle provenance is an object, not publisher-binding records.
+                if (
+                    isinstance(records, dict)
+                    and records.get("kind") == "synthetic_oracle_not_original_ground_truth"
+                ):
+                    continue
+                for record in records:
                     for field in ("identity_binding", "license_binding"):
                         binding = record[field]
                         target = contained(root, path.parent / binding["path"])
@@ -367,10 +405,16 @@ def catalog_paths(root, paths, prefix="E"):
 
 
 def evidence_catalog(root, stages, phase, order):
-    return catalog_paths(
-        root,
-        [Path(stages[p]["path"]) for p in order[: order.index(phase)] if not p.startswith("gate")],
-    )
+    paths = []
+    for previous in order[: order.index(phase)]:
+        if previous.startswith("gate"):
+            continue
+        attempt = Path(stages[previous]["path"])
+        if previous == "convert":
+            paths.extend(attempt / name for name in ("task", "determinism", "checks.json"))
+        else:
+            paths.append(attempt)
+    return catalog_paths(root, paths)
 
 
 def check_review(root, stages, phase, result, gates, order):
@@ -440,6 +484,28 @@ def check_review(root, stages, phase, result, gates, order):
                     for e in resolved[dimension]
                 ):
                     raise ValueError(f"gate1 must cite each actual source's {field}")
+    ground_dimension = {"gate1": "original_availability", "gate2": "ground_truth_comparison",
+                        "gate3": "ground_truth_packaging"}[phase]
+    original = Path(stages["proposal"]["path"]) / "sources/ground_truth"
+    from .ground_truth import validate as validate_ground_truth
+
+    validate_ground_truth(original)
+    for name in ("paper.pdf", "paper.txt", "manifest.json"):
+        expected = (original / name).relative_to(root).as_posix()
+        if not any(e["path"] == expected for e in resolved[ground_dimension]):
+            raise ValueError(f"{ground_dimension} must cite actual original {expected}")
+    if phase == "gate3":
+        for suffix in ("solution/manuscript/main.tex", "solution/preview.pdf", "solution/validation.json"):
+            if not any(e["path"].endswith("/task/" + suffix) for e in resolved["oracle"]):
+                raise ValueError("oracle review must cite " + suffix)
+    if result.decision == "accept":
+        receipt = json.loads((Path(stages[phase]["path"]) / "receipt.json").read_text())
+        completed_reads = {r["path"] for r in receipt.get("artifact_reads", []) if r.get("status") == "completed"}
+        required_reads = [original / "paper.pdf", original / "paper.txt"]
+        if phase == "gate3":
+            required_reads.append(Path(stages["convert"]["path"]) / "task/solution/preview.pdf")
+        if any(str(path) not in completed_reads for path in required_reads):
+            raise ValueError("acceptance requires completed direct reads of original PDF/text and gate3 oracle preview, not catalog-only judgments")
     bindings_path = Path(stages[phase]["path"]) / "review-bindings.json"
     if bindings_path.is_file() and json.loads(bindings_path.read_text()) != resolved:
         raise ValueError("stored review bindings differ from controller resolution")

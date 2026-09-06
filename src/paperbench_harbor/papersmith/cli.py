@@ -12,7 +12,16 @@ from pathlib import Path
 from paperbench_harbor.construction.core.state import atomic_json
 
 from .generation import configure_generation_schema
-from .product import GATES, MODEL, ORDER, REVIEW_MODEL, import_sources, run, validate
+from .product import (
+    GATES,
+    MODEL,
+    ORDER,
+    REVIEW_MODEL,
+    import_source_cache,
+    import_sources,
+    run,
+    validate,
+)
 
 
 def doctor(model, review_model):
@@ -36,12 +45,15 @@ def doctor(model, review_model):
     return {
         "ok": bool(executable)
         and all(configured.values())
-        and bool(shutil.which("pdftotext"))
+        and all(shutil.which(name) for name in ("pdftotext", "pdfinfo", "pdflatex", "bibtex"))
         and harbor_available,
         "required": {
             "python": sys.version.split()[0],
             "opencode": bool(executable),
             "pdftotext": bool(shutil.which("pdftotext")),
+            "pdfinfo": bool(shutil.which("pdfinfo")),
+            "pdflatex": bool(shutil.which("pdflatex")),
+            "bibtex": bool(shutil.which("bibtex")),
             "harbor": harbor_available,
         },
         "models": configured,
@@ -72,6 +84,10 @@ def main():
                 "--review-model", default=REVIEW_MODEL, help="All three independent review gates"
             )
         if command == "create":
+            sub.add_argument(
+                "--source-cache", type=Path,
+                help="Prior PaperSmith workspace; copy hash-verified downloaded inputs, never approvals, into this new run",
+            )
             sub.add_argument(
                 "--source",
                 type=Path,
@@ -116,6 +132,7 @@ def main():
                 "review_model": args.review_model,
                 "phase_timeout_seconds": None,
                 "source": str(args.source.expanduser().resolve()) if args.source else None,
+                "source_cache": str(args.source_cache.expanduser().resolve()) if args.source_cache else None,
                 "imported": str(root / "imported"),
             }
             if args.describe_request:
@@ -138,6 +155,8 @@ def main():
                 os.chmod(root, 0o700)
                 if args.source:
                     import_sources(args.source, root / "imported")
+                if args.source_cache:
+                    import_source_cache(args.source_cache.expanduser().resolve(), root / "source-cache")
                 atomic_json(
                     root / "run.json",
                     {

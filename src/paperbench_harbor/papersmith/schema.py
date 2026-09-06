@@ -49,6 +49,10 @@ class Source(Record):
         default=None,
         description="Optional path relative to imported user sources; URL remains provenance",
     )
+    original_source_urls: list[str] = Field(
+        default_factory=list,
+        description="Actual original TeX/dependency download URLs from publisher/repository search, never a model recreation. Empty if no original source found; controller also searches publisher links and arXiv.",
+    )
 
 
 class Proposal(Record):
@@ -61,7 +65,10 @@ class Proposal(Record):
     suitability: str = Field(min_length=1)
     code_applicability: Literal["required", "not_applicable"]
     code_reason: str = Field(min_length=1)
-    sources: list[Source] = Field(min_length=1)
+    sources: list[Source] = Field(
+        min_length=1,
+        description="Select one focal source with role paper. Do not list HTML and PDF as separate papers: the controller automatically acquires citation_pdf_url. Other entries are data/code/figures/supplements/licenses.",
+    )
 
     @model_validator(mode="after")
     def source_ids(self):

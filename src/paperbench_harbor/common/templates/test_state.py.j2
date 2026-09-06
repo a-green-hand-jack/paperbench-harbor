@@ -79,7 +79,8 @@ def test_submission_structure():
 
 def test_recompiles_without_shell_escape():
     """main.tex must recompile from a clean copy without shell escape."""
-    build_dir = Path("/tmp/recompile")
+{% if papersmith_contract is defined %}    assert MAIN_TEX.is_file() and BIB.is_file(), "submission TeX and bibliography are required"
+{% endif %}    build_dir = Path("/tmp/recompile")
     if build_dir.exists():
         shutil.rmtree(build_dir)
     build_dir.mkdir(parents=True)
@@ -121,7 +122,8 @@ def test_recompiles_without_shell_escape():
 
 def test_all_citations_defined_in_references():
     """Every cited key must exist in references.bib (no invented citations)."""
-    cited = _citation_keys(MAIN_TEX)
+{% if papersmith_contract is defined %}    assert MAIN_TEX.is_file() and BIB.is_file(), "submission TeX and bibliography are required"
+{% endif %}    cited = _citation_keys(MAIN_TEX)
     defined = _bib_keys(BIB)
     missing = sorted(cited - defined)
     assert not missing, f"cited keys missing from references.bib: {missing}"
@@ -130,6 +132,7 @@ def test_all_citations_defined_in_references():
 
 def test_papersmith_required_citations():
     """Enforce the source keys declared by the supplied reference materials."""
+    assert MAIN_TEX.is_file() and BIB.is_file(), "submission TeX and bibliography are required"
     required = set({{ papersmith_citation_keys | tojson }})
     assert required, "task has no declared source citation key"
     cited = _citation_keys(MAIN_TEX)
@@ -142,6 +145,7 @@ def test_papersmith_required_citations():
 
 def test_papersmith_manuscript_completeness():
     """Reject empty/template-only submissions, without scoring scientific meaning."""
+    assert MAIN_TEX.is_file(), "submission main.tex is required"
     text = _expand_tex(MAIN_TEX)
     text = re.sub(r"(?<!\\)%[^\n]*", "", text)
     body = text.split("\\begin{document}", 1)[-1].split("\\end{document}", 1)[0]

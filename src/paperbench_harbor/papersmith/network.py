@@ -55,7 +55,7 @@ def retrieve(url):
                 url,
                 {
                     key: response.getheader(key)
-                    for key in ("ETag", "Last-Modified", "Link", "Content-Location")
+                    for key in ("ETag", "Last-Modified", "Link", "Content-Location", "Content-Disposition")
                     if response.getheader(key)
                 },
             )

@@ -35,7 +35,8 @@ curl -fsSL https://raw.githubusercontent.com/a-green-hand-jack/paperbench-harbor
 Uncommitted local implementation is not available at a remote revision. The
 installer intentionally refuses an unpinned remote source. Install OpenCode
 separately and configure your provider using its documented authentication flow.
-`pdftotext` (Poppler) is required for PDF source extraction. `doctor` checks CLI
+`pdftotext` and `pdfinfo` (Poppler), `pdflatex` and `bibtex` are required for original
+PDF validation and synthetic oracle compilation. `doctor` checks CLI
 dependencies and model discovery without reading credential files or making a
 paid request; authentication remains unverified until a real call succeeds.
 
@@ -55,6 +56,10 @@ selection request can replace the example. Requests may name accessible source
 URLs; source bytes and license evidence are retrieved and retained privately.
 Use `--source /path/to/scoped-research` to import local scientific files privately.
 Provide provenance/license context in the request; local files do not waive licensing.
+`--source-cache /path/to/prior-run` copies hash-verified acquisition inputs from an
+existing workspace into a **new** run. It copies no approvals and still runs a new
+proposal, actual PDF acquisition/validation, and all three reviews. Keep the prior
+workspace at its recorded path; relocated checkpoint snapshots are not accepted.
 There is no fixed scientific-topic list and no scientific-domain blocker.
 
 Execution defaults to `openai/gpt-5.6-terra`. All three gates default to
@@ -67,13 +72,15 @@ proposal -> gate1 -> materials -> gate2 -> convert -> gate3 -> deliver
 ```
 
 - Gate 1 checks actual sources, licenses, availability and suitability for a
-  writing task. Scientifically unnecessary code may be marked not applicable
+  writing task, including the mandatory original PDF and evidenced original-TeX
+  availability (or explicit unavailability). Scientifically unnecessary code may be marked not applicable
   with justification; this never waives license requirements.
-- Gate 2 compares materials against source evidence, including methods, results,
+- Gate 2 compares materials against the actual original PDF/text, including methods, results,
   figures, tables, references and context. Sufficiency means enough to **write**,
   not an obligation to re-run experiments or reproduce the whole research project.
 - Gate 3 reviews actual Harbor files, fidelity, conversion determinism, verifier,
-  paths, submission contract and answer isolation. It does not require a writer
+  exact private ground truth, paths, submission contract, answer isolation and the
+  synthetic oracle's scientific adequacy against every writing requirement. It does not require a writer
   trial or reward of one.
 
 Reviews use fresh sessions and a different role, with no file-writing or shell
@@ -87,6 +94,10 @@ redirect destinations and relevant response headers are retained; version string
 remain claims while actual downloaded snapshots are identified by SHA256.
 Web-enabled discovery cannot read workspace files. Local-source proposal building,
 materials and reviews are offline at the tool layer and use explicit read scopes.
+Conversion internally uses a fresh execution-model session to author a synthetic
+reference manuscript from **only public instruction/materials**. Controller-owned
+rendering creates portable TeX, bibliography and local assets; compilation precedes
+gate 3. This is not a fourth gate or a downstream writer evaluation.
 Only the user-provided public selection request is sent to web-enabled discovery,
 not private source content or review feedback. Canonical metadata-derived paper
 identities and source hashes, rather than model-selected labels, control deduplication.
@@ -109,17 +120,37 @@ limit. Invalid model artifacts and repair verdicts trigger automatic feedback;
 infrastructure/authentication failures stop with a resumable checkpoint.
 
 Each delivered path is a real Harbor task containing `instruction.md`,
-`task.toml`, `environment/`, `tests/`, and a manifest. Only allowlisted public
-materials enter the writer image. Original sources and reference material are
-under the separate verifier's `tests/private/`. The existing structural verifier
-checks LaTeX compilation and citations, not scientific quality. No fake task,
-pre-existing oracle, model self-reported readiness or synthetic evidence is used.
+`task.toml`, `environment/`, `tests/`, `solution/`, and a manifest. Only allowlisted public
+materials enter the writer image. `tests/private/ground_truth/paper.pdf` is mandatory:
+actual publisher/repository bytes, never an LLM reconstruction. Its manifest binds
+identity, source/version, license evidence, acquisition and file hashes, PDF parsing,
+readability, page count and title/identifier checks. Publisher `citation_pdf_url`
+is fetched automatically even when the proposal selects HTML or supplies a PDF.
+Proposal/imported PDF bytes cannot bypass that authoritative relationship:
+the controller acquires the observed publisher PDF (or the known arXiv abs-to-PDF
+relationship). Cache reuse requires that URL, metadata hash and PDF hash binding;
+title/DOI checks are complementary, not proof of authority. Unrelated PDF links
+and HTML error bodies are not accepted as a paper. An actual `paper.html` snapshot
+is retained when available. Original TeX/dependencies are retained when retrieved;
+otherwise the manifest explicitly records unavailability in the searched sources
+with publisher-link/repository retrieval evidence, not a claim that no source exists anywhere.
+Discovery includes semantically marked source/archive/download links without URL
+extensions and records content type, disposition filename and actual body inspection.
+`not_discovered` means no candidate in the recorded search;
+`unavailable_in_inspected_candidates` is limited to those candidates. There is no crawl.
+Model-generated `reference_notes.md` is explicitly non-authoritative.
+`solution/solve.sh` installs and compiles the bundled **synthetic oracle**, not the
+original PDF, and never edits the verifier or rewards. Only Harbor's oracle agent
+receives that solution bundle. The structural verifier checks LaTeX compilation,
+sections and citations, not scientific quality. No model self-reported readiness
+or synthetic artifact is used as original ground truth.
 `task_ready`, downstream writing/scoring and public publication are separate.
 Nothing uploads automatically.
 
-Sources currently support public HTTPS PDF, HTML, text, CSV/JSON and scoped binary
-assets. Opaque archives are not automatically unpacked; select direct source
-files. Controller retrieval rejects private-network URLs and oversized sources.
+Sources support public HTTPS PDF, HTML, text, CSV/JSON and scoped binary
+assets. Original-source ZIP/tar/gzip bundles are retained and boundedly unpacked
+without executing their contents; original identity/dependency completeness still
+requires gate 1 review. Controller retrieval rejects private-network URLs and oversized sources.
 Exact excerpt checks plus semantic reviews are complementary, not a proof of
 every scientific claim. Run untrusted research in the supplied Docker workflow.
 
@@ -148,10 +179,18 @@ mounts, monitoring and recovery. There is no root scripts directory, checkout
 agent entry point or replacement unit-test suite. The generated Harbor verifier
 is benchmark functionality, not a repository pytest suite.
 
-**Acceptance status:** the installed-product Docker run produced five distinct
+**Current scope status:** implementation only; the new original-ground-truth and
+synthetic-oracle contract has not yet completed five-task generation or the ten
+real Harbor oracle/nop trials. `docker/acceptance.sh` runs those trials on the trusted
+host after export, using installed Harbor 0.22.0, with no Docker socket in the
+autonomous construction container. See [DEV.md](DEV.md) for exact commands.
+
+**Historical acceptance (before this contract):** the installed-product Docker run produced five distinct
 Harbor tasks. All 15 independent review gates accepted; final offline
 `papersmith validate` returned `task_ready: true`, `task_ready_count: 5`, and no
 integrity failures. Actual interruption/resume preserved unchanged passed stages.
 See the live evidence record in [DEV.md](DEV.md). This is task-production
 acceptance, not a downstream writer trial, image-build certification, or scientific
-quality certification. Older stopped runs and volumes remain preserved.
+quality certification. Those old HTML-only tasks are not current ground-truth/oracle
+acceptance. Old checkpoints are invalidated by implementation/input hashes, never
+silently upgraded; use a new run/export suffix. Older runs and volumes remain preserved.

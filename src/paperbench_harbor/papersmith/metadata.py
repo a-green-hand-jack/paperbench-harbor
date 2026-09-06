@@ -13,6 +13,9 @@ class SourceMetadata(HTMLParser):
         super().__init__()
         self.url, self.records, self.licenses = url, [], []
         self.assets = {}
+        self.original_source_links = []
+        self.original_source_candidates = []
+        self._source_anchor = None
         self._paragraph = None
         self._paragraph_line = None
 
@@ -53,6 +56,17 @@ class SourceMetadata(HTMLParser):
         rel = set(attrs.get("rel", "").split())
         if tag in {"a", "link"} and attrs.get("href"):
             url = urljoin(self.url, attrs["href"])
+            candidate = {
+                "url": url,
+                "attributes": attrs,
+                "raw_tag": self.get_starttag_text(),
+                "raw_line": self.getpos()[0],
+                "text": "",
+            }
+            if tag == "a":
+                self._source_anchor = candidate
+            else:
+                self.source_candidate(candidate)
             if "canonical" in rel:
                 self.records.append({"rel": "canonical", "url": url})
             parsed = urlsplit(url)
@@ -71,10 +85,15 @@ class SourceMetadata(HTMLParser):
                 self.records.append({"rel": "license", "url": url})
 
     def handle_data(self, data):
+        if self._source_anchor is not None:
+            self._source_anchor["text"] += data
         if self._paragraph is not None:
             self._paragraph.append(data)
 
     def handle_endtag(self, tag):
+        if tag == "a" and self._source_anchor is not None:
+            self.source_candidate(self._source_anchor)
+            self._source_anchor = None
         if tag == "p" and self._paragraph is not None:
             statement = " ".join("".join(self._paragraph).split())
             lower = statement.casefold()
@@ -100,6 +119,71 @@ class SourceMetadata(HTMLParser):
                     }
                 )
             self._paragraph = None
+
+    def source_candidate(self, candidate):
+        """Select marked download/source links, not general navigation or a crawl."""
+        attrs = candidate["attributes"]
+        media = attrs.get("type", "").lower().split(";", 1)[0]
+        label = " ".join(
+            (
+                candidate["text"],
+                attrs.get("title", ""),
+                attrs.get("aria-label", ""),
+                attrs.get("download") or "",
+            )
+        ).lower()
+        url = candidate["url"]
+        parsed = urlsplit(url)
+        query = parse_qs(parsed.query)
+        if (
+            media == "application/pdf"
+            or media.startswith("image/")
+            or re.search(r"/(?:pdf|images?|figures?)(?:/|$)", parsed.path, re.IGNORECASE)
+            or any(
+                value.lower() in {"pdf", "printable", "image", "png", "jpg", "jpeg", "svg"}
+                for key in ("type", "format")
+                for value in query.get(key, [])
+            )
+            or re.search(r"\.(?:pdf|png|jpe?g|gif|svg|webp)(?:[?#]|$)", url, re.IGNORECASE)
+            or (
+                re.search(r"\b(?:pdf|image|figure)\b", label)
+                and not re.search(r"\b(?:latex|tex|source|archive)\b", label)
+            )
+        ):
+            return
+        reasons = []
+        if re.search(r"\.(?:tex|zip|tar(?:\.gz)?|tgz)(?:[?#]|$)|/e-print/", url, re.IGNORECASE):
+            reasons.append("source_or_archive_url")
+        if media in {
+            "application/x-tex",
+            "application/x-latex",
+            "text/x-tex",
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/gzip",
+            "application/x-gzip",
+            "application/x-tar",
+        }:
+            reasons.append("source_or_archive_media_type")
+        if set(attrs.get("rel", "").lower().split()) & {
+            "source",
+            "original-source",
+            "archive",
+            "download",
+        }:
+            reasons.append("source_or_download_relation")
+        if re.search(
+            r"\b(?:latex|tex|archive)\b|\b(?:original|source)\s+(?:files?|code|package|download)\b|\bdownload\s+(?:the\s+)?source\b",
+            label,
+        ) or re.fullmatch(
+            r"(?:download(?: files?)?|(?:original |article )?source(?: files?)?)", label.strip()
+        ):
+            reasons.append("source_or_archive_label")
+        if "download" in attrs:
+            reasons.append("download_attribute")
+        if reasons and urlsplit(url).scheme in {"http", "https"}:
+            self.original_source_links.append(url)
+            self.original_source_candidates.append({**candidate, "selection_reasons": reasons})
 
     def structured(self, payload):
         self.records.append({"json": payload})

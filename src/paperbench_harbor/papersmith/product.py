@@ -23,6 +23,8 @@ from paperbench_harbor.adapters.core.convert import (
 from paperbench_harbor.common.task_contract import assert_valid_task_contract
 from paperbench_harbor.construction.core.state import atomic_json, fingerprint
 
+from .ground_truth import acquire as acquire_ground_truth
+from .ground_truth import validate as validate_ground_truth
 from .identity import canonical_identity
 from .integrity import (
     CONVERSION_EVIDENCE,
@@ -35,6 +37,7 @@ from .integrity import (
     load_state,
     located_quote,
     model_receipt,
+    oracle_receipt,
     terminal_integrity,
 )
 from .integrity import (
@@ -42,6 +45,8 @@ from .integrity import (
 )
 from .metadata import SourceMetadata
 from .network import retrieve
+from .oracle import Oracle, compile_oracle
+from .oracle import render as render_oracle
 from .runtime import call, event
 from .schema import Materials, Proposal, Review
 
@@ -51,6 +56,7 @@ REVIEW_MODEL = "openai/gpt-5.6-sol"
 TEMPLATES = Path(__file__).resolve().parents[1] / "common/templates"
 GATES = {
     "gate1": (
+        "original_availability",
         "sources",
         "licenses",
         "accessibility",
@@ -59,6 +65,7 @@ GATES = {
         "answer_isolation",
     ),
     "gate2": (
+        "ground_truth_comparison",
         "facts",
         "methods",
         "results",
@@ -70,6 +77,8 @@ GATES = {
         "answer_isolation",
     ),
     "gate3": (
+        "ground_truth_packaging",
+        "oracle",
         "layout",
         "instruction",
         "environment",
@@ -91,12 +100,14 @@ def implementation(stage):
         Path(__file__),
         Path(__file__).with_name("schema.py"),
         Path(__file__).with_name("integrity.py"),
+        Path(__file__).with_name("ground_truth.py"),
+        Path(__file__).with_name("oracle.py"),
     ]
     if stage == "proposal":
         paths.append(Path(__file__).with_name("network.py"))
         paths.append(Path(__file__).with_name("identity.py"))
         paths.append(Path(__file__).with_name("metadata.py"))
-    if stage in {"proposal", "materials", "gate1", "gate2", "gate3"}:
+    if stage in {"proposal", "materials", "convert", "gate1", "gate2", "gate3"}:
         paths.append(Path(__file__).with_name("runtime.py"))
     if stage in {"convert", "gate3", "deliver"}:
         paths.append(TEMPLATES)
@@ -351,14 +362,38 @@ def fetch_sources(proposal, destination, imported, cache=None):
                 "authority_and_license_applicability": "requires_independent_gate1_review",
                 "publisher_assets": acquired_assets,
                 "unavailable_assets": unavailable_assets,
+                "original_source_links": publisher.original_source_links,
+                "original_source_candidates": publisher.original_source_candidates,
             }
         )
     atomic_json(destination / "manifest.json", manifest)
     atomic_json(destination / "provenance.json", provenance)
     atomic_json(destination / "identity.json", canonical_identity(destination))
+    reused.extend(acquire_ground_truth(destination, proposal, cache))
     root = imported.parent
     atomic_json(destination / "source-support.json", catalog_paths(root, [destination], prefix="S"))
     return reused
+
+
+def import_source_cache(previous, destination):
+    """Copy verified acquisition inputs into a new run, never previous approvals."""
+    state = load_state(previous, ORDER)
+    destination.mkdir()
+    records = []
+    for candidate in state["candidates"]:
+        entry = candidate["stages"].get("proposal", {})
+        if entry.get("status") != "passed":
+            continue
+        model_receipt(previous, state["request"], "proposal", entry)
+        source = contained(previous, Path(entry["path"]) / "sources")
+        target = destination / candidate["id"]
+        shutil.copytree(source, target)
+        records.append({"candidate": candidate["id"], "proposal_sha256": entry["output_sha256"],
+                        "sources_sha256": digest(target), "origin": str(source),
+                        "acceptance": "cached bytes only; new proposal and all reviews required"})
+    if not records:
+        raise ValueError("source cache has no hash-verified completed proposal inputs")
+    atomic_json(destination / "index.json", records)
 
 
 def check_materials(materials, sources):
@@ -412,6 +447,7 @@ def check_materials(materials, sources):
 
 def convert(materials, sources, task):
     check_materials(materials, sources)
+    validate_ground_truth(sources / "ground_truth")
     references = "\n".join(f.content for f in materials.files if f.role == "references")
     neutral_keys = set(re.findall(r"^\[([A-Za-z0-9:_-]+)\]\s*=", references, flags=re.MULTILINE))
     bib_keys = set(
@@ -436,8 +472,12 @@ def convert(materials, sources, task):
             shutil.copyfile(sources / f"{item.copy_source}.bin", target)
         else:
             target.write_text(item.content)
-    (dirs.tests_private / "reference.md").write_text(materials.private_reference)
-    shutil.copytree(sources, dirs.tests_private / "sources")
+    (dirs.tests_private / "reference_notes.md").write_text(
+        "# Model-Generated Reference Notes\n\nNot original ground truth or an authoritative manuscript.\n\n"
+        + materials.private_reference
+    )
+    shutil.copytree(sources / "ground_truth", dirs.tests_private / "ground_truth")
+    shutil.copytree(sources, dirs.tests_private / "sources", ignore=shutil.ignore_patterns("ground_truth"))
     atomic_json(dirs.tests_private / "materials.json", materials.model_dump())
     env = create_template_environment(TEMPLATES)
     render_templates(
@@ -452,7 +492,7 @@ def convert(materials, sources, task):
         },
         context={
             "difficulty_explanation": "Scientific writing from reviewed research materials",
-            "solution_explanation": "No pre-existing oracle; private source evidence only",
+            "solution_explanation": "Synthetic grounded reference manuscript; not original ground truth",
             "verification_explanation": "Structural submission verification, not scientific certification",
             "category": "scientific-writing",
             "tags_toml": '["science", "writing"]',
@@ -507,13 +547,15 @@ def convert(materials, sources, task):
     atomic_json(
         task / "manifest.json",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "benchmark": "PaperSmith",
             "sources_sha256": digest(sources),
             "materials_sha256": fingerprint(materials.model_dump()),
             "public_files": {p.path: digest(public / p.path) for p in materials.files},
+            "ground_truth_sha256": digest(sources / "ground_truth"),
         },
     )
+    check_ground_truth_packaging(task, sources)
     assert_valid_task_contract(task)
     from harbor.models.task.task import Task
 
@@ -532,6 +574,38 @@ def convert(materials, sources, task):
     )
 
 
+def check_ground_truth_packaging(task, sources):
+    original = sources / "ground_truth"
+    packaged = task / "tests/private/ground_truth"
+    validate_ground_truth(packaged)
+    if digest(original) != digest(packaged):
+        raise ValueError("task does not contain the exact acquired private ground truth")
+    private_hashes = {digest(p) for p in original.rglob("*") if p.is_file()}
+    # Approved figures/data can also occur among original TeX dependencies.
+    materials = Materials.model_validate(read(task / "tests/private/materials.json"))
+    allowed_assets = {
+        digest(task / "environment/materials" / item.path)
+        for item in materials.files if item.copy_source and item.role in {"figure", "data"}
+    }
+    manuscript_hashes = {digest(original / name) for name in ("paper.pdf", "paper.txt", "paper.html")}
+    for path in (task / "environment").rglob("*"):
+        if path.is_file() and digest(path) in private_hashes and (
+            digest(path) in manuscript_hashes or digest(path) not in allowed_assets
+        ):
+            raise ValueError("original ground truth leaked into writer image")
+    # Full prose leakage is also reviewed semantically; exact long passages fail mechanically.
+    private_texts = [(original / "paper.txt").read_text(),
+                     (task / "tests/private/reference_notes.md").read_text()]
+    public = " ".join((task / "instruction.md").read_text().split())
+    for path in (task / "environment/materials").rglob("*"):
+        if path.is_file() and path.suffix in {".txt", ".md", ".tex", ".json", ".html"}:
+            public += " " + " ".join(path.read_text().split())
+    for text in private_texts:
+        words = text.split()
+        if any(" ".join(words[i:i + 100]) in public for i in range(0, len(words) - 99, 20)):
+            raise ValueError("long private manuscript/reference passage leaked publicly")
+
+
 def inputs(request, candidate, stage):
     prior = ORDER[: ORDER.index(stage)]
     recovery = candidate["stages"].get(stage, {}).get("recovery_input")
@@ -539,6 +613,7 @@ def inputs(request, candidate, stage):
         {
             "request": request,
             "imported_sha256": digest(Path(request["imported"])),
+            "source_cache_sha256": digest(Path(request["imported"]).parent / "source-cache"),
             "implementation": implementation(stage),
             "recovery_input": {**recovery, "actual_sha256": digest(Path(recovery["path"]))}
             if recovery
@@ -557,6 +632,12 @@ def reusable(request, candidate, stage):
     if stage in MODEL_ROLES and entry.get("status") == "passed":
         try:
             model_receipt(Path(request["imported"]).parent, request, stage, entry)
+        except (ValueError, OSError, KeyError, TypeError):
+            return False
+    if stage == "convert" and entry.get("status") == "passed":
+        try:
+            if not oracle_receipt(Path(request["imported"]).parent, request, entry):
+                return False
         except (ValueError, OSError, KeyError, TypeError):
             return False
     return (
@@ -592,6 +673,7 @@ def validate(root):
                 model_receipt(root, state["request"], s, candidate["stages"][s])["sessions"][0]
                 for s in ("proposal", "gate1", "materials", "gate2", "gate3")
             ]
+            sessions += oracle_receipt(root, state["request"], candidate["stages"]["convert"])["sessions"]
             if len(sessions) != len(set(sessions)):
                 raise ValueError("review/build sessions were reused")
             sources = Path(candidate["stages"]["proposal"]["path"]) / "sources"
@@ -604,6 +686,9 @@ def validate(root):
             if read(delivery / "delivery.json")["identity"] != identity["identity"]:
                 raise ValueError("delivery identity does not match canonical source metadata")
             task = delivery / candidate["id"]
+            check_ground_truth_packaging(task, sources)
+            if not (task / "solution/solve.sh").is_file():
+                raise ValueError("task lacks a real Harbor oracle solution")
             assert_valid_task_contract(task)
             if digest(task) != digest(Path(candidate["stages"]["convert"]["path"]) / "task"):
                 raise ValueError("delivered task differs from reviewed conversion")
@@ -796,7 +881,7 @@ def run(root):
                                 "allowed; no domain package required. Use web search/fetch to verify real sources. "
                                 "Choose legally usable accessible sources with explicit license evidence and pinned "
                                 "versions. Code is only required when scientifically necessary to support the writing "
-                                "task; justify not_applicable, never waive source licenses. Prefer accessible HTML, "
+                                "task; justify not_applicable, never waive source licenses. A genuine publisher/repository PDF is MANDATORY, even when selecting HTML for extraction. Search for original TeX and dependency archives and supply original_source_urls if obtainable; never recreate original source. Prefer accessible HTML, "
                                 "PDF, text, figures, CSV or JSON, not opaque archives. Supply all necessary material "
                                 "URLs plus an authoritative publisher/repository metadata_url. Do NOT supply exact identity/license quotes, hashes or line counts; the controller extracts those from actual publisher metadata. A generic Creative Commons legal page alone does not "
                                 "bind a license to a paper. Remote version strings are claims, not immutable proof: the "
@@ -813,11 +898,22 @@ def run(root):
                                 else (),
                                 network=not (local or recovered),
                             )
+                            cache = recovered / "sources" if recovered else None
+                            if cache is None and (root / "source-cache/index.json").is_file():
+                                urls = {s.url for s in result.sources if s.role == "paper"}
+                                for record in read(root / "source-cache/index.json"):
+                                    cached = contained(root / "source-cache", root / "source-cache" / record["candidate"])
+                                    if digest(cached) != record["sources_sha256"]:
+                                        raise ValueError("imported source cache hash mismatch")
+                                    if any(r["role"] == "paper" and urls.intersection({r["url"], r["resolved_url"]})
+                                           for r in read(cached / "manifest.json")):
+                                        cache = cached
+                                        break
                             reused = fetch_sources(
                                 result,
                                 sources,
                                 root / "imported",
-                                recovered / "sources" if recovered else None,
+                                cache,
                             )
                             for snapshot in reused:
                                 event(
@@ -865,11 +961,37 @@ def run(root):
                             )
                             convert(materials, sources, attempt / "task")
                             convert(materials, sources, attempt / "determinism")
+                            oracle_attempt = attempt / "oracle"
+                            oracle_attempt.mkdir()
+                            oracle, _receipt = call(
+                                root, oracle_attempt, request["model"], "oracle builder",
+                                "Author a scientifically meaningful, complete new reference manuscript satisfying EVERY requirement in "
+                                + str(attempt / "task/instruction.md")
+                                + ". Read ONLY the audited public materials in "
+                                + str(attempt / "task/environment/materials")
+                                + ". This is a SYNTHETIC ORACLE, never original ground truth. Write coherent scientific argument, methods, numerical results, interpretation and limitations as appropriate to the actual brief, not a dump of notes or filler to meet word thresholds. No fabricated experiments, claims or bibliographic details. Include required tables and figures with faithful captions. Use exact required headings in order. Plain text fields only, no TeX/Markdown commands; the controller renders TeX and citations. Supply accurate bibliography entries using the public citation keys. Explain coverage of each requirement separately, in declared order. Use ASCII spellings or standard pdflatex-supported Unicode. "
+                                + "Do not read private sources, original paper or prior review feedback. "
+                                + "Mechanical retry category: "
+                                + ("conversion_retry" if previous else "initial_conversion")
+                                + ". Recheck the public submission contract. No private error text or review feedback is provided.",
+                                Oracle,
+                                read_paths=(attempt / "task/instruction.md", attempt / "task/environment/materials"),
+                            )
+                            for name in ("task", "determinism"):
+                                render_oracle(oracle, materials, attempt / name, attempt / name / "solution")
                             if digest(attempt / "task") != digest(attempt / "determinism"):
                                 raise ValueError("fixed-material conversion is not deterministic")
+                            compile_oracle(attempt / "task/solution", attempt / "oracle-build")
+                            for name in ("preview.pdf", "preview.txt", "validation.json"):
+                                shutil.copyfile(attempt / "task/solution" / name,
+                                                attempt / "determinism/solution" / name)
                             atomic_json(
                                 attempt / "checks.json",
-                                {"deterministic": True, "task_sha256": digest(attempt / "task")},
+                                {"deterministic": True, "task_sha256": digest(attempt / "task"),
+                                 "scope": "fixed materials and fixed synthetic oracle response render identical task sources; compiled preview reused byte-for-byte",
+                                 "oracle_response_sha256": digest(oracle_attempt / "response.json"),
+                                 "oracle_receipt_sha256": digest(oracle_attempt / "receipt.json"),
+                                 "ground_truth_sha256": digest(sources / "ground_truth")},
                             )
                         elif stage in GATES:
                             review_paths = [proposal_dir / "response.json", sources]
@@ -917,6 +1039,18 @@ def run(root):
                                 if stage == "gate3"
                                 else {}
                             )
+                            dimension = {"gate1": "original_availability", "gate2": "ground_truth_comparison",
+                                         "gate3": "ground_truth_packaging"}[stage]
+                            mandatory[dimension + "_original_files"] = {
+                                name: [eid for eid, anchor in catalog.items()
+                                       if anchor["path"] == (sources / "ground_truth" / name).relative_to(root).as_posix()]
+                                for name in ("paper.pdf", "paper.txt", "manifest.json")
+                            }
+                            if stage == "gate3":
+                                mandatory["oracle_artifacts"] = {
+                                    name: [eid for eid, anchor in catalog.items() if anchor["path"].endswith("/task/solution/" + name)]
+                                    for name in ("manuscript/main.tex", "preview.pdf", "validation.json")
+                                }
                             result, _receipt = call(
                                 root,
                                 attempt,
@@ -931,7 +1065,7 @@ def run(root):
                                 + json.dumps(mandatory)
                                 + ". Publisher binding anchors (select identity_binding IDs for sources, license_binding IDs for licenses; also cite a provenance.json ID for licenses): "
                                 + json.dumps(bindings)
-                                + ". Every checked dimension requires relevant selected IDs. No placeholder acceptances. "
+                                + ". Every checked dimension requires relevant selected IDs. No placeholder acceptances. Accepting any gate requires completed direct read tool calls for the proposal sources/ground_truth/paper.pdf AND paper.txt, not just their catalog entries. Gate3 also requires a completed direct read of task/solution/preview.pdf. "
                                 "For gate1 inspect EVERY source's identity/license bindings; the controller parsed real publisher tags, not a model-authored quote. These extractions are not approvals. Compare "
                                 "bindings against the actual publisher/repository metadata. Judge authority, applicable "
                                 "rights and exclusions, not just the existence of a license string. "
@@ -939,8 +1073,9 @@ def run(root):
                                 "license evidence; compare all relevant public materials with source facts. Inspect "
                                 "binary figures visually when relevant, reject if unavailable. Scope is sufficient "
                                 "pre-writing materials, NOT full experiment reproduction. Code can be scientifically "
-                                "not applicable, licenses cannot be waived. No writer trial or reward=1 prerequisite. "
-                                "Gate3 inspects actual Harbor directory, private/public separation, generated verifier "
+                                 "not applicable, licenses cannot be waived. Gate1 original_availability MUST inspect ground_truth/paper.pdf, its extracted paper.txt, manifest identity/page/readability checks and original_tex search evidence. Explicitly assess actual original TeX/dependency completeness and bundle-specific rights when retrieved, otherwise its evidenced unavailability; never infer third-party bundle rights from the article license or call recreated text original source. Gate2 ground_truth_comparison MUST compare the actual private original PDF/text against the generated materials, not reference notes as authority. No writer trial or reward=1 prerequisite. "
+                                 "Gate3 inspects actual Harbor directory, private/public separation, generated verifier "
+                                 "and exact tests/private/ground_truth bytes against proposal ground_truth. Inspect solution/manuscript, solution/preview.pdf and solution/provenance.json: independently assess scientific meaning, every explicit writing requirement, accurate grounded bibliography and local assets against the actual private original and public materials. The synthetic oracle must be a legitimate new manuscript, not copied original prose, a notes dump, dummy padding, original PDF submission or reward/verifier manipulation. Report blocking conversion/fidelity findings for any failure. "
                                 "and deterministic conversion evidence. A structural verifier is not a science judge. "
                                 "Return accept only with no blocking findings. Supply concrete evidence and repair "
                                 "actions otherwise; reject means this candidate cannot be used and needs replacement. "
@@ -989,7 +1124,8 @@ def run(root):
                                     "reviews": {g: stages[g] for g in GATES},
                                     "identity": canonical_identity(sources)["identity"],
                                     "publication": "not_requested",
-                                    "writer_trial": "not_requested",
+                                     "writer_trial": "not_requested",
+                                     "harbor_oracle_nop_acceptance": "pending_trusted_host_execution",
                                 },
                             )
                         entry.update(

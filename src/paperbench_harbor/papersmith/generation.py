@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 
 from .integrity import contained, load_state
-from .schema import Material, Materials, Support
+from .oracle import Oracle, Table
+from .schema import Material, Materials, Review, Support
 
 
 def configure_generation_schema(workspace=None):
@@ -100,6 +101,71 @@ def configure_generation_schema(workspace=None):
             "Each requirement.section must name one of these headings."
         )
 
+    def review(schema):
+        schema["description"] = (
+            "Return exactly decision, reasoning, checked, findings. Do not rename these fields "
+            "to verdict, summary, checks, dimensions or checked_dimensions. checked is an object "
+            "keyed by every required review dimension; each value contains exactly assessment "
+            "and evidence_ids. Each finding contains exactly classification, evidence, repair; "
+            "not severity, dimension, description, evidence_ids or suggested_fix. "
+            "Use actual catalog IDs and substantive evidence, never placeholders. "
+            "accept requires findings=[]; repair/reject requires concrete findings."
+        )
+
+    def oracle(schema):
+        if workspace is None or not (workspace / "run.json").is_file():
+            return
+        from .product import ORDER
+
+        state = load_state(workspace, ORDER)
+        active = next(
+            (
+                c for c in state["candidates"]
+                if c["stages"].get("convert", {}).get("status") == "running"
+            ),
+            None,
+        )
+        if active is None:
+            return
+        path = contained(workspace, Path(active["stages"]["materials"]["path"]) / "response.json")
+        materials = Materials.model_validate_json(path.read_text())
+        figures = [f.path for f in materials.files if f.role == "figure"]
+        figure_schema = (
+            {
+                "items": {"properties": {"public_path": {"enum": figures}}},
+                "description": "Use exact audited public material paths, without environment/materials or any absolute prefix.",
+            }
+            if figures else {"maxItems": 0}
+        )
+        sections = schema["properties"]["sections"]
+        sections["minItems"] = sections["maxItems"] = len(materials.submission_sections)
+        sections["prefixItems"] = [
+            {
+                "allOf": [
+                    sections["items"],
+                    {"properties": {"heading": {"const": heading}, "figures": figure_schema}},
+                ]
+            }
+            for heading in materials.submission_sections
+        ]
+        sections["description"] = (
+            "Use exactly these headings, in order, including any Abstract or References heading "
+            "even though separate abstract/bibliography fields also exist: "
+            + json.dumps(materials.submission_sections)
+        )
+        coverage = schema["properties"]["requirement_coverage"]
+        coverage["minItems"] = coverage["maxItems"] = len(materials.requirements)
+
+    def table(schema):
+        schema["properties"]["rows"]["description"] = (
+            "Rectangular data rows only. Every row MUST have exactly len(columns) string cells. "
+            "Do not add row labels outside the declared columns, ragged rows, or spanning cells. "
+            "Use an empty string for a missing cell; include units and notes in the caption."
+        )
+
     Material.model_config["json_schema_extra"] = material
     Materials.model_config["json_schema_extra"] = materials
     Support.model_config["json_schema_extra"] = support
+    Review.model_config["json_schema_extra"] = review
+    Oracle.model_config["json_schema_extra"] = oracle
+    Table.model_config["json_schema_extra"] = table
