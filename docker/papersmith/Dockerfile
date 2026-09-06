@@ -23,7 +23,9 @@ RUN python -c 'import subprocess,tomllib; p=tomllib.load(open("/opt/papersmith-d
 COPY pyproject.toml README.md install.sh /opt/papersmith-build/
 COPY src /opt/papersmith-build/src
 COPY packaging /opt/papersmith-build/packaging
-RUN PAPERSMITH_SOURCE=/opt/papersmith-build PAPERSMITH_PREFIX=/opt \
+RUN mkdir /opt/papersmith-wheel \
+    && python -m pip wheel --no-deps --wheel-dir /opt/papersmith-wheel /opt/papersmith-build \
+    && PAPERSMITH_SOURCE=$(find /opt/papersmith-wheel -name '*.whl') PAPERSMITH_PREFIX=/opt \
     PAPERSMITH_BIN_DIR=/usr/local/bin sh /opt/papersmith-build/install.sh \
     && rm -r /opt/papersmith-build
 # Provider modules may use passwd's home rather than $HOME for canonical paths.

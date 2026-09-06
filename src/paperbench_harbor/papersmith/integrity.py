@@ -266,11 +266,26 @@ def load_state(root, order):
     request = state["request"]
     if type(request.get("count")) is not int or request["count"] < 1:
         raise ValueError("invalid checkpoint target count")
+    scope_counts = {request["count"]}
+    previous_count = None
+    for extension in state.get("scope_history", []):
+        before, after = extension["previous_count"], extension["count"]
+        if (type(before) is not int or type(after) is not int or before < 1 or after <= before
+                or (previous_count is not None and before != previous_count)
+                or extension.get("authority") != "explicit resume --count"):
+            raise ValueError("invalid target scope extension history")
+        scope_counts.update((before, after))
+        previous_count = after
+    if previous_count is not None and previous_count != request["count"]:
+        raise ValueError("target does not match explicit scope history")
     if request.get("imported") != str(root / "imported"):
         raise ValueError("checkpoint imported path does not match workspace")
     contained(root, root / "imported")
     ids = set()
     for candidate in state["candidates"]:
+        scope_count = candidate.get("scope_count", request["count"])
+        if type(scope_count) is not int or scope_count not in scope_counts:
+            raise ValueError("candidate scope does not match the recorded targets")
         cid = candidate["id"]
         if not re.fullmatch(r"candidate-[0-9]{4,}", cid) or cid in ids:
             raise ValueError("invalid or duplicate checkpoint candidate id")

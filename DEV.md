@@ -41,8 +41,10 @@ contents. Do not use `opencode debug config`.
 | `PAPERSMITH_NETWORK` | `bridge` by default; explicit `none` allowed, host networking refused |
 | `PAPERSMITH_VOLUME_PREFIX` | Dedicated persistent runs/state/cache volume names |
 | `PAPERSMITH_IMAGE` | Image tag, default `paperbench-papersmith:dev` |
-| `PAPERSMITH_CONTAINER_NAME` | Optional name for monitoring/stopping a detached controller |
-| `PAPERSMITH_DETACH` | `1` launches detached and retains its container |
+| `PAPERSMITH_CONTAINER_NAME` | Optional name for monitoring/stopping the supervised controller |
+| `PAPERSMITH_DETACH` | `1` starts a `nohup` host supervisor and immediately reports persistent PID/log/state paths; no model wait |
+| `PAPERSMITH_HOST_PYTHON` | Existing Harbor 0.22.0 environment, defaults to `$repo/.venv/bin/python` |
+| `PAPERSMITH_ACCEPTANCE_STATE` | Private persistent host receipts/snapshots/jobs; defaults to `$XDG_STATE_HOME/papersmith/acceptance/<prefix>` (or `~/.local/state`) |
 
 Use `docker/opencode.example.json` as a secret-free built-in-provider example.
 For an external OAuth provider, use a reviewed secret-free config selecting its
@@ -59,21 +61,93 @@ that consult passwd; runtime `HOME` is `/state/home`. For adapters using fixed
 absolute account paths, explicitly mount those individual files at those paths.
 Do not confuse an isolated named volume with a bind mount of the host home.
 
-## Live Acceptance, Run Separately
+## Automatic Gate 3
 
 Only after provider configuration and explicit authorization for paid calls:
 
 ```sh
-PAPERSMITH_DETACH=1 PAPERSMITH_CONTAINER_NAME=papersmith-five \
+export PAPERSMITH_IMAGE=paperbench-papersmith:automatic-gate-v2
+export PAPERSMITH_VOLUME_PREFIX=papersmith-automatic
+export PAPERSMITH_DETACH=1
+PAPERSMITH_CONTAINER_NAME=papersmith-automatic \
   sh docker/e2e.sh run 'Discover suitable scientific papers on any topic' \
-  --count 5 --output /runs/issue71-five --headless --json
-docker logs -f papersmith-five
-sh docker/e2e.sh status /runs/issue71-five --json
-docker stop --time 60 papersmith-five
-sh docker/e2e.sh status /runs/issue71-five --json
-sh docker/e2e.sh resume /runs/issue71-five --headless --json
-sh docker/e2e.sh validate /runs/issue71-five --json
+  --count 1 --output /runs/automatic --headless --json
+# After the first task is fully ready, explicitly extend the SAME target:
+sh docker/e2e.sh resume /runs/automatic --count 5 --headless --json
+sh docker/e2e.sh validate /runs/automatic --json
+# From another terminal while running:
+sh docker/e2e.sh status /runs/automatic --json
+docker stop --time 60 papersmith-automatic
 ```
+
+Each `run`/`resume` is one command. It extracts the image's exact wheel into a
+new private `invocations/run-<id>/package` directory, requires exactly one regular
+wheel there (never a wildcard over historical packages), installs
+it non-editably into the existing host Harbor venv using `uv`, and starts the
+installed `papersmith acceptance-worker` supervisor. No host source imports or
+Docker socket/CLI in the model container. Build the image first, and retain the
+same image, volume prefix and host acceptance state on resume/validate.
+
+With `PAPERSMITH_DETACH=1`, the installed CLI launches `nohup papersmith
+acceptance-worker` in a new session, with stdin closed and stdout/stderr in the
+invocation's `supervisor.log`. The returned JSON contains `pid`, `pid_path`,
+`log`, `state`, `acceptance_state` and `container`. `status: spawned` means process
+launch, not successful construction. `supervisor.json` records startup, exit code,
+errors and owned-container cleanup; `launch.json` and `pid.json` remain available
+after exit. This backgrounds the **host supervisor**, never just `docker run`.
+The controller stays attached to its supervisor and has no model duration limit.
+Stopped controllers are retained; use a new container name on resume or let the
+wrapper generate one. Existing names are refused, never stopped or replaced.
+
+Gate 3 first runs real Harbor oracle and nop, then performs the independent Sol
+semantic review. A task is deliverable only with oracle reward 1, nop reward 0,
+successful Harbor CLI execution, no trial exception, completed verifier tests,
+and exact task/identity/evidence hashes. Nop's expected failed verifier assertions
+are valid negative evidence, not an infrastructure exception. The acceptance
+receipt does not replace the scientific, licensing or ground-truth reviews.
+
+The controller publishes only a fixed-path request and task snapshot into a
+dedicated queue volume. The host uses `docker cp`, rejects archive links/traversal,
+snapshots regular bytes, enforces the shipped runtime configuration and invokes
+only fixed `harbor run --agent oracle|nop --env docker` commands. The private host
+evidence directory is mounted **read-only** at `/acceptance-receipts`; this mount
+is the receipt authentication boundary, not a model-generated signature. Models
+have no write/command tools and no access to the queue or private worker state.
+Request IDs, protocol/package hashes, original identity and full task hashes bind
+receipts. Validation rereads and hashes the actual Harbor trial artifacts and
+immutable task snapshots, including their private ground truth.
+
+Oracle/nop successes checkpoint individually by unchanged task hash and identity.
+Failed/interrupted jobs retain logs; resuming retries only missing subjobs before
+the remaining gate review. Missing/mismatched workers fail closed, with a
+`blocked_reason`, rather than triggering proposal regeneration. The 30-second
+heartbeat freshness check detects service loss; it is **not** a construction or
+Harbor execution timeout. Model phases remain uncapped. Harbor uses the shipped
+finite budgets: agent 3600s, verifier 900s, environment build 2400s.
+
+`resume --count 5` may only expand the target. It records `scope_history` and
+preserves each existing candidate's original count scope for checkpoint hashes;
+the first successful task is not proposed or reviewed again merely to increase
+the target. This works for any positive target, not a hardcoded five.
+
+Ctrl-C (foreground), `kill -TERM <reported-supervisor-pid>` or `docker stop` stops
+the owned controller and worker. The supervisor signals active Harbor jobs for
+cleanup. It verifies its unique Docker ownership label, stops by immutable
+container ID with a shutdown grace, then kills only that ID if still running.
+It never removes the controller or deletes artifacts. Unverifiable ownership or
+an unreachable Docker daemon produces a recorded cleanup failure, not a broad
+name-based kill. Shutdown grace periods do not limit model execution time.
+
+The wrapper and installed worker reject Unix sockets, including sockets reached
+through symlinks inside explicitly bound directories, using filesystem metadata
+without reading credential contents. The worker independently allowlists the
+Docker invocation, read-only host binds and dedicated state volumes; privileged
+options, host networking, socket-parent binds and alternate controller commands
+are refused before launch. Ordinary installed
+`papersmith create`/`resume` on a Docker host uses the `local` backend directly,
+with controller-owned evidence under `<workspace>/.acceptance`. Explicit backend
+selection is `PAPERSMITH_ACCEPTANCE_BACKEND=local|spool`; absent services block.
+Standalone Docker `doctor` reports an unavailable spool worker when none is active.
 
 Public defaults are execution `openai/gpt-5.6-terra` and all review gates
 `openai/gpt-5.6-sol`. Supply `--model` and `--review-model` externally if the
@@ -101,8 +175,8 @@ model/schema failures can keep repairing until the operator interrupts.
 
 Do not equate build, doctor, request display or a successful process exit with
 task delivery. `validate` checks the current hash-bound evidence and requested
-count. Downstream oracle/nop acceptance is a separate explicit host operation,
-described below; never publish or upload implicitly. Historical stopped volumes/runs listed in HANDOFF.md
+count, including automatic real oracle/nop acceptance within gate 3;
+never publish or upload implicitly. Historical stopped volumes/runs listed in HANDOFF.md
 are untouched and must not be restarted or deleted by this workflow.
 
 ## Failure Handling
@@ -284,7 +358,7 @@ five-task run, preserving old volumes and exports:
 export PAPERSMITH_IMAGE=paperbench-papersmith:ground-truth-v1
 export PAPERSMITH_VOLUME_PREFIX=papersmith-five-ground-truth-v1
 sh docker/e2e.sh build
-PAPERSMITH_DETACH=1 PAPERSMITH_CONTAINER_NAME=papersmith-five-ground-truth-v1 \
+PAPERSMITH_CONTAINER_NAME=papersmith-five-ground-truth-v1 \
   sh docker/e2e.sh run 'Discover suitable scientific papers on any topic' \
   --count 5 --output /runs/five-ground-truth-v1 \
   --model openai/gpt-5.6-terra --review-model openai/gpt-5.6-sol --headless --json
@@ -308,51 +382,18 @@ private `source-cache/`. All new proposal/review sessions still run. Keep the ol
 workspace at its recorded absolute path; do not rewrite checkpoint paths/hashes.
 The fresh-volume command above intentionally has no cache to reuse.
 
-Export the five **validated delivered paths**, including `solution/` and `tests/`,
-to a new host directory such as `results/five-ground-truth-v1/`. With the retained
-controller container, each exact path returned in `tasks` can be exported with:
-
-```sh
-# Create the NEW export directory once; never use the historical export path.
-mkdir results/five-ground-truth-v1
-docker cp papersmith-five-ground-truth-v1:DELIVERED_TASK_PATH results/five-ground-truth-v1/
-```
-
-Repeat `docker cp` for the five actual paths, not proposal/conversion attempts.
-Then run the ten true trials on the **trusted Ubuntu host** (not inside PaperSmith):
-
-```sh
-HARBOR_BIN="$PWD/.venv/bin/harbor" sh docker/acceptance.sh \
-  results/five-ground-truth-v1 results/five-ground-truth-v1-harbor
-```
-
-The host default `harbor` observed during implementation was 0.20.0; the existing
-`.venv/bin/harbor` is 0.22.0. The wrapper refuses other versions and pre-existing
-jobs directories. It invokes the installed CLI, not checkout agent code. Exact
-single-task equivalents (use unique job names/directories) are:
-
-```sh
-.venv/bin/harbor run --path results/five-ground-truth-v1/candidate-0001 \
-  --agent oracle --env docker --n-attempts 1 --n-concurrent 1 --max-retries 0 \
-  --jobs-dir results/five-ground-truth-v1-harbor --job-name candidate-0001-oracle --yes
-.venv/bin/harbor run --path results/five-ground-truth-v1/candidate-0001 \
-  --agent nop --env docker --n-attempts 1 --n-concurrent 1 --max-retries 0 \
-  --jobs-dir results/five-ground-truth-v1-harbor --job-name candidate-0001-nop --yes
-```
-
-Acceptance requires exactly ten completed trials, zero trial exceptions, actual
-generated-verifier CTRF evidence, every oracle reward 1 and every nop reward 0.
-`acceptance.json` is written from real trial results only. A compile preview or
-gate acceptance is not a substitute for these trials. The writer and separate
-verifier images are built by host Harbor; no Docker socket enters the autonomous
-construction container. No credentials are needed for oracle/nop.
+There is no manual export/approval-file exchange. The automatic gate described
+above handles two real trials per candidate for any requested count, before
+delivery. `docker/acceptance.sh` remains a historical external batch diagnostic,
+not the product gate and not a prerequisite users must run. Harbor oracle/nop
+need no model credentials; construction and independent reviews still do.
 
 Known boundaries: PDF identity checks are deliberately conservative and may reject
 unusual title extraction; archives may lack dependencies and need source repair;
 unsupported Unicode/figures or an inadequate manuscript must be repaired before
 gate 3. Scientific adequacy remains a substantive independent model assessment,
-not a new deterministic science scorer. Live five-task/ten-trial acceptance remains
-the parent's separate orchestration work.
+not a new deterministic science scorer. Starting the long one-then-five model run
+remains the parent's decision; that run now owns its Harbor acceptance automatically.
 
 ## Issue 71 Historical Acceptance (Before Original-Ground-Truth Contract)
 

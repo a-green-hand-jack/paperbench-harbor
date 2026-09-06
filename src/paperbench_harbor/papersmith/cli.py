@@ -11,6 +11,7 @@ from pathlib import Path
 
 from paperbench_harbor.construction.core.state import atomic_json
 
+from . import acceptance
 from .generation import configure_generation_schema
 from .product import (
     GATES,
@@ -42,11 +43,18 @@ def doctor(model, review_model):
         except subprocess.TimeoutExpired:
             discovery = "dependency_probe_timeout"
     configured = {m: m in models for m in {model, review_model}}
+    acceptance_status = "available"
+    try:
+        acceptance.check_service()
+    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+        acceptance_status = "unavailable; local requires host Docker/Harbor, spool requires the e2e supervisor"
     return {
         "ok": bool(executable)
         and all(configured.values())
         and all(shutil.which(name) for name in ("pdftotext", "pdfinfo", "pdflatex", "bibtex"))
-        and harbor_available,
+        and harbor_available and acceptance_status == "available",
+        "acceptance_backend": acceptance.backend(),
+        "runtime_acceptance": acceptance_status,
         "required": {
             "python": sys.version.split()[0],
             "opencode": bool(executable),
@@ -72,6 +80,12 @@ def main():
     )
     parser.add_argument("--version", action="version", version="PaperSmith 0.2.0")
     commands = parser.add_subparsers(dest="command", required=True)
+    worker = commands.add_parser("acceptance-worker", help="Trusted host supervisor for Docker E2E")
+    worker.add_argument("--container", required=True)
+    worker.add_argument("--state", type=Path, required=True)
+    worker.add_argument("--invocation", type=Path, required=True)
+    worker.add_argument("--detach", action="store_true", help="Launch a nohup host supervisor; return PID/log/state immediately")
+    worker.add_argument("controller", nargs=argparse.REMAINDER)
     for command in ("create", "status", "resume", "validate", "doctor"):
         sub = commands.add_parser(command)
         sub.add_argument("--json", action="store_true", help="Machine-readable result on stdout")
@@ -110,9 +124,19 @@ def main():
             )
         elif command != "doctor":
             sub.add_argument("workspace", type=Path)
+            if command == "resume":
+                sub.add_argument("--count", type=int, help="Explicitly extend the admitted task target; preserve prior scope and successes")
     args = parser.parse_args()
     code = 0
     try:
+        if args.command == "acceptance-worker":
+            command = args.controller
+            if command[:1] == ["--"]:
+                command = command[1:]
+            if args.detach:
+                print(json.dumps(acceptance.launch(args.container, args.state, args.invocation, command)))
+                return 0
+            return acceptance.worker(args.container, args.state, args.invocation, command)
         workspace = getattr(args, "output", getattr(args, "workspace", None))
         configure_generation_schema(workspace.expanduser().resolve() if workspace else None)
         if args.command == "doctor":
@@ -143,6 +167,7 @@ def main():
                     "review_dimensions": GATES,
                     "model_calls": 0,
                     "task_ready": False,
+                    "acceptance_backend": acceptance.backend(),
                 }
             else:
                 if root.exists() and any(root.iterdir()):
@@ -170,7 +195,7 @@ def main():
         else:
             root = args.workspace.expanduser().resolve()
             if args.command == "resume":
-                result = run(root)
+                result = run(root, args.count)
             else:
                 result = validate(root)
                 if args.command == "validate" and not result["task_ready"]:
@@ -200,7 +225,7 @@ def main():
         )
         if isinstance(error, ValueError):
             result["detail"] = str(error)
-    print(json.dumps(result, indent=None if args.json else 2, sort_keys=True))
+    print(json.dumps(result, indent=None if getattr(args, "json", False) else 2, sort_keys=True))
     return code
 
 

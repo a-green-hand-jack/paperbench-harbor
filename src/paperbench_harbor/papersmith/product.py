@@ -23,6 +23,7 @@ from paperbench_harbor.adapters.core.convert import (
 from paperbench_harbor.common.task_contract import assert_valid_task_contract
 from paperbench_harbor.construction.core.state import atomic_json, fingerprint
 
+from . import acceptance
 from .ground_truth import acquire as acquire_ground_truth
 from .ground_truth import validate as validate_ground_truth
 from .identity import canonical_identity
@@ -113,6 +114,8 @@ def implementation(stage):
         paths.append(TEMPLATES)
         package = Path(__file__).resolve().parents[1]
         paths.extend([package / "common/task_contract.py", package / "adapters/core/convert.py"])
+    if stage in {"gate3", "deliver"}:
+        paths.append(Path(__file__).with_name("acceptance.py"))
     return fingerprint([digest(p) for p in paths])
 
 
@@ -611,7 +614,7 @@ def inputs(request, candidate, stage):
     recovery = candidate["stages"].get(stage, {}).get("recovery_input")
     return fingerprint(
         {
-            "request": request,
+            "request": {**request, "count": candidate.get("scope_count", request["count"])},
             "imported_sha256": digest(Path(request["imported"])),
             "source_cache_sha256": digest(Path(request["imported"]).parent / "source-cache"),
             "implementation": implementation(stage),
@@ -629,6 +632,11 @@ def reusable(request, candidate, stage):
     entry = candidate["stages"].get(stage, {})
     if entry.get("evidence_version") != 2:
         return False
+    if stage == "gate3" and entry.get("status") == "passed":
+        try:
+            acceptance.verify(Path(request["imported"]).parent, candidate)
+        except (ValueError, OSError, KeyError, TypeError, RuntimeError):
+            return False
     if stage in MODEL_ROLES and entry.get("status") == "passed":
         try:
             model_receipt(Path(request["imported"]).parent, request, stage, entry)
@@ -694,7 +702,7 @@ def validate(root):
                 raise ValueError("delivered task differs from reviewed conversion")
             ready.append(str(task))
             admitted_aliases.update(identity["aliases"])
-        except (ValueError, OSError, KeyError, TypeError, IndexError) as error:
+        except (ValueError, OSError, KeyError, TypeError, IndexError, RuntimeError) as error:
             failures.append({"candidate": candidate["id"], "reason": str(error)})
     return {
         "workspace": str(root),
@@ -710,10 +718,12 @@ def validate(root):
         "events": str(root / "events.jsonl"),
         "checkpoint": str(root / "run.json"),
         "blocked_reason": state.get("blocked_reason"),
+        "acceptance_backend": acceptance.backend(),
+        "scope_history": state.get("scope_history", []),
     }
 
 
-def run(root):
+def run(root, count=None):
     with contained(root, root / ".lock").open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -726,6 +736,18 @@ def run(root):
                 "terminal evidence integrity failure; inspect papersmith validate before resuming"
             )
         request = state["request"]
+        if count is not None:
+            if count < request["count"]:
+                raise ValueError("resume --count may extend the target, never shrink its scope")
+            if count > request["count"]:
+                for candidate in state["candidates"]:
+                    candidate.setdefault("scope_count", request["count"])
+                state.setdefault("scope_history", []).append({
+                    "previous_count": request["count"], "count": count,
+                    "time": time.time(), "authority": "explicit resume --count",
+                })
+                request["count"] = count
+                atomic_json(root / "run.json", state)
         invocation = uuid4().hex
 
         def save():
@@ -740,6 +762,15 @@ def run(root):
         state.pop("blocked_reason", None)
         save()
         try:
+            try:
+                acceptance.check_service()
+            except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
+                state["blocked_reason"] = {
+                    "phase": "gate3", "classification": "acceptance_backend_unavailable",
+                    "backend": acceptance.backend(), "error": type(error).__name__,
+                    "remedy": "Restore host Docker/Harbor or use the matching docker/e2e.sh supervisor, then resume.",
+                }
+                raise
             while not validate(root)["task_ready"]:
                 candidate = next(
                     (
@@ -755,6 +786,7 @@ def run(root):
                         "stages": {},
                         "history": [],
                         "feedback": "",
+                        "scope_count": request["count"],
                     }
                     state["candidates"].append(candidate)
                 for stage in ORDER:
@@ -1001,9 +1033,19 @@ def run(root):
                                 )
                             if stage == "gate3":
                                 conversion = Path(stages["convert"]["path"])
+                                try:
+                                    acceptance.accept(root, candidate, conversion / "task", attempt)
+                                except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
+                                    state["blocked_reason"] = {
+                                        "phase": "gate3", "classification": "runtime_acceptance",
+                                        "error": str(error), "path": str(attempt),
+                                        "remedy": "Inspect trusted Harbor jobs/receipts, restore the backend, then resume; successful unchanged subjobs are reused.",
+                                    }
+                                    raise acceptance.AcceptanceBlocked("gate3 runtime acceptance blocked") from error
                                 review_paths.extend(
                                     conversion / p for p in ("task", "determinism", "checks.json")
                                 )
+                                review_paths.append(attempt / "acceptance.json")
                             evidence = [str(path) for path in review_paths]
                             catalog = evidence_catalog(root, stages, stage, ORDER)
                             catalog_path = attempt / "evidence-catalog.json"
@@ -1068,7 +1110,8 @@ def run(root):
                                 + ". Every checked dimension requires relevant selected IDs. No placeholder acceptances. Accepting any gate requires completed direct read tool calls for the proposal sources/ground_truth/paper.pdf AND paper.txt, not just their catalog entries. Gate3 also requires a completed direct read of task/solution/preview.pdf. "
                                 "For gate1 inspect EVERY source's identity/license bindings; the controller parsed real publisher tags, not a model-authored quote. These extractions are not approvals. Compare "
                                 "bindings against the actual publisher/repository metadata. Judge authority, applicable "
-                                "rights and exclusions, not just the existence of a license string. "
+                                 "rights and exclusions, not just the existence of a license string. "
+                                 "Hash-verified controller download caches, recovered source snapshots and parsed publisher metadata are legitimate evidence inputs, including snapshots acquired during a prior proposal. Their earlier acquisition is not a reason to reject them or require rediscovery. They confer NO prior approval: independently assess the actual source, identity, license and ground truth in this review. "
                                 + ". Do not trust builder claims or prior reviews. Read the original source text and "
                                 "license evidence; compare all relevant public materials with source facts. Inspect "
                                 "binary figures visually when relevant, reject if unavailable. Scope is sufficient "
@@ -1125,7 +1168,7 @@ def run(root):
                                     "identity": canonical_identity(sources)["identity"],
                                     "publication": "not_requested",
                                      "writer_trial": "not_requested",
-                                     "harbor_oracle_nop_acceptance": "pending_trusted_host_execution",
+                                     "harbor_oracle_nop_acceptance": read(Path(stages["gate3"]["path"]) / "acceptance.json"),
                                 },
                             )
                         entry.update(

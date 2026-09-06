@@ -181,9 +181,12 @@ is benchmark functionality, not a repository pytest suite.
 
 **Current scope status:** implementation only; the new original-ground-truth and
 synthetic-oracle contract has not yet completed five-task generation or the ten
-real Harbor oracle/nop trials. `docker/acceptance.sh` runs those trials on the trusted
-host after export, using installed Harbor 0.22.0, with no Docker socket in the
-autonomous construction container. See [DEV.md](DEV.md) for exact commands.
+real Harbor oracle/nop trials. Gate 3 now automatically requires real oracle=1 and
+nop=0 execution before its semantic review and delivery. `docker/e2e.sh run|resume`
+supervises the installed trusted host worker using Harbor 0.22.0, with read-only
+receipts and no Docker socket in the model container. No manual export is needed.
+Start with `create --count 1`, then `resume --count 5` to explicitly expand the same
+target while reusing unchanged successes. See [DEV.md](DEV.md) for exact commands.
 
 **Historical acceptance (before this contract):** the installed-product Docker run produced five distinct
 Harbor tasks. All 15 independent review gates accepted; final offline
