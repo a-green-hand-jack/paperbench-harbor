@@ -19,14 +19,17 @@ relevant_experience = "{{ relevant_experience }}"
 
 [verifier]
 environment_mode = "separate"
-timeout_sec = 900.0
-# No network_mode: the verifier inherits the [environment] baseline, which
+timeout_sec = 900.0{% if papersmith_contract is defined %}
+network_mode = "no-network"{% endif %}
+{% if papersmith_contract is defined %}# Generic verifier runs locally without runtime network access.
+{% else %}# No network_mode: the verifier inherits the [environment] baseline, which
 # is what lets an operator open a judge endpoint with --allow-environment-host
 # for the optional official metrics. An explicit phase policy here could not
-# be loosened at run time.
+# be loosened at run time.{% endif %}
 
 [agent]
-timeout_sec = 3600.0
+timeout_sec = 3600.0{% if papersmith_contract is defined %}
+network_mode = "no-network"{% endif %}
 
 [environment]
 build_timeout_sec = 2400.0

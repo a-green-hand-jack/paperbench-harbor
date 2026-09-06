@@ -29,7 +29,7 @@ _AUDIT_HELP = (
     "Run the per-task fidelity audit against --source before reporting success. "
     "Conversion that silently drops or rewrites upstream content is the failure "
     "this catches, so it is on by default. Determinism is not checked here; that "
-    "costs two more full conversions and stays in scripts/audit_fidelity.py."
+    "costs two more full conversions and stays in paperbench-distribute audit-fidelity."
 )
 
 _SEMANTIC_REVIEW_HELP = (
@@ -213,7 +213,7 @@ def lifesci_paperrecon_command(
 ) -> None:
     """Convert a LifeSci-PaperRecon source corpus into Harbor tasks.
 
-    The corpus is produced by `scripts/build_lifesci_paperrecon_source.py`; this
+    The corpus is produced by `paperbench-distribute build-lifesci-paperrecon-source`; this
     command reuses the PaperWrite-Bench converter with biology identity
     metadata and without the vendored official-metrics grader.
     """

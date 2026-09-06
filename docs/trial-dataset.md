@@ -17,7 +17,7 @@ Use the `paperbench-trial-export` plugin where available, or the manual
 fallback:
 
 ```bash
-python3 scripts/export_trial.py \
+paperbench-distribute export-trial \
   --trial-dir <harbor-trial-dir> \
   --output-dir <trial-dataset-staging-dir> \
   --private-manifest <task>/tests/private/source_manifest.json \

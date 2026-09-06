@@ -8,7 +8,7 @@ present. It does not copy an entire job directory.
 
 Example::
 
-    python scripts/export_trial.py \
+    paperbench-distribute export-trial \
       --trial-dir /path/to/jobs/run/trial-id \
       --output-dir /path/to/Paper-Writing-Exam-Trials \
       --private-manifest /path/to/task/tests/private/source_manifest.json \

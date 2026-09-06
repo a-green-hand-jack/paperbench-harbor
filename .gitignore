@@ -45,7 +45,7 @@ trial-exports/
 .omc/
 
 # opencode runtime bootstrap artifacts (not source).
-# `.opencode/agent/*.md` stays tracked — the agent definitions are source.
+# PaperSmith no longer uses checkout agent definitions.
 .opencode/node_modules/
 .opencode/package.json
 .opencode/package-lock.json

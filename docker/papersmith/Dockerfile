@@ -15,11 +15,17 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && npm install -g opencode-ai@${OPENCODE_VERSION} @openai/codex@${CODEX_VERSION} \
     && npm cache clean --force
 
-# Install dependencies, never the checkout or host configuration, into the image.
+# Dependency layer is reused; changed source is always repackaged below.
 COPY pyproject.toml /opt/papersmith-dependencies.toml
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 RUN python -c 'import subprocess,tomllib; p=tomllib.load(open("/opt/papersmith-dependencies.toml","rb"))["project"]; deps=p["dependencies"]+sum((p["optional-dependencies"][k] for k in ("datasets","harbor","sidecar")),[]); subprocess.check_call(["python","-m","pip","install","--no-cache-dir","uv","ruff",*deps])'
+COPY pyproject.toml README.md install.sh /opt/papersmith-build/
+COPY src /opt/papersmith-build/src
+COPY packaging /opt/papersmith-build/packaging
+RUN PAPERSMITH_SOURCE=/opt/papersmith-build PAPERSMITH_PREFIX=/opt \
+    PAPERSMITH_BIN_DIR=/usr/local/bin sh /opt/papersmith-build/install.sh \
+    && rm -r /opt/papersmith-build
 # Provider modules may use passwd's home rather than $HOME for canonical paths.
 # This identity has no host-home mount; runtime state still uses /state/home.
 ARG PAPERSMITH_UID=1000

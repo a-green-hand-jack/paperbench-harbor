@@ -44,7 +44,7 @@ identity and rationale; the archive does not create new distribution rights.
 
 The implementation is maintained on `main` in
 `src/paperbench_harbor/provenance/archive.py` and exposed through
-`scripts/build_source_archive.py`. It builds a source-only archive from a fixed
+`paperbench-distribute build-source-archive`. It builds a source-only archive from a fixed
 task-release tree and the retained benchmark and PaperRecon domain source roots;
 it then writes the registry and per-file manifest.
 

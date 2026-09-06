@@ -8,13 +8,13 @@ from pathlib import Path
 
 
 def implementation_provenance(root: Path | None = None) -> dict:
-    root = root or Path(__file__).resolve().parents[3]
+    root = root or Path.cwd()
 
     def git(*args: str) -> str:
         return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
 
     base = git("rev-parse", "HEAD")
-    scope = ("src", "scripts", "packaging", "docker", "pyproject.toml", "uv.lock", "Makefile")
+    scope = ("src", "install.sh", "packaging", "docker", "pyproject.toml", "uv.lock", "Makefile")
     tracked = set(git("ls-files", "-z", "--", *scope).split("\0"))
     # Only new executable source is eligible from untracked files, never auth JSON.
     untracked = {name for name in git("ls-files", "-z", "--others", "--exclude-standard", "--", *scope).split("\0")

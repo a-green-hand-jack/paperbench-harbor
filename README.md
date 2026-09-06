@@ -1,305 +1,157 @@
-# paperbench-harbor
+# PaperSmith
 
-`paperbench-harbor` builds, verifies, releases, and maintains Harbor task
-datasets for paper-writing agents. It is the maintainer repository, not the
-canonical end-user manual for a released benchmark.
+PaperSmith turns a scientific-paper selection request or a specified paper into
+independently reviewed **Harbor writing tasks**. No domain selection, knowledge
+pack, checkout agent files, or manual approval-file exchange is required.
 
-## Published datasets
+This repository is also the conversion and distribution center for
+PaperWritingBench, PaperWrite-Bench and the existing PaperRecon datasets. Their
+`paperbench-harbor` conversion interface and submission contract remain available.
 
-| Dataset | Role | Canonical documentation |
-|---|---|---|
-| [Paper-Writing-Exam](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam) | Runnable Harbor tasks | Task selection, material boundary, running, and version pinning |
-| [Paper-Writing-Exam-Trials](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Trials) | Sanitized agent trajectories and results | Trajectory schema, retrieval, and analysis limits |
-| [Paper-Writing-Exam-Source-Archive](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam-Source-Archive) | Immutable task-paper registry and construction inputs | Provenance lookup and source-archive licensing |
+## Install
 
-The task dataset is the only dataset a Harbor evaluation runs. Trial data is
-evidence about an evaluation; it is not a replacement task dataset or training
-corpus. The source archive is for provenance and independent review only; no
-Harbor task may read it at runtime.
+Requires Python 3.12+ with `venv`/pip. From a trusted current clone:
 
-## Maintainer documentation
-
-- [Development guide (中文)](DEV.md): Docker development, verified CLI probes,
-  explicit model selection, and staged construction commands.
-- [Dataset versioning](docs/dataset-versioning.md): release records, immutable
-  revisions, and source-archive publication.
-- [Documentation inventory](docs/documentation-inventory.md): ownership and
-  current status of every repository document.
-- [Fidelity audit](docs/fidelity-audit.md): source-to-task validation rules.
-- [LifeSci construction](docs/lifesci-paperrecon-construction.md): PaperSmith
-  build and validation path.
-- [Trial exporter maintenance](docs/trial-dataset.md): sanitize and publish
-  trial records without exposing private task material.
-- [Architecture](docs/papersmith-architecture.md): the construction core and
-  domain-plugin contracts.
-- [PaperSmith Docker](docs/papersmith-docker.md): current usage, isolated
-  construction, live source mounts, default bridge networking, and opt-in host
-  configuration/authentication.
-
-For task execution, configuration-specific materials, and trajectory analysis,
-use the dataset cards linked above. GitHub keeps only the construction and
-maintenance contracts so a release does not create two competing user manuals.
-
-## OpenCode workflows
-
-The repository has two OpenCode entry points. They orchestrate screening,
-verification, and evidence collection but cannot directly edit the repository
-or bypass a required audit. Existing-benchmark onboarding retains its explicit
-human SHA gate; PaperRecon candidate selection uses two independent verifier
-agents. The converting and publishing programs remain deterministic,
-separately auditable maintainer commands.
-
-### Onboard an existing benchmark
-
-`benchmark-onboard` evaluates a public, fixed benchmark for Harbor packaging.
-It stops at a SHA-bound human approval; only then may a release operator
-materialize and audit the approved layout.
-
-```mermaid
-flowchart TD
-    request([Candidate benchmark request]) --> onboard[OpenCode: benchmark-onboard]
-    onboard --> scope[Screen the paper-writing task boundary]
-    scope --> eligible{In scope?}
-    eligible -- no --> rejected([Report rejection and stop])
-    eligible -- yes --> candidate[Write a candidate claim in isolated scratch]
-    candidate --> verify[Independently verify revision, license, manifest hash, and count]
-    verify --> verified{Evidence valid?}
-    verified -- no --> rejected
-    verified -- yes --> layout[Propose a generic Harbor layout in scratch]
-    layout --> approval{Human SHA-bound approval?}
-    approval -- not yet --> hold([Stop at the approval gate])
-    approval -- yes --> materialize[Release operator runs materialize_onboarded_benchmark.py]
-    materialize --> audits[Structural and semantic fidelity audits plus two deterministic rebuilds]
-    audits --> passed{All audits pass?}
-    passed -- no --> failed([Retain evidence; do not publish])
-    passed -- yes --> archive[Build and verify matching source-archive provenance]
-    archive --> publish([Manually publish immutable dataset and archive revisions])
+```sh
+sh install.sh
+export PATH="$HOME/.local/bin:$PATH"
+papersmith doctor --json
 ```
 
-### PaperRecon domain onboarding and release
+The installer builds and installs a **wheel**, not an editable link. The default
+environment is `~/.local/share/papersmith/venv`; executables are linked from
+`~/.local/bin`. Installation works outside the checkout. Re-run to upgrade.
+`PAPERSMITH_PREFIX`, `PAPERSMITH_BIN_DIR`, `PAPERSMITH_PYTHON` and
+`PAPERSMITH_SOURCE` override these locations/source selection.
 
-#### Three-node workflow at a glance
+For remote installation, replace `COMMIT` with a trusted full 40-character commit
+that contains this installer and product. Both installer and source are pinned:
 
-PaperRecon has three core nodes. Each node has one explicit review gate and
-produces the artifact consumed by the next node; publication is the final
-release gate, not a fourth construction node.
-
-```mermaid
-flowchart LR
-    n1["Node 1<br/>Discover papers and approve candidates"] -->|"SHA-bound candidate set"| n2["Node 2<br/>Build public materials and review reconstructability"]
-    n2 -->|"Validated source corpus"| n3["Node 3<br/>Convert to Harbor tasks and audit conversion"]
-    n3 -->|"Audited Harbor tasks"| gate{"Every domain has >=20 passed tasks?"}
-    gate -- "no" --> hold["Keep candidate evidence and continue building"]
-    gate -- "yes" --> release["Publish immutable dataset revision"]
+```sh
+curl -fsSL https://raw.githubusercontent.com/a-green-hand-jack/paperbench-harbor/COMMIT/install.sh \
+  | PAPERSMITH_REF=COMMIT sh
 ```
 
-- **Node 1 - paper discovery and candidate approval:** LKM discovery, source
-  checks, candidate consolidation, and two independent verifier agents bound to
-  the exact candidate-file SHA. This gate answers whether a paper is eligible
-  for construction; it does not certify a Harbor task.
-- **Node 2 - public-material construction and reconstructability review:** the
-  constructor preserves the hidden ground-truth paper and creates the public
-  `resources/` package (template, overviews, figures, tables, references, and
-  any required code). A separate reviewer checks that those materials are
-  faithful, sufficient, compilable, and free of answer leakage.
-- **Node 3 - Harbor conversion and conversion audit:** the deterministic
-  converter creates Harbor tasks, then independent semantic review plus
-  structural, provenance, leakage, fidelity, and deterministic-regeneration
-  checks decide whether the converted task is valid.
+Uncommitted local implementation is not available at a remote revision. The
+installer intentionally refuses an unpinned remote source. Install OpenCode
+separately and configure your provider using its documented authentication flow.
+`pdftotext` (Poppler) is required for PDF source extraction. `doctor` checks CLI
+dependencies and model discovery without reading credential files or making a
+paid request; authentication remains unverified until a real call succeeds.
 
-The detailed operational branches below show LKM fallback, iterative candidate
-collection, retries, candidate revisions, source-archive generation, and the
-public version gate.
+## Create Tasks
 
-The paper-to-dataset workflow is named `paperrecon-domain-release`. It starts
-from a paper request and ends with an immutable Hugging Face candidate revision
-or, only after the release gate passes for all required domains, a public
-versioned dataset. `run_paperrecon_domain.py` implements the discovery through
-candidate-staging stages; publication and version tagging are deliberate release
-operator stages rather than implicit side effects of a build command.
-
-PaperSmith has four paper-to-task agents: `papersmith-lifesci`,
-`papersmith-physics`, `papersmith-chemistry`, and `papersmith-mathematics`.
-They share a public-materials-to-paper-reconstruction protocol while retaining
-domain-specific screening policies and writing instructions. PaperSmith invokes
-Harbor's LKM adapter through the official `bohr lkm search` command and records
-the normalized result in `discovery.json`. The screening agent must consume that
-snapshot rather than calling a raw Bohrium endpoint or requiring
-`BOHR_ACCESS_KEY`. LKM improves recall and ranking, but never establishes
-source, license, code, or reconstructability facts; those remain authoritative
-arXiv/e-print/GitHub checks.
-
-```mermaid
-flowchart TD
-    request([Natural-language paper request]) --> papersmith[OpenCode: one of four PaperSmith domain agents]
-    papersmith --> kind{Collect new papers or rebuild a published corpus?}
-
-    kind -- collect --> parse[Parse domain, target count, guidance, and explicit paper IDs]
-    parse --> lkm[LKM discovery and ranked candidate snapshot]
-    lkm --> fallback{LKM available?}
-    fallback -- no --> searchfallback[Record failure; query arXiv and Semantic Scholar]
-    fallback -- yes --> screen[Screen LKM candidates in isolated scratch]
-    searchfallback --> screen
-    screen --> liveverify[Independently verify paper and code provenance, licenses, and eligibility]
-    liveverify --> valid{Eligible and verifiable?}
-    valid -- no --> reportrejected([Report rejected or unverifiable candidates])
-    valid -- yes --> consolidate[Merge iterative reports into deterministic SHA-bound candidate set]
-    consolidate --> agentapproval{Two independent verifier agents unanimously approve?}
-    agentapproval -- not yet --> hold([Stop at the approval gate])
-    agentapproval -- yes --> promote[Promote approved paper IDs and immutable approval SHA]
-    promote --> construct[Construct full-paper source corpus with one isolated OpenCode build and review session per paper]
-    construct --> convert[Convert the corpus to complete Harbor tasks]
-    convert --> conversionreview[Review conversion correctness: contracts, provenance, leakage, fidelity, semantics, and two deterministic rebuilds]
-    conversionreview --> collectionpassed{All conversion audits pass?}
-    collectionpassed -- no --> failed([Report evidence; do not publish])
-    collectionpassed -- yes --> archive[Build and verify the matching source archive and task-paper registry]
-    archive --> candidatepublish[Publish an immutable candidate revision to the task and source-archive datasets]
-    candidatepublish --> releasegate{All required domains have >=20 passed tasks?}
-    releasegate -- no --> collectionreport([Retain candidate revision and audit evidence])
-    releasegate -- yes --> version[Create the public dataset version tag and update dataset cards]
-
-    kind -- rebuild --> manifest[Download the current immutable published manifest]
-    manifest --> supervisor[Run the release-candidate supervisor]
-    supervisor --> rebuild[Reconstruct and review every published paper]
-    rebuild --> coverage[Audit complete reachable TeX table coverage]
-    coverage --> coveragepassed{Coverage passes?}
-    coveragepassed -- no --> failed
-    coveragepassed -- yes --> reconvert[Convert the rebuilt corpus to Harbor tasks]
-    reconvert --> releaseaudit[Review conversion correctness and run the fidelity audit]
-    releaseaudit --> releasepassed{run-summary.json is passed?}
-    releasepassed -- no --> failed
-    releasepassed -- yes --> releasereport([Produce release-candidate evidence])
+```sh
+papersmith create 'Discover suitable scientific papers on any topic' \
+  --count 5 --output /path/outside-checkout/my-run --headless --json
+papersmith status /path/outside-checkout/my-run --json
+papersmith resume /path/outside-checkout/my-run --headless --json
+papersmith validate /path/outside-checkout/my-run --json
 ```
 
-These workflows establish task-construction correctness only. They do not score
-or make claims about the performance of a paper-writing agent.
+The count is **delivered admitted tasks**, not proposed candidates. Rejected
+papers are recorded and replaced automatically. A DOI, paper URL or detailed
+selection request can replace the example. Requests may name accessible source
+URLs; source bytes and license evidence are retrieved and retained privately.
+Use `--source /path/to/scoped-research` to import local scientific files privately.
+Provide provenance/license context in the request; local files do not waive licensing.
+There is no fixed scientific-topic list and no scientific-domain blocker.
 
-For Physics, Chemistry, and Mathematics, a domain is not ready for public
-release until it has at least 20 independent-verifier-approved, fully rebuilt tasks that pass
-the same conversion, fidelity, determinism, and semantic audits. Candidate
-revisions are review artifacts identified by immutable SHAs, not public version
-tags.
+Execution defaults to `openai/gpt-5.6-terra`. All three gates default to
+`openai/gpt-5.6-sol`; override with `--model provider/model` and
+`--review-model provider/model`. Private account aliases may be supplied by the
+caller but are not public defaults. Provider integration is through OpenCode.
 
-For a new PaperRecon domain, merge iterative reports before review:
-
-```bash
-uv run --all-extras python scripts/consolidate_paperrecon_candidates.py \
-  --domain chemistry \
-  --report <screen-run-1>/candidates.json \
-  --report <screen-run-2>/candidates.json \
-  --output <run>/candidate-set.json \
-  --minimum 20 --reserve 5
+```text
+proposal -> gate1 -> materials -> gate2 -> convert -> gate3 -> deliver
 ```
 
-Then run two isolated verifier agents with distinct models. Promotion accepts
-only the resulting SHA-bound `agent-approval.json`.
+- Gate 1 checks actual sources, licenses, availability and suitability for a
+  writing task. Scientifically unnecessary code may be marked not applicable
+  with justification; this never waives license requirements.
+- Gate 2 compares materials against source evidence, including methods, results,
+  figures, tables, references and context. Sufficiency means enough to **write**,
+  not an obligation to re-run experiments or reproduce the whole research project.
+- Gate 3 reviews actual Harbor files, fidelity, conversion determinism, verifier,
+  paths, submission contract and answer isolation. It does not require a writer
+  trial or reward of one.
 
-```bash
-uv run --all-extras python scripts/verify_paperrecon_candidates.py \
-  --domain chemistry --candidates <run>/candidate-set.json \
-  --run-root <run>/verifier --minimum-approved 20
+Reviews use fresh sessions and a different role, with no file-writing or shell
+tools. The same configured review model can perform every gate. This is process
+independence, not a claim of independent scientific authority. Model responses
+must pass schemas and artifact checks; a builder cannot author its own approval.
+Every review dimension cites current input files by path, SHA256, exact excerpt
+and validated line/page location. Gate 1 must cite each source's retrieved
+identity/license binding, not merely a license name. Publisher/repository metadata,
+redirect destinations and relevant response headers are retained; version strings
+remain claims while actual downloaded snapshots are identified by SHA256.
+Web-enabled discovery cannot read workspace files. Local-source proposal building,
+materials and reviews are offline at the tool layer and use explicit read scopes.
+Only the user-provided public selection request is sent to web-enabled discovery,
+not private source content or review feedback. Canonical metadata-derived paper
+identities and source hashes, rather than model-selected labels, control deduplication.
+
+## Outputs And Recovery
+
+`run.json` holds checkpoints; `events.jsonl` and stderr expose controller-selected
+structured progress without raw provider diagnostics. stdout contains one JSON
+result with `--json`. Each phase has a unique attempt directory, inputs/outputs
+hashes, timestamps, requests and real-session receipts. Research content in the
+workspace is private; do not publish it indiscriminately.
+
+`status` reports the four phases and three gates, paths and stale/missing evidence.
+`validate` makes no model calls and exits nonzero unless the requested number of
+deliveries still matches the current evidence. `resume` holds a workspace lock,
+reuses passed unchanged nodes, and restarts interrupted or failed nodes. Changes
+to inputs/implementation invalidate dependent evidence. Previous attempts remain
+on disk. Ctrl-C or `docker stop` interrupts; no phase has a default wall-clock
+limit. Invalid model artifacts and repair verdicts trigger automatic feedback;
+infrastructure/authentication failures stop with a resumable checkpoint.
+
+Each delivered path is a real Harbor task containing `instruction.md`,
+`task.toml`, `environment/`, `tests/`, and a manifest. Only allowlisted public
+materials enter the writer image. Original sources and reference material are
+under the separate verifier's `tests/private/`. The existing structural verifier
+checks LaTeX compilation and citations, not scientific quality. No fake task,
+pre-existing oracle, model self-reported readiness or synthetic evidence is used.
+`task_ready`, downstream writing/scoring and public publication are separate.
+Nothing uploads automatically.
+
+Sources currently support public HTTPS PDF, HTML, text, CSV/JSON and scoped binary
+assets. Opaque archives are not automatically unpacked; select direct source
+files. Controller retrieval rejects private-network URLs and oversized sources.
+Exact excerpt checks plus semantic reviews are complementary, not a proof of
+every scientific claim. Run untrusted research in the supplied Docker workflow.
+
+## Benchmark Distribution
+
+```sh
+paperbench-harbor --help
+paperbench-distribute --help
+paperbench-distribute audit-fidelity --help
+paperbench-distribute build-source-archive --help
+paperbench-distribute export-trial --help
 ```
 
-Once the approval manifest exists, the domain runner performs the remaining
-local stages and writes a candidate release report:
+The old root scripts are removed. Necessary provenance, audit, reconstruction,
+release and sanitized-trial operations are packaged under
+`paperbench_harbor.distribution`, behind the explicit `paperbench-distribute`
+interface. Optional dataset/release integrations require the corresponding
+`paperbench-harbor[datasets,harbor,trials]` extras in the installed environment.
+Existing releases retain their own stricter publication policies; these are not
+hidden requirements of generic local creation.
 
-```bash
-uv run --all-extras python scripts/run_paperrecon_domain.py \
-  --domain chemistry --run-root <run> \
-  --candidates <run>/candidate-set.json \
-  --agent-approval <run>/verifier/agent-approval.json \
-  --promote --build --convert --audit --stage-candidate
-```
+## Development
 
-The release operator then validates the staged task tree and source archive
-with the release workflow. The cross-domain publisher is the only command that
-uploads staged bytes: it first requires Physics, Chemistry, and Mathematics to have at least 20
-passed, deterministic, semantically reviewed tasks, then records immutable
-tree digests on a candidate Hub revision. It never creates a public tag unless
-`--publish` is supplied.
+See [DEV.md](DEV.md) for installed-product Docker verification, narrow provider
+mounts, monitoring and recovery. There is no root scripts directory, checkout
+agent entry point or replacement unit-test suite. The generated Harbor verifier
+is benchmark functionality, not a repository pytest suite.
 
-```bash
-uv run --all-extras python scripts/publish_paperrecon_release.py \
-  --physics-run <physics-run> \
-  --chemistry-run <chemistry-run> --mathematics-run <mathematics-run> \
-  --candidate-revision paperrecon-v0.5.0-candidate \
-  --evidence <release-dir>/paperrecon-gate.json
-
-# After reviewing the immutable candidate revision:
-uv run --all-extras python scripts/publish_paperrecon_release.py \
-  --physics-run <physics-run> \
-  --chemistry-run <chemistry-run> --mathematics-run <mathematics-run> \
-  --candidate-revision paperrecon-v0.5.0-candidate \
-  --evidence <release-dir>/paperrecon-gate.json --publish
-```
-
-The public `v0.5.0` tag is created only after the cross-domain gate passes;
-candidate revisions are never silently promoted by a build command.
-
-## Benchmark families
-
-The current published task release has four configurations:
-
-- `paperwrite-bench-short`: Harbor adaptation of PaperWrite-Bench.
-- `paperwritingbench-sparse-plotoff`: Harbor adaptation of PaperWritingBench.
-- `lifesci-paperrecon-short`: PaperSmith-built LifeSci paper reconstruction
-  tasks.
-- `hello-world`: a first-party integration smoke task, not a source-paper
-  benchmark.
-
-The next candidate-release generation adds `physics-paperrecon-short`,
-`chemistry-paperrecon-short`, and `mathematics-paperrecon-short`. They remain
-unpublished until their 20-task per-domain acceptance gates have passed.
-
-The precise task counts, release revision, compatibility notes, and task IDs
-are maintained in the [Paper-Writing-Exam dataset card](https://huggingface.co/datasets/Jack-Jieke-Wu/Paper-Writing-Exam).
-
-## Build and verify
-
-Install the development dependencies and run the repository checks:
-
-```bash
-uv sync --all-extras
-uv run --all-extras ruff check .
-make papersmith-build
-make papersmith-describe
-```
-
-Build a source-only provenance archive from a fixed task release and retained
-upstream inputs:
-
-```bash
-uv run --all-extras python scripts/build_source_archive.py \
-  --release-root <immutable-task-release-tree> \
-  --output-dir <source-archive-staging-dir> \
-  --dataset-repo Jack-Jieke-Wu/Paper-Writing-Exam \
-  --dataset-revision <immutable-task-revision> \
-  --converter-revision <paperbench-harbor-revision> \
-  --paperwrite-source <paperwrite-bench-source> \
-  --paperwritingbench-source <paperwritingbench-source> \
-  --lifesci-source <lifesci-source-corpus> \
-  --physics-source <physics-source-corpus> \
-  --chemistry-source <chemistry-source-corpus> \
-  --mathematics-source <mathematics-source-corpus> \
-  --config hello-world \
-  --config paperwrite-bench-short \
-  --config paperwritingbench-sparse-plotoff \
-  --config lifesci-paperrecon-short \
-  --config physics-paperrecon-short \
-  --config chemistry-paperrecon-short \
-  --config mathematics-paperrecon-short
-```
-
-The command writes a registry and original-source archive but never copies a
-Harbor task, solution, verifier, or trial into that archive. Re-run it with
-`--verify-only --output-dir <source-archive-staging-dir>` before publishing.
-
-## License and security boundaries
-
-Upstream benchmark data, paper sources, code, and conference templates retain
-their original licenses. Source archives record the relevant terms and fixed
-locations; they do not grant a new redistribution license.
-
-Benchmark task data, verifier-private material, credentials, and unredacted
-agent output must never be included in training corpora or published by a
-maintenance workflow unless its dedicated policy explicitly permits it.
+**Acceptance status:** the installed-product Docker run produced five distinct
+Harbor tasks. All 15 independent review gates accepted; final offline
+`papersmith validate` returned `task_ready: true`, `task_ready_count: 5`, and no
+integrity failures. Actual interruption/resume preserved unchanged passed stages.
+See the live evidence record in [DEV.md](DEV.md). This is task-production
+acceptance, not a downstream writer trial, image-build certification, or scientific
+quality certification. Older stopped runs and volumes remain preserved.

@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,7 +23,7 @@ jobs:
         run: python -m pip install -e '.[dev,trials,sidecar]'
       - name: Lint
         run: ruff check .
-      - name: Check documentation references
-        run: python scripts/check_documentation_references.py
+      - name: Build installed distribution
+        run: python -m pip wheel --no-deps . --wheel-dir dist
       - name: Check retired suite remains absent
-        run: test ! -e tests
+        run: test ! -e tests && test ! -e scripts && test ! -e .opencode/agent

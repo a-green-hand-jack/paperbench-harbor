@@ -1,5 +1,20 @@
 # PaperSmith Handoff
 
+## Issue 71 Implementation Handoff
+
+The sections below preserve the stopped issue-70 run history. Their old script
+commands and review-model choices are not current instructions. Issue #71 now
+uses installed `papersmith` through root `install.sh` and `docker/e2e.sh`; see
+README.md and DEV.md. Execution defaults to `openai/gpt-5.6-terra`; all three
+independent reviews use `openai/gpt-5.6-sol` unless explicitly overridden.
+
+The current implementation is uncommitted. Static lint, wheel build and installed
+Docker CLI checks are separate from acceptance. No paid construction was started.
+The parent should run native review and the five arbitrary-topic task acceptance,
+including interruption after a passed gate and evidence of checkpoint reuse.
+Existing stopped runs, containers, volumes and unique artifacts remain preserved.
+The new no-model checks use volume prefix `papersmith-issue71-install-checks`.
+
 ## 停止状态
 
 用户要求停止所有本次工作、提交当前修改并交接。已停止容器

@@ -31,7 +31,7 @@ from paperbench_harbor.construction.core.spec import ACCEPTED_LICENSES, PaperSpe
 
 __all__ = ["ACCEPTED_LICENSES", "APPROVED_BY_ID", "APPROVED_PAPERS", "PaperSpec"]
 
-#: Where `scripts/promote_lifesci_paperrecon_candidates.py` appends promoted
+#: Where `paperbench-distribute promote-lifesci-paperrecon-candidates` appends promoted
 #: candidates (Phase 8 step 2). Colocated with this module rather than a path
 #: literal restated in two places, so the two files cannot drift apart.
 APPROVED_SCALEUP_PATH = Path(__file__).resolve().parent / "approved_scaleup.jsonl"

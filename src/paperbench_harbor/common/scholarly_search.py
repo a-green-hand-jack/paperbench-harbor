@@ -162,3 +162,18 @@ def serve(index: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
             return
 
     ThreadingHTTPServer((host, port), Handler).serve_forever()
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Serve a cutoff-aware scholarly index")
+    parser.add_argument("--index", type=Path, required=True)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args()
+    serve(args.index, args.host, args.port)
+
+
+if __name__ == "__main__":
+    main()

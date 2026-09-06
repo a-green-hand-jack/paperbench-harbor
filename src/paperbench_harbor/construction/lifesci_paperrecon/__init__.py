@@ -31,7 +31,7 @@ biology paper-type taxonomy, the overview skeleton and its bounds, and the
 prompt fragments that make the construction spec a life-sciences one. See
 ``docs/papersmith-architecture.md``.
 
-Entry point: ``scripts/build_lifesci_paperrecon_source.py``.
+Entry point: ``paperbench-distribute build-lifesci-paperrecon-source``.
 """
 
 from paperbench_harbor.construction.core.spec import PaperSpec

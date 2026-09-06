@@ -21,12 +21,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from paperbench_harbor.common.assets import PACKAGING
+
 #: Style/bibliography-style files this repository bundles into every task's
 #: `texmf/`. Mirrors `adapters.paperwrite_bench.converter._copy_styles` and
 #: `_copy_bibliography_styles`, so a local compile sees what the task will.
-STYLES_DIR = Path(__file__).resolve().parents[4] / "packaging" / "conference-styles"
+STYLES_DIR = PACKAGING / "conference-styles"
 CONFERENCE_TEMPLATES_DIR = (
-    Path(__file__).resolve().parents[4] / "packaging" / "conference-templates"
+    PACKAGING / "conference-templates"
 )
 
 _PDFLATEX_OPTIONS = ("-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape")

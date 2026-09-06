@@ -186,12 +186,10 @@ project-original. Dataset directory:
   accept or decline, and that decision has not been made). 5
   genuinely failed after exhausting retries (unrelated to the two generic bugs
   fixed in this phase). See “Phase 4 execution results” below. The
-  one-command entry point that drives screen → verify → promote → build →
-  wrap → audit from a single free-form request is
-  `.opencode/agent/papersmith-lifesci.md`; both of its steps are now wired
-  end-to-end (unit-verified; the live end-to-end smoke test is still a
-  separate open item) — see `docs/papersmith-architecture.md`
-  ("One-command entry point").
+  historical domain-agent entry point has since been retired by issue #71.
+  The current generic product is `papersmith create`; see
+  `docs/papersmith-architecture.md`. Historical corpus evidence is not a live
+  acceptance claim for that product.
 - **Phase 5 (Hugging Face publish)**: complete. The 22-task
   `lifesci-paperrecon-short` configuration was added to
   `Jack-Jieke-Wu/Paper-Writing-Exam` at tag `v0.3.1` and immutable revision
@@ -291,7 +289,7 @@ an unexamined one.
 A batch of 35 new candidate papers was screened via `core/screen.py` +
 `lifesci_paperrecon/screening.py`, promoted into `papers.py`’s
 `APPROVED_PAPERS` (now 38 entries), and built via
-`scripts/build_lifesci_paperrecon_source.py --concurrency 3`.
+`paperbench-distribute build-lifesci-paperrecon-source --concurrency 3`.
 
 | Outcome | Count | Papers |
 |---|---|---|

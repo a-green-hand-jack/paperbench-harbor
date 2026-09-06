@@ -1,0 +1,14 @@
+# Generic PaperSmith writer environment; no bundled agent or private answers.
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive \
+    TEXINPUTS=/workspace/texmf//: \
+    BSTINPUTS=/workspace/texmf//:
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 texlive-latex-extra texlive-fonts-recommended texlive-science \
+    latexmk poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY texmf/ /workspace/texmf/
+COPY materials/ /workspace/materials/
+RUN mkdir -p /workspace/submission
+CMD ["/bin/sh"]

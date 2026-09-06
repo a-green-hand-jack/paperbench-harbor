@@ -21,7 +21,7 @@ standard exclusions are deliberately visible in the command invocation:
 - `environment/materials/upstream_data_warnings.md`: explicit data-quality
   safeguard generated only when it is needed.
 
-No exclusion is an unreviewed content change: `scripts/regress_release.py`
+No exclusion is an unreviewed content change: `paperbench-distribute regress-release`
 reports zero missing, added, and changed files after the named exclusions, and
 the configuration-specific entries below identify any material correction that
 needs a separate fidelity audit.

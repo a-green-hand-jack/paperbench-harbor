@@ -4,7 +4,7 @@ The per-task audit in :mod:`paperbench_harbor.fidelity.audit` needs a task id,
 an upstream paper id and (for PaperWritingBench) a venue. All three are already
 recorded in the generated `dataset-manifest.jsonl`, so walking a dataset is the
 same loop for every benchmark -- it was written out three times in
-`scripts/audit_fidelity.py`, differing only in the benchmark name it passed.
+`paperbench-distribute audit-fidelity`, differing only in the benchmark name it passed.
 
 Determinism deliberately lives elsewhere. It is a property of the *converter*
 (convert the same fixed input twice, get the same bytes), it costs two full

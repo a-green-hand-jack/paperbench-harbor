@@ -1,6 +1,6 @@
 """The per-paper turn loop, and the pool that runs it over a whole corpus.
 
-Extracted from ``scripts/build_lifesci_paperrecon_source.py`` when PaperSmith
+Extracted from ``paperbench-distribute build-lifesci-paperrecon-source`` when PaperSmith
 was split into a core and per-domain plugins: the loop below never was
 biology-specific, it was merely living in a biology-specific script, so every
 future domain's build script would have had to copy it. Now a domain script is
@@ -45,6 +45,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 
+from paperbench_harbor.common.assets import PACKAGING
 from paperbench_harbor.construction.core.evidence import (
     ResearchEvidence,
     source_fingerprint,
@@ -182,9 +183,9 @@ def build_paper(
     if rerun_stage in state.ORDER:
         state.save(rerun_stage, "pending", "")
     inputs = fingerprint([common, model, implementation_hash(core / "evidence.py", core / "knowledge.py", core / "pipeline.py", core / "opencode_agent.py")])
-    build_code = implementation_hash(core / "prompt.py", plugin.agents_md_dir, Path(__file__).parents[4] / "packaging")
+    build_code = implementation_hash(core / "prompt.py", plugin.agents_md_dir, PACKAGING)
     materials_code = implementation_hash(core / "evidence.py", core / "validate.py")
-    validation_code = implementation_hash(core / "validate.py", core / "latex.py", library / "common", library / "adapters", Path(__file__).parents[4] / "packaging")
+    validation_code = implementation_hash(core / "validate.py", core / "latex.py", library / "common", library / "adapters", PACKAGING)
     review_code = implementation_hash(core / "review.py", core / "opencode_agent.py")
     destination = corpus_root / spec.paper_id
     if package and not validate_only and not dry_run:

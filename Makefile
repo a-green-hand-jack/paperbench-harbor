@@ -1,13 +1,13 @@
 .PHONY: install lint format papersmith-build papersmith-describe
 
 install:
-	python -m pip install -e '.[dev,datasets]'
+	sh install.sh
 
 papersmith-build:
-	sh scripts/papersmith-docker.sh build
+	sh docker/e2e.sh build
 
 papersmith-describe:
-	PAPERSMITH_NETWORK=none sh scripts/papersmith-docker.sh run --domain physics --run-root /runs/describe --research-type simulation --describe-request
+	PAPERSMITH_NETWORK=none sh docker/e2e.sh run 'Discover scientific papers on any topic' --count 5 --output /runs/describe --describe-request --json --headless
 
 lint:
 	ruff check .

@@ -63,7 +63,7 @@ domain-agnostic and lives under `construction/core/`, parameterized by a
 | `.../core/validate.py` | The deterministic gate. Layout, provenance, leakage, citations, and an oracle-equivalent compile. |
 | `.../core/spec.py` | `PaperSpec` and the redistribution-permissive license policy. |
 | `.../core/pipeline.py` | The per-paper agent/validate/retry loop, the corpus admission step, and the `--concurrency` worker pool. |
-| `scripts/build_lifesci_paperrecon_source.py` | Thin CLI wrapper: pilot papers + `LIFESCI_PLUGIN` into `build_corpus()`. |
+| `paperbench-distribute build-lifesci-paperrecon-source` | Thin CLI wrapper: pilot papers + `LIFESCI_PLUGIN` into `build_corpus()`. |
 | `src/paperbench_harbor/adapters/lifesci_paperrecon/harbor.py` | Phase 2 identity metadata for the shared converter. No second Harbor converter exists. |
 | `src/paperbench_harbor/adapters/lifesci_paperrecon/agents_md/` | Biology writing instructions (`AGENTS_computational.md`, `_experimental.md`, `_review.md`) handed to the *writing* agent at benchmark time. |
 
@@ -182,7 +182,7 @@ Both the agent and the compile checks need a host with network access, the
 "Build host" below.
 
 ```bash
-scripts/build_lifesci_paperrecon_source.py \
+paperbench-distribute build-lifesci-paperrecon-source \
     --scratch-root /home/user/lifesci-paperrecon-scratch \
     --corpus-root  .cache/lifesci-paperrecon/corpus \
     --papers paper_1 \

@@ -26,13 +26,13 @@ byte-identical and out of the writer environment, respects the task contract,
 and that repeated conversion of the same fixed input is deterministic.
 
 ```bash
-uv run scripts/audit_fidelity.py paperwrite-bench \
+paperbench-distribute audit-fidelity paperwrite-bench \
     --source /path/to/PaperWrite-Bench \
     --dataset /path/to/paperwrite-bench-short \
     --upstream-revision <rev> \
     --overview short \
     --output reports/pwb
-uv run scripts/audit_fidelity.py paperwritingbench \
+paperbench-distribute audit-fidelity paperwritingbench \
     --source /path/to/PaperWritingBench \
     --dataset /path/to/paperwritingbench-sparse-plotoff \
     --upstream-revision <rev> \

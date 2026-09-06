@@ -7,7 +7,7 @@ and may contain `abstract`, `year`, `url`, and `source`.
 Start it with:
 
 ```bash
-python scripts/scholarly_search_sidecar.py \
+python -m paperbench_harbor.common.scholarly_search \
   --index path/to/scholarly_search.jsonl \
   --host 0.0.0.0 --port 8765
 ```

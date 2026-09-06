@@ -8,7 +8,7 @@ takes as parameters.
 
 The corpus itself is produced by
 ``construction.lifesci_paperrecon`` (an opencode-agent-driven build, see
-``scripts/build_lifesci_paperrecon_source.py``); nothing in this module depends
+``paperbench-distribute build-lifesci-paperrecon-source``); nothing in this module depends
 on *how* it was produced, only on the layout it lands in.
 """
 

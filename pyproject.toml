@@ -4,14 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "paperbench-harbor"
-version = "0.1.0"
-description = "Harbor adapters for PaperWritingBench and PaperWrite-Bench"
+version = "0.2.0"
+description = "PaperSmith: independently reviewed scientific writing tasks for Harbor"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
   { name = "a-green-hand-jack" },
 ]
 dependencies = [
+  "harbor==0.22.0",
   "jinja2>=3.1",
   "pydantic>=2.0",
   "pyyaml>=6.0",
@@ -38,18 +39,22 @@ sidecar = [
   "thefuzz>=0.22",
 ]
 dev = [
-  "pytest>=8.0",
   "ruff>=0.9",
 ]
 
 [project.scripts]
 paperbench-harbor = "paperbench_harbor.cli:app"
+papersmith = "paperbench_harbor.papersmith.cli:main"
+paperbench-distribute = "paperbench_harbor.distribution.cli:main"
 
 [project.entry-points."harbor.plugins"]
 paperbench-trial-export = "paperbench_harbor.trials.orchestrator:SanitizedTrialExportPlugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/paperbench_harbor"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"packaging" = "paperbench_harbor/packaging"
 
 [tool.ruff]
 line-length = 100

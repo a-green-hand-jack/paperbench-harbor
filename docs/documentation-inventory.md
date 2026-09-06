@@ -39,8 +39,6 @@ must cite an immutable release, tag, or current code revision.
 Before publishing a documentation update, verify that the task card's task
 counts and revision match the task manifest, the trial card links the correct
 task dataset, and the source-archive card links the matching registry/revision.
-`scripts/check_documentation_references.py` checks required dataset references
-and `docs/*.md` inventory coverage, not arbitrary Markdown link validity;
-it does not replace release-specific review. The repository-level
-`tests/` suite is retired. `docs/papersmith-docker.md` owns isolated construction
-usage and live-source development guidance.
+Release-specific review remains required. The old documentation-check script and
+repository-level `tests/` suite are retired. `DEV.md` owns installed-product Docker
+usage; build and request-display checks do not establish construction acceptance.

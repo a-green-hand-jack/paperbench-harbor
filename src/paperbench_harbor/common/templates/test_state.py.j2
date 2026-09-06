@@ -103,10 +103,11 @@ def test_recompiles_without_shell_escape():
             errors="replace",
         )
         if command[0] == "bibtex":
-            # Upstream references.bib files are occasionally malformed; bibtex
+{% if papersmith_contract is defined %}            assert result.returncode == 0, f"BibTeX failed: {result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+{% else %}            # Upstream references.bib files are occasionally malformed; bibtex
             # is best-effort and unresolved citations are not a compile error.
             continue
-        assert result.returncode == 0, (
+{% endif %}        assert result.returncode == 0, (
             f"command failed: {' '.join(command)}\n"
             f"stdout:\n{result.stdout[-4000:]}\n"
             f"stderr:\n{result.stderr[-4000:]}"
@@ -114,7 +115,9 @@ def test_recompiles_without_shell_escape():
 
     pdf = build_dir / "main.pdf"
     assert pdf.is_file() and pdf.stat().st_size > 0, "recompiled main.pdf is missing or empty"
-
+{% if papersmith_contract is defined %}    log = (build_dir / "main.log").read_text(encoding="utf-8", errors="replace")
+    assert not re.search(r"Citation[^\n]*undefined|There were undefined (?:references|citations)|No file .*\.bbl", log), "final build has unresolved citations or missing bibliography"
+{% endif %}
 
 def test_all_citations_defined_in_references():
     """Every cited key must exist in references.bib (no invented citations)."""
@@ -122,3 +125,41 @@ def test_all_citations_defined_in_references():
     defined = _bib_keys(BIB)
     missing = sorted(cited - defined)
     assert not missing, f"cited keys missing from references.bib: {missing}"
+{%- if papersmith_contract is defined %}
+
+
+def test_papersmith_required_citations():
+    """Enforce the source keys declared by the supplied reference materials."""
+    required = set({{ papersmith_citation_keys | tojson }})
+    assert required, "task has no declared source citation key"
+    cited = _citation_keys(MAIN_TEX)
+    defined = _bib_keys(BIB)
+{% if papersmith_require_all_citations %}    assert required <= cited, f"required source citations missing: {sorted(required - cited)}"
+    assert required <= defined, f"required bibliography entries missing: {sorted(required - defined)}"
+{% else %}    assert required & cited, "cite at least one of the supplied source bibliography keys"
+{% endif %}
+
+
+def test_papersmith_manuscript_completeness():
+    """Reject empty/template-only submissions, without scoring scientific meaning."""
+    text = _expand_tex(MAIN_TEX)
+    text = re.sub(r"(?<!\\)%[^\n]*", "", text)
+    body = text.split("\\begin{document}", 1)[-1].split("\\end{document}", 1)[0]
+    body = re.sub(r"\\begin\{(?:thebibliography|verbatim|lstlisting)\}.*?\\end\{(?:thebibliography|verbatim|lstlisting)\}", "", body, flags=re.DOTALL)
+
+    def prose(value):
+        value = re.sub(r"\\(?:title|author|bibliography|bibliographystyle|cite\w*|label|ref)\*?(?:\[[^]]*\])?\{[^}]*\}", "", value)
+        value = re.sub(r"\\[A-Za-z]+\*?(?:\[[^]]*\])?", " ", value)
+        return re.findall(r"[^\W\d_]{2,}", value)
+
+    assert len(prose(body)) >= 200, "manuscript body must contain at least 200 prose words"
+    headings = list(re.finditer(r"\\(?:sub)*section\*?(?:\[[^]]*\])?\{([^}]+)\}", body))
+    sections = {}
+    for index, match in enumerate(headings):
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(body)
+        sections[" ".join(match[1].casefold().split())] = body[match.end():end]
+    required = {{ papersmith_contract | tojson }}
+    for heading in required:
+        content = sections.get(" ".join(heading.casefold().split()), "")
+        assert len(prose(content)) >= 20, f"required section {heading!r} must contain at least 20 prose words"
+{% endif %}
