@@ -149,8 +149,10 @@ def execute(state, snapshot, request, heartbeat=None):
     for p in snapshot.rglob("*"):
         if p.is_symlink() or not (p.is_file() or p.is_dir()):
             raise AcceptanceBlocked("nonregular snapshot entry")
-        p.chmod(0o500 if p.is_dir() else 0o400)
-    snapshot.chmod(0o500)
+        # Oracle copies preserve directory modes; Docker's host-side extraction
+        # needs owner write permission to populate transferred subdirectories.
+        p.chmod(0o700 if p.is_dir() else 0o400)
+    snapshot.chmod(0o700)
     cache = state / "jobs" / request["task_sha256"] / request["task_name"]
     cache.mkdir(parents=True, exist_ok=True)
     atomic_json(state / "requests" / (request["id"] + ".json"), request)
