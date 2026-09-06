@@ -18,6 +18,7 @@ MODEL_ROLES = {
 }
 
 CONVERSION_EVIDENCE = {
+    "template_compilation": "template-proof/validation.json",
     "instruction": "instruction.md",
     "environment": "environment/Dockerfile",
     "verifier": "tests/test_state.py",
@@ -35,7 +36,8 @@ def artifact_hash(path):
     if not path.exists():
         return "missing"
     if path.is_file():
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        with path.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
     return fingerprint(
         {
             p.relative_to(path).as_posix(): artifact_hash(p)
@@ -50,6 +52,12 @@ def model_receipt(root, request, phase, entry):
     if entry.get("output_sha256") != artifact_hash(attempt):
         raise ValueError("terminal attempt artifact hash is missing or mismatched")
     receipt = json.loads(contained(root, attempt / "receipt.json").read_text())
+    if entry.get("contract_sha256"):
+        contract = request["contract"]
+        if phase == "oracle":
+            contract = {k: v for k, v in contract.items() if k not in {"selection", "papers", "replacement"}}
+        if receipt.get("request_scope_sha256") != fingerprint({"contract": contract, "count": entry["scope_count"]}):
+            raise ValueError("model receipt does not bind locked contract and original candidate count")
     if receipt.get("schema_version") != 2:
         raise ValueError("legacy receipt cannot establish current acceptance; rerun this node")
     expected_model = request["review_model" if phase.startswith("gate") else "model"]
@@ -89,11 +97,33 @@ def model_receipt(root, request, phase, entry):
     if entry["status"] in {"passed", "rejected", "repair"} and status != "completed":
         raise ValueError("phase decision requires a completed model receipt")
     policy = receipt.get("access_policy", {})
+    if receipt.get("read_scope_sha256"):
+        scope_path = contained(root, attempt / "read-scope.json")
+        if receipt["read_scope_sha256"] != artifact_hash(scope_path):
+            raise ValueError("receipt exact read-scope hash mismatch")
+        scope = json.loads(scope_path.read_text())
+        if scope != {"role": MODEL_ROLES[phase], "policy": policy}:
+            raise ValueError("receipt read scope differs from controller phase grant")
+    elif entry.get("contract_sha256"):
+        raise ValueError("current contract requires exact phase read-scope binding")
     if not isinstance(policy.get("read_paths"), list):
         raise TypeError("receipt lacks explicit read scope")
     for raw_path in policy["read_paths"]:
         path = contained(root, Path(raw_path))
         relative = path.relative_to(root).parts
+        candidate_id = attempt.relative_to(root).parts[1]
+        if relative and relative[0] == "attempts" and relative[1] != candidate_id:
+            raise ValueError("phase read scope crosses candidate boundary")
+        if phase == "oracle" and not (
+            path == attempt.parent / "task/instruction.md"
+            or path == attempt.parent / "task/environment/materials"
+        ):
+            raise ValueError("oracle may read only its own public task contract and materials")
+        if phase == "materials" and not (
+            len(relative) == 4 and relative[2].startswith("proposal-")
+            and relative[3] in {"sources", "response.json"}
+        ):
+            raise ValueError("materials phase may read only its candidate proposal and sources")
         if not relative or (
             relative[0] != "imported"
             and (
@@ -163,7 +193,7 @@ def terminal_integrity(root, state):
                 if phase == "convert":
                     receipt = oracle_receipt(root, state["request"], entry)
                     for session in receipt.get("sessions", []):
-                        owner = str(Path(entry["path"]) / "oracle")
+                        owner = entry.get("oracle_reuse", str(Path(entry["path"]) / "oracle"))
                         if session in session_owners and session_owners[session] != owner:
                             raise ValueError("oracle reused another model/review session")
                         session_owners[session] = owner
@@ -173,11 +203,23 @@ def terminal_integrity(root, state):
 
 
 def oracle_receipt(root, request, entry):
-    attempt = Path(entry["path"]) / "oracle"
+    attempt = contained(root, Path(entry.get("oracle_reuse", str(Path(entry["path"]) / "oracle"))))
+    if entry.get("oracle_reuse") and (attempt.name != "oracle" or attempt.parent.parent != Path(entry["path"]).parent):
+        raise ValueError("oracle reuse must reference the same candidate's preserved conversion")
     if not (attempt / "receipt.json").is_file():
         if entry["status"] == "passed" and (Path(entry["path"]) / "task/tests/private/ground_truth/manifest.json").is_file():
             raise ValueError("synthetic oracle has no model receipt")
         return {}
+    if entry.get("contract_sha256") and entry["status"] == "passed":
+        conversion = Path(entry["path"])
+        binding = json.loads((attempt / "input.json").read_text())
+        checks = json.loads((conversion / "checks.json").read_text())
+        if (binding.get("instruction_sha256") != artifact_hash(conversion / "task/instruction.md")
+                or binding.get("public_materials_sha256") != artifact_hash(conversion / "task/environment/materials")
+                or binding.get("model") != request["model"]
+                or checks.get("oracle_response_sha256") != artifact_hash(attempt / "response.json")
+                or checks.get("oracle_receipt_sha256") != artifact_hash(attempt / "receipt.json")):
+            raise ValueError("oracle response/receipt is not bound to this conversion's public inputs")
     return model_receipt(root, request, "oracle", {
         **entry, "path": str(attempt), "output_sha256": artifact_hash(attempt),
     })
@@ -293,6 +335,8 @@ def load_state(root, order):
         entries = list(candidate["stages"].items())
         entries += [(item["phase"], item) for item in candidate.get("history", [])]
         for phase, entry in entries:
+            if entry.get("contract_sha256") and (entry.get("scope_count") != scope_count or entry.get("selected_paper") != candidate.get("selected_paper")):
+                raise ValueError("phase scope differs from locked candidate count/selection")
             if phase not in order or entry.get("status") not in {
                 "running",
                 "passed",
@@ -420,13 +464,13 @@ def catalog_paths(root, paths, prefix="E"):
 
 
 def evidence_catalog(root, stages, phase, order):
-    paths = []
+    paths = [Path(stages[phase]["path"]) / "locked-contract.json"]
     for previous in order[: order.index(phase)]:
         if previous.startswith("gate"):
             continue
         attempt = Path(stages[previous]["path"])
         if previous == "convert":
-            paths.extend(attempt / name for name in ("task", "determinism", "checks.json"))
+            paths.extend(attempt / name for name in ("task", "determinism", "checks.json", "template-proof"))
         else:
             paths.append(attempt)
     return catalog_paths(root, paths)
@@ -467,6 +511,11 @@ def check_review(root, stages, phase, result, gates, order):
         ):
             raise ValueError("license review must cite source-bound provenance")
         required = CONVERSION_EVIDENCE
+        if dimension == "locked_objective" and not any(
+            e["path"] == (Path(stages[phase]["path"]) / "locked-contract.json").relative_to(root).as_posix()
+            for e in resolved[dimension]
+        ):
+            raise ValueError("review must cite its actual locked contract, not a builder-narrowed objective")
         if (
             phase == "gate3"
             and dimension in required
@@ -516,7 +565,7 @@ def check_review(root, stages, phase, result, gates, order):
     if result.decision == "accept":
         receipt = json.loads((Path(stages[phase]["path"]) / "receipt.json").read_text())
         completed_reads = {r["path"] for r in receipt.get("artifact_reads", []) if r.get("status") == "completed"}
-        required_reads = [original / "paper.pdf", original / "paper.txt"]
+        required_reads = [original / "paper.pdf", original / "paper.txt", Path(stages[phase]["path"]) / "locked-contract.json"]
         if phase == "gate3":
             required_reads.append(Path(stages["convert"]["path"]) / "task/solution/preview.pdf")
         if any(str(path) not in completed_reads for path in required_reads):

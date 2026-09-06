@@ -4,6 +4,12 @@ PaperSmith turns a scientific-paper selection request or a specified paper into
 independently reviewed **Harbor writing tasks**. No domain selection, knowledge
 pack, checkout agent files, or manual approval-file exchange is required.
 
+The default task is a **full scientific manuscript**, not a concise summary.
+`--task-kind summary` deliberately selects a summary; models and reviewers cannot
+silently narrow the locked objective. `--identifiers identified` is the default;
+`--identifiers anonymized` withholds focal identifiers where lawful, never required
+asset credit or honest citation metadata. Anonymization is not a license waiver.
+
 This repository is also the conversion and distribution center for
 PaperWritingBench, PaperWrite-Bench and the existing PaperRecon datasets. Their
 `paperbench-harbor` conversion interface and submission contract remain available.
@@ -44,15 +50,22 @@ paid request; authentication remains unverified until a real call succeeds.
 
 ```sh
 papersmith create 'Discover suitable scientific papers on any topic' \
-  --count 5 --output /path/outside-checkout/my-run --headless --json
+  --count 1 --output /path/outside-checkout/my-run --headless --json
 papersmith status /path/outside-checkout/my-run --json
-papersmith resume /path/outside-checkout/my-run --headless --json
+# Review the first accepted task, then explicitly expand the same run:
+papersmith resume /path/outside-checkout/my-run --count 5 --headless --json
 papersmith validate /path/outside-checkout/my-run --json
 ```
 
-The count is **delivered admitted tasks**, not proposed candidates. Rejected
-papers are recorded and replaced automatically. A DOI, paper URL or detailed
-selection request can replace the example. Requests may name accessible source
+The count is **delivered admitted tasks**, not proposed candidates. In default
+`--selection discovery`, rejected papers are recorded and replaced automatically.
+For exact papers, use `--selection fixed --paper DOI_OR_ARXIV` (repeat `--paper`);
+retrieved canonical identities must match that allowlist. Fixed mode blocks on
+rejection rather than substituting another paper. Count cannot exceed the allowlist;
+you can admit the first one before `resume --count N`. A DOI in free-form discovery
+text is not a fixed-identity guarantee. `--describe` / `--describe-request` shows
+the resolved contract, allowlist, count and replacement policy without calls or writes.
+Requests may name accessible source
 URLs; source bytes and license evidence are retrieved and retained privately.
 Use `--source /path/to/scoped-research` to import local scientific files privately.
 Provide provenance/license context in the request; local files do not waive licensing.
@@ -80,8 +93,9 @@ proposal -> gate1 -> materials -> gate2 -> convert -> gate3 -> deliver
   not an obligation to re-run experiments or reproduce the whole research project.
 - Gate 3 reviews actual Harbor files, fidelity, conversion determinism, verifier,
   exact private ground truth, paths, submission contract, answer isolation and the
-  synthetic oracle's scientific adequacy against every writing requirement. It does not require a writer
-  trial or reward of one.
+  synthetic oracle's scientific adequacy against the locked objective and every writing
+  requirement. **Actual Harbor oracle reward 1 and nop reward 0 are mandatory**, before
+  the independent Sol scientific assessment. A separate downstream writer evaluation is not required.
 
 Reviews use fresh sessions and a different role, with no file-writing or shell
 tools. The same configured review model can perform every gate. This is process
@@ -110,7 +124,8 @@ result with `--json`. Each phase has a unique attempt directory, inputs/outputs
 hashes, timestamps, requests and real-session receipts. Research content in the
 workspace is private; do not publish it indiscriminately.
 
-`status` reports the four phases and three gates, paths and stale/missing evidence.
+`status` quickly reads the checkpoint snapshot, without full artifact hashing; it
+does not certify freshness or acceptance. `validate` is authoritative.
 `validate` makes no model calls and exits nonzero unless the requested number of
 deliveries still matches the current evidence. `resume` holds a workspace lock,
 reuses passed unchanged nodes, and restarts interrupted or failed nodes. Changes
@@ -139,6 +154,15 @@ extensions and records content type, disposition filename and actual body inspec
 `not_discovered` means no candidate in the recorded search;
 `unavailable_in_inspected_candidates` is limited to those candidates. There is no crawl.
 Model-generated `reference_notes.md` is explicitly non-authoritative.
+Public materials include a genuine `template/main.tex` and BibTeX bibliography,
+not Markdown renamed as a template. Starter compilation is recorded separately and
+does not satisfy the completed-submission verifier. Relevant tables have controller-
+generated CSV/JSON with exact cells, source anchors, captions, units, notes, missing
+values and precision policies, plus original images when available and lawful.
+Item-level coverage records include/substitute/exclude/unavailable dispositions with
+reasons for relevant figures, tables, supplements, methods, claims, hypotheses,
+authors' interpretation and limitations. This does not require every photograph or
+full experimental reproduction. Each redistributed asset has its own rights and credit.
 `solution/solve.sh` installs and compiles the bundled **synthetic oracle**, not the
 original PDF, and never edits the verifier or rewards. Only Harbor's oracle agent
 receives that solution bundle. The structural verifier checks LaTeX compilation,
@@ -146,6 +170,16 @@ sections and citations, not scientific quality. No model self-reported readiness
 or synthetic artifact is used as original ground truth.
 `task_ready`, downstream writing/scoring and public publication are separate.
 Nothing uploads automatically.
+
+Successful oracle model responses survive mechanical compile failures. Resume
+reuses a hash-bound response only for unchanged public inputs/model/schema after
+compile failure or interruption; scientific repairs may require a new response.
+`papersmith identity --json` exposes stable installed content identity separately
+from the acceptance protocol. `papersmith acceptance-status --state PATH --json`
+reads worker lifecycle snapshots; observed/copying/executing are not acceptance.
+Historical workspaces without the locked contract remain untouched and cannot be
+promoted into new-contract acceptance. Create a new run, optionally reusing verified
+source acquisitions, rather than editing old receipts or forcing migration.
 
 Sources support public HTTPS PDF, HTML, text, CSV/JSON and scoped binary
 assets. Original-source ZIP/tar/gzip bundles are retained and boundedly unpacked

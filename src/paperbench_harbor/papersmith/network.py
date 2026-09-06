@@ -6,6 +6,8 @@ import socket
 import ssl
 from urllib.parse import urljoin, urlsplit
 
+from .operations import OperationalError
+
 
 class PublicHTTPS(http.client.HTTPSConnection):
     def connect(self):
@@ -41,7 +43,9 @@ def retrieve(url):
                 url = urljoin(url, location)
                 continue
             if response.status in {429, 500, 502, 503, 504}:
-                raise RuntimeError("source server temporarily unavailable; resume")
+                raise OperationalError("quota" if response.status == 429 else "network", "source server temporarily unavailable; resume")
+            if response.status in {401, 403}:
+                raise OperationalError("access", "source server denied access; restore access before resuming")
             if response.status != 200:
                 raise ValueError(
                     f"source HTTP status {response.status}; select accessible evidence"
@@ -59,6 +63,8 @@ def retrieve(url):
                     if response.getheader(key)
                 },
             )
+        except (OSError, http.client.HTTPException) as error:
+            raise OperationalError("network", "source network retrieval failed; resume after restoring connectivity") from error
         finally:
             connection.close()
     raise ValueError("source redirect limit exceeded")

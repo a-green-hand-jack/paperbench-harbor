@@ -2,7 +2,6 @@
 
 import ast
 import fcntl
-import io
 import json
 import os
 import re
@@ -20,20 +19,40 @@ from uuid import uuid4
 
 from paperbench_harbor.construction.core.state import atomic_json, fingerprint
 
+from .identity import canonical_identity
 from .integrity import artifact_hash as digest
 from .integrity import contained
+from .operations import OperationalError, classify, terminate
+from .operations import run as run_process
 
 BACKEND = "harbor-0.22.0-oracle-nop-v1"
 
 
-class AcceptanceBlocked(RuntimeError):
+class AcceptanceBlocked(OperationalError):
     """Runtime failure is infrastructure/acceptance evidence, not a model rejection."""
+
+    def __init__(self, message):
+        super().__init__("acceptance", message)
 
 
 def protocol():
-    templates = Path(__file__).resolve().parents[1] / "common/templates"
-    sources = {p.name: digest(p) for p in sorted(Path(__file__).parent.glob("*.py"))}
-    return fingerprint([BACKEND, sources, digest(templates)])
+    from .schema import ScientificContract
+
+    package = Path(__file__).resolve().parents[1]
+    return fingerprint([BACKEND, "acceptance-v3", ScientificContract().model_dump(),
+                        ScientificContract.model_json_schema(),
+                        {name: digest(Path(__file__).with_name(name + ".py")) for name in
+                         ("schema", "generation", "oracle", "integrity", "identity", "operations", "acceptance")},
+                        digest(package / "construction/core/state.py"),
+                        digest(package / "common/task_contract.py"),
+                        digest(package / "common/templates")])
+
+
+def installation_identity():
+    """Stable content identity for installer lifecycle; distinct from acceptance protocol."""
+    package = Path(__file__).resolve().parents[1]
+    return fingerprint({p.relative_to(package).as_posix(): digest(p) for p in sorted(package.rglob("*"))
+                        if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"})
 
 
 def backend():
@@ -48,13 +67,15 @@ def check_service():
         service = json.loads(heartbeat.read_text())
         if service.get("protocol") != protocol():
             raise AcceptanceBlocked("controller and host worker packages differ; rebuild/install together")
+        if service.get("installation_identity") != installation_identity():
+            raise AcceptanceBlocked("controller and host worker installed content differs; rebuild/install together")
         return service
     elif backend() == "local":
         if not shutil.which("harbor") or not shutil.which("docker"):
             raise AcceptanceBlocked("local acceptance requires Harbor 0.22.0 and host Docker")
-        if subprocess.check_output(["harbor", "--version"], text=True).strip() != "0.22.0":
+        if run_process(["harbor", "--version"], capture_output=True, text=True, check=True).stdout.strip() != "0.22.0":
             raise AcceptanceBlocked("Harbor 0.22.0 required")
-        subprocess.run(["docker", "info"], check=True, stdout=subprocess.DEVNULL,
+        run_process(["docker", "info"], check=True, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     else:
         raise AcceptanceBlocked("unknown acceptance backend")
@@ -117,18 +138,26 @@ def check_receipt(state, receipt, request):
     if request["protocol"] != protocol() or set(receipt.get("trials", {})) != {"oracle", "nop"}:
         raise AcceptanceBlocked("acceptance protocol or subjobs mismatch")
     for agent, record in receipt["trials"].items():
+        if record.get("binding") != {k: request[k] for k in ("protocol", "task_sha256", "identity", "task_name")} or record.get("agent") != agent:
+            raise AcceptanceBlocked("receipt subjob protocol/task/identity/agent binding mismatch")
         trial_evidence(state, record, request["task_name"], agent, request["task_sha256"])
     snapshot = contained(state, state / receipt["snapshot"])
     if digest(snapshot) != request["task_sha256"]:
         raise AcceptanceBlocked("accepted snapshot changed")
+    if canonical_identity(snapshot / "tests/private/sources")["identity"] != request["identity"]:
+        raise AcceptanceBlocked("accepted snapshot canonical identity mismatch")
 
 
 def execute(state, snapshot, request, heartbeat=None):
     """Only fixed Harbor argv; task-provided paths/commands never run on the host."""
     if request["protocol"] != protocol() or not re.fullmatch(r"candidate-[0-9]{4,}", request["task_name"]):
         raise AcceptanceBlocked("invalid acceptance request")
+    if request.get("installation_identity") != installation_identity():
+        raise AcceptanceBlocked("acceptance request installed content differs from the worker")
     if digest(snapshot) != request["task_sha256"]:
         raise AcceptanceBlocked("snapshot hash mismatch")
+    if canonical_identity(snapshot / "tests/private/sources")["identity"] != request["identity"]:
+        raise AcceptanceBlocked("request identity differs from actual canonical source metadata")
     # Reject alternative compose/config entry points and unbounded task budgets.
     config = tomllib.loads((snapshot / "task.toml").read_text())
     expected = {
@@ -153,7 +182,7 @@ def execute(state, snapshot, request, heartbeat=None):
         # needs owner write permission to populate transferred subdirectories.
         p.chmod(0o700 if p.is_dir() else 0o400)
     snapshot.chmod(0o700)
-    cache = state / "jobs" / request["task_sha256"] / request["task_name"]
+    cache = state / "jobs" / fingerprint({k: request[k] for k in ("protocol", "task_sha256", "identity", "task_name")})
     cache.mkdir(parents=True, exist_ok=True)
     atomic_json(state / "requests" / (request["id"] + ".json"), request)
     receipt = {"request": request, "snapshot": str(snapshot.relative_to(state)),
@@ -162,6 +191,8 @@ def execute(state, snapshot, request, heartbeat=None):
         saved = cache / f"{agent}.json"
         if saved.is_file():
             record = json.loads(saved.read_text())
+            if record.get("binding") != {k: request[k] for k in ("protocol", "task_sha256", "identity", "task_name")} or record.get("agent") != agent:
+                raise AcceptanceBlocked("cached subjob binding mismatch")
             trial_evidence(state, record, request["task_name"], agent, request["task_sha256"])
         else:
             name = agent + "-" + uuid4().hex
@@ -177,22 +208,13 @@ def execute(state, snapshot, request, heartbeat=None):
                             heartbeat()
                         time.sleep(1)
                 finally:
-                    if process.poll() is None:
-                        os.killpg(process.pid, signal.SIGINT)
-                        try:
-                            process.wait(timeout=30)
-                        except subprocess.TimeoutExpired:
-                            os.killpg(process.pid, signal.SIGTERM)
-                            try:
-                                process.wait(timeout=30)
-                            except subprocess.TimeoutExpired:
-                                os.killpg(process.pid, signal.SIGKILL)
-                                process.wait()
+                    terminate(process)
             results = list((cache / name).glob("*/result.json"))
             if len(results) != 1:
                 raise AcceptanceBlocked(f"{agent}: expected exactly one completed trial; inspect {cache / name}")
             trial = results[0].parent
             record = {"trial": str(trial.relative_to(state)), "returncode": process.returncode,
+                      "binding": {k: request[k] for k in ("protocol", "task_sha256", "identity", "task_name")}, "agent": agent,
                       "evidence_sha256": digest(trial), "executed_path": str(snapshot),
                       "snapshot": str(snapshot.relative_to(state))}
             trial_evidence(state, record, request["task_name"], agent, request["task_sha256"])
@@ -208,8 +230,12 @@ def execute(state, snapshot, request, heartbeat=None):
 def accept(root, candidate, task, attempt):
     service = check_service()
     request = {"id": uuid4().hex, "protocol": protocol(), "task_name": candidate["id"],
-               "task_sha256": digest(task), "identity": candidate["identity"],
+               "task_sha256": digest(task), "identity": canonical_identity(task / "tests/private/sources")["identity"],
+               "installation_identity": installation_identity(),
+               "controller_image_id": service.get("controller_image_id") if service else None,
                "worker_id": service["worker_id"] if service else None}
+    if backend() == "spool" and not request["controller_image_id"]:
+        raise AcceptanceBlocked("worker has not observed the owned controller image identity; resume after supervisor readiness")
     atomic_json(attempt / "acceptance-request.json", {"backend": backend(), "request": request})
     if backend() == "spool":
         queue, state = Path("/acceptance"), Path("/acceptance-receipts")
@@ -234,6 +260,7 @@ def accept(root, candidate, task, attempt):
             receipt = execute(state, snapshot, request)
         except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as error:
             receipt = {"request": request, "accepted": False,
+                       "classification": classify(error),
                        "error": type(error).__name__, "detail": str(error)}
         receipt_path = state / "receipts" / (request["id"] + ".json")
         atomic_json(receipt_path, receipt)
@@ -256,27 +283,38 @@ def verify(root, candidate):
     request = evidence["request"]
     task = Path(candidate["stages"]["convert"]["path"]) / "task"
     if (request["task_sha256"] != digest(task) or request["task_name"] != candidate["id"]
-            or request["identity"] != candidate["identity"]):
+            or request["identity"] != canonical_identity(task / "tests/private/sources")["identity"]):
         raise AcceptanceBlocked("acceptance is not bound to this conversion/identity")
     check_receipt(state, json.loads(receipt_path.read_text()), request)
 
 
 def docker_copy(container, path, destination):
     """Extract regular bytes only, never tar links, devices or archive traversal."""
-    result = subprocess.run(["docker", "cp", f"{container}:{path}", "-"],
-                            capture_output=True, check=True)
-    with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
-        for member in archive:
-            relative = Path(member.name)
-            if relative.is_absolute() or ".." in relative.parts or not (member.isdir() or member.isfile()):
-                raise AcceptanceBlocked("unsafe Docker copy archive")
-            target = contained(destination, destination / relative)
-            if member.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open("xb") as stream:
-                    shutil.copyfileobj(archive.extractfile(member), stream)
+    command = ["docker", "cp", f"{container}:{path}", "-"]
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        try:
+            with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                for member in archive:
+                    relative = Path(member.name)
+                    if relative.is_absolute() or ".." in relative.parts or not (member.isdir() or member.isfile()):
+                        raise AcceptanceBlocked("unsafe Docker copy archive")
+                    target = contained(destination, destination / relative)
+                    if member.isdir():
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with target.open("xb") as stream:
+                            shutil.copyfileobj(archive.extractfile(member), stream)
+        except tarfile.ReadError:
+            if process.wait():
+                raise subprocess.CalledProcessError(process.returncode, command) from None
+            raise AcceptanceBlocked("invalid Docker copy archive") from None
+        if process.wait():
+            raise subprocess.CalledProcessError(process.returncode, command)
+    finally:
+        terminate(process)
+        process.stdout.close()
 
 
 def validate_controller(container, state, command):
@@ -388,7 +426,26 @@ def validate_controller(container, state, command):
         raise ValueError("trusted receipts must be bound read-only from this worker's state")
 
 
+def environment_lock():
+    """Validate the installer's inherited open-file-description lock without changing it."""
+    if os.environ.get("PAPERSMITH_ENV_LOCK_FD") != "9":
+        raise AcceptanceBlocked("supervisor requires the installer-held environment lock on FD9")
+    expected = Path(sys.prefix).resolve().parent / ".papersmith-environment.lock"
+    try:
+        held, named = os.fstat(9), expected.stat(follow_symlinks=False)
+        info = Path("/proc/self/fdinfo/9").read_text()
+    except OSError:
+        raise AcceptanceBlocked("inherited environment lock FD9 is unavailable") from None
+    if (not stat.S_ISREG(held.st_mode) or not stat.S_ISREG(named.st_mode)
+            or (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino)
+            or not re.search(r"^lock:\s+\d+: FLOCK\s+ADVISORY\s+WRITE\s", info, re.MULTILINE)):
+        raise AcceptanceBlocked("FD9 does not hold the expected exclusive environment lock")
+    return {"fd": 9, "path": str(expected), "device": held.st_dev, "inode": held.st_ino}
+
+
 def launch(container, state, invocation, command):
+    lock = environment_lock()
+    installed = installation_identity()
     state = state.expanduser().resolve()
     invocation = contained(state / "invocations", invocation.expanduser().absolute())
     validate_controller(container, state, command)
@@ -400,10 +457,13 @@ def launch(container, state, invocation, command):
              "--state", str(state), "--invocation", str(invocation), "--", *command],
             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
             start_new_session=True,
+            pass_fds=(9,),
+            env={**os.environ, "PAPERSMITH_PROCESS_IDENTITY": installed},
         )
     result = {"status": "spawned", "pid": process.pid, "pid_path": str(pid_path),
               "log": str(log_path), "state": str(invocation / "supervisor.json"),
-              "acceptance_state": str(state), "container": container,
+               "acceptance_state": str(state), "container": container,
+               "environment_lock": lock, "installation_identity": installed,
               "note": "Background startup/exit outcome is recorded in state and log; no model wait."}
     atomic_json(pid_path, {"pid": process.pid, "container": container})
     atomic_json(invocation / "launch.json", result)
@@ -413,7 +473,7 @@ def launch(container, state, invocation, command):
 def cleanup_controller(container, worker_id, controller):
     """Stop/kill by immutable Docker ID only after verifying our unique owner label."""
     def inspect(reference):
-        result = subprocess.run(
+        result = run_process(
             ["docker", "container", "inspect", "--format",
              '{{.Id}} {{index .Config.Labels "io.papersmith.worker"}} {{.State.Running}}', reference],
             capture_output=True, text=True, check=False, timeout=10,
@@ -430,14 +490,14 @@ def cleanup_controller(container, worker_id, controller):
         if running:
             stop_failed = False
             try:
-                result = subprocess.run(["docker", "stop", "--time", "30", owned_id],
+                result = run_process(["docker", "stop", "--time", "30", owned_id],
                                         check=False, stdout=subprocess.DEVNULL,
                                         stderr=subprocess.DEVNULL, timeout=45)
                 stop_failed = result.returncode != 0
             except subprocess.TimeoutExpired:
                 stop_failed = True
             if stop_failed or inspect(owned_id)[1]:
-                subprocess.run(["docker", "kill", owned_id], check=False,
+                run_process(["docker", "kill", owned_id], check=False,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
             _, running = inspect(owned_id)
         cleanup["status"] = "pending" if running else "stopped"
@@ -457,20 +517,29 @@ def cleanup_controller(container, worker_id, controller):
 
 
 def worker(container, state, invocation, command):
+    lock = environment_lock()
+    installed = installation_identity()
+    inherited = os.environ.get("PAPERSMITH_PROCESS_IDENTITY")
+    if inherited is not None and (not re.fullmatch(r"[0-9a-f]{64}", inherited) or inherited != installed):
+        raise AcceptanceBlocked("installed package changed between detached launch and worker startup")
     state = state.expanduser().resolve()
     invocation = contained(state / "invocations", invocation.expanduser().absolute())
     record = {"pid": os.getpid(), "container": container, "status": "starting",
+              "environment_lock": lock, "installation_identity": installed, "protocol": protocol(),
               "started_at": time.time()}
     record_path = invocation / "supervisor.json"
     atomic_json(record_path, record)
     try:
         validate_controller(container, state, command)
         code = serve(container, state, command, record, record_path)
+        record["disk_identity_on_exit"] = installation_identity()
+        if record["disk_identity_on_exit"] != installed:
+            raise AcceptanceBlocked("installed package changed during this supervisor process")
         record.update(status="exited", returncode=code)
         return code
     except BaseException as error:
         record.update(status="interrupted" if isinstance(error, KeyboardInterrupt) else "failed",
-                      error=type(error).__name__)
+                      error=type(error).__name__, classification=classify(error))
         raise
     finally:
         record["finished_at"] = time.time()
@@ -490,10 +559,16 @@ def serve(container, state, command, record, record_path):
         controller = None
         stopped = threading.Event()
         worker_id = uuid4().hex
+        installed = record["installation_identity"]
+        identity_changed = threading.Event()
 
         def heartbeat():
+            if identity_changed.is_set():
+                raise AcceptanceBlocked("installed package changed during this supervisor process; stop and rebuild/install before resuming")
             atomic_json(state / "heartbeat.json", {
-                "protocol": protocol(), "time": time.time(), "worker_id": worker_id,
+                "protocol": record["protocol"], "time": time.time(), "worker_id": worker_id,
+                "installation_identity": installed,
+                "controller_image_id": record.get("controller_image_id"),
             })
 
         def active_heartbeat():
@@ -504,6 +579,13 @@ def serve(container, state, command, record, record_path):
         def pulse():
             # Long snapshot copies/hashes are not worker failures or execution timeouts.
             while not stopped.wait(5):
+                try:
+                    if installation_identity() != installed:
+                        identity_changed.set()
+                        return
+                except (OSError, ValueError):
+                    identity_changed.set()
+                    return
                 heartbeat()
 
         def stop(signum, frame):
@@ -513,15 +595,27 @@ def serve(container, state, command, record, record_path):
         thread = threading.Thread(target=pulse, daemon=True)
         try:
             heartbeat()
-            if subprocess.run(["docker", "container", "inspect", container], check=False,
+            if run_process(["docker", "container", "inspect", container], check=False,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                 raise ValueError("controller name already exists; refusing to start or stop it")
             command = command[:2] + ["--label", f"io.papersmith.worker={worker_id}"] + command[2:]
-            controller = subprocess.Popen(command, start_new_session=True)
+            child_env = {k: v for k, v in os.environ.items()
+                         if k not in {"PAPERSMITH_ENV_LOCK_FD", "PAPERSMITH_PROCESS_IDENTITY"}}
+            controller = subprocess.Popen(command, start_new_session=True, close_fds=True, env=child_env)
             record.update(status="supervising", worker_id=worker_id)
             atomic_json(record_path, record)
             thread.start()
             while controller.poll() is None:
+                if not record.get("controller_image_id"):
+                    inspected = run_process(["docker", "inspect", "--format",
+                                             '{{index .Config.Labels "io.papersmith.worker"}} {{.Image}}', container],
+                                            capture_output=True, text=True, timeout=10)
+                    if inspected.returncode == 0:
+                        identity = inspected.stdout.strip().split()
+                        if len(identity) != 2 or identity[0] != worker_id or not re.fullmatch(r"sha256:[0-9a-f]{64}", identity[1]):
+                            raise AcceptanceBlocked("controller image ownership could not be established")
+                        record["controller_image_id"] = identity[1]
+                        atomic_json(record_path, record)
                 heartbeat()
                 inbox = state / "poll" / uuid4().hex
                 inbox.mkdir(parents=True)
@@ -543,17 +637,38 @@ def serve(container, state, command, record, record_path):
                     raise AcceptanceBlocked("invalid queue request id")
                 target = state / "receipts" / (rid + ".json")
                 if not target.exists():
+                    lifecycle = state / "lifecycle" / (rid + ".json")
+                    transitions = []
+
+                    def transition(phase, transitions=transitions, lifecycle=lifecycle, request=request):
+                        transitions.append({"state": phase, "time": time.time()})
+                        atomic_json(lifecycle, {"request": request, "transitions": transitions, "state": phase})
+                        atomic_json(state / "current-request.json", {"id": request["id"], "state": phase,
+                                    "lifecycle": str(lifecycle), "time": time.time()})
+
+                    transition("observed")
                     snapshot_parent = state / "snapshots" / (rid + "-" + uuid4().hex)
                     snapshot_parent.mkdir(parents=True, exist_ok=False)
                     try:
+                        if request.get("installation_identity") != record["installation_identity"]:
+                            raise AcceptanceBlocked("request differs from the worker's frozen installed identity")
                         if not re.fullmatch(r"candidate-[0-9]{4,}", request.get("task_name", "")):
                             raise AcceptanceBlocked("invalid task name")
+                        transition("copying")
                         docker_copy(container, f"/acceptance/tasks/{rid}/{request['task_name']}", snapshot_parent)
+                        active_heartbeat()
+                        transition("executing")
                         receipt = execute(state, snapshot_parent / request["task_name"], request, active_heartbeat)
+                    except KeyboardInterrupt:
+                        atomic_json(target, {"request": request, "accepted": False, "classification": "interrupted"})
+                        transition("interrupted")
+                        raise
                     except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as error:
                         receipt = {"request": request, "accepted": False,
+                                   "classification": classify(error),
                                    "error": type(error).__name__, "detail": str(error)}
                     atomic_json(target, receipt)
+                    transition("accepted" if receipt.get("accepted") else "blocked")
                 time.sleep(1)
             return controller.returncode
         finally:

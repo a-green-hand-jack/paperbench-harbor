@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from paperbench_harbor.construction.core.state import atomic_json
 
 from . import acceptance
 from .generation import configure_generation_schema
+from .identity import selection_identifier
+from .operations import run as run_process
 from .product import (
     GATES,
     MODEL,
@@ -21,8 +24,10 @@ from .product import (
     import_source_cache,
     import_sources,
     run,
+    status,
     validate,
 )
+from .schema import ScientificContract
 
 
 def doctor(model, review_model):
@@ -32,7 +37,7 @@ def doctor(model, review_model):
     discovery = "missing_executable"
     if executable:
         try:
-            result = subprocess.run(
+            result = run_process(
                 [executable, "models"], capture_output=True, text=True, timeout=120, check=False
             )
             if result.returncode == 0:
@@ -48,11 +53,29 @@ def doctor(model, review_model):
         acceptance.check_service()
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
         acceptance_status = "unavailable; local requires host Docker/Harbor, spool requires the e2e supervisor"
+    dependencies = [
+        {"dependency": name, "required_for": phase,
+         "state": "available" if available else "missing", "remedy": "none" if available else remedy}
+        for name, phase, available, remedy in [
+            ("opencode", "construction and all reviews", bool(executable), "Install OpenCode and configure the selected provider externally"),
+            ("harbor", "conversion and gate3", harbor_available, "Use the product installer with Harbor 0.22.0"),
+            *[(n, "source inspection" if n in {"pdfinfo", "pdftotext"} else "template and oracle compilation", bool(shutil.which(n)), "Install Poppler or TeX Live through the product installer") for n in ("pdfinfo", "pdftotext", "pdflatex", "bibtex")],
+        ]
+    ]
+    idle = acceptance.backend() == "spool" and not Path("/acceptance-receipts/heartbeat.json").is_file()
+    dependencies.append({"dependency": "acceptance worker", "required_for": "active gate3 execution",
+                         "state": "idle" if idle else acceptance_status,
+                         "remedy": "Launch run/resume through the matching supervisor" if idle else "none" if acceptance_status == "available" else "Restore the matching supervisor package and Docker/Harbor service"})
+    dependencies.extend({"dependency": name, "required_for": "construction or scientific review",
+                         "state": "discovered" if available else discovery,
+                         "remedy": "Authentication remains unverified" if available else "Configure this exact OpenCode model/provider externally"}
+                        for name, available in sorted(configured.items()))
     return {
         "ok": bool(executable)
         and all(configured.values())
         and all(shutil.which(name) for name in ("pdftotext", "pdfinfo", "pdflatex", "bibtex"))
-        and harbor_available and acceptance_status == "available",
+        and harbor_available and (acceptance_status == "available" or idle),
+        "dependencies": dependencies,
         "acceptance_backend": acceptance.backend(),
         "runtime_acceptance": acceptance_status,
         "required": {
@@ -74,8 +97,17 @@ def doctor(model, review_model):
     }
 
 
+class UsageParser(argparse.ArgumentParser):
+    def error(self, message):
+        if "--json" in sys.argv:
+            print(json.dumps({"ok": False, "classification": "usage", "detail": message,
+                              "remedy": "papersmith --help"}))
+            raise SystemExit(2)
+        super().error(message)
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = UsageParser(
         prog="papersmith", description="Create reviewed Harbor scientific writing tasks."
     )
     parser.add_argument("--version", action="version", version="PaperSmith 0.2.0")
@@ -86,6 +118,11 @@ def main():
     worker.add_argument("--invocation", type=Path, required=True)
     worker.add_argument("--detach", action="store_true", help="Launch a nohup host supervisor; return PID/log/state immediately")
     worker.add_argument("controller", nargs=argparse.REMAINDER)
+    identity_command = commands.add_parser("identity", help="Stable installed content identity and separate acceptance protocol")
+    identity_command.add_argument("--json", action="store_true")
+    worker_status = commands.add_parser("acceptance-status", help="Quick supervisor/request lifecycle snapshot without artifact hashing")
+    worker_status.add_argument("--state", type=Path, required=True)
+    worker_status.add_argument("--json", action="store_true")
     for command in ("create", "status", "resume", "validate", "doctor"):
         sub = commands.add_parser(command)
         sub.add_argument("--json", action="store_true", help="Machine-readable result on stdout")
@@ -98,6 +135,10 @@ def main():
                 "--review-model", default=REVIEW_MODEL, help="All three independent review gates"
             )
         if command == "create":
+            sub.add_argument("--task-kind", choices=("full_manuscript", "summary"), default="full_manuscript")
+            sub.add_argument("--identifiers", choices=("identified", "anonymized"), default="identified")
+            sub.add_argument("--selection", choices=("discovery", "fixed"), default="discovery")
+            sub.add_argument("--paper", action="append", default=[], help="Exact DOI/arXiv/canonical URL; repeat for fixed selection")
             sub.add_argument(
                 "--source-cache", type=Path,
                 help="Prior PaperSmith workspace; copy hash-verified downloaded inputs, never approvals, into this new run",
@@ -118,7 +159,7 @@ def main():
                 help="Admitted delivered task count, not candidate count",
             )
             sub.add_argument(
-                "--describe-request",
+                "--describe-request", "--describe",
                 action="store_true",
                 help="Print resolved request, no calls or workspace writes",
             )
@@ -128,7 +169,20 @@ def main():
                 sub.add_argument("--count", type=int, help="Explicitly extend the admitted task target; preserve prior scope and successes")
     args = parser.parse_args()
     code = 0
+    workspace = getattr(args, "output", getattr(args, "workspace", None))
     try:
+        if args.command == "identity":
+            print(json.dumps({"installation_identity": acceptance.installation_identity(),
+                              "acceptance_protocol": acceptance.protocol(), "version": "0.2.0"}))
+            return 0
+        if args.command == "acceptance-status":
+            state_path = args.state.expanduser().resolve()
+            heartbeat = state_path / "heartbeat.json"
+            current = state_path / "current-request.json"
+            print(json.dumps({"state": str(state_path), "verification": "snapshot_only",
+                              "heartbeat": json.loads(heartbeat.read_text()) if heartbeat.is_file() else None,
+                              "request": json.loads(current.read_text()) if current.is_file() else None}))
+            return 0
         if args.command == "acceptance-worker":
             command = args.controller
             if command[:1] == ["--"]:
@@ -149,7 +203,19 @@ def main():
                 if "/" not in model or any(c.isspace() for c in model):
                     raise ValueError("models must be provider/model identifiers")
             root = args.output.expanduser().resolve()
+            papers = [selection_identifier(p) for p in args.paper]
+            if any(not p for p in papers):
+                raise ValueError("each --paper must be a canonical DOI/arXiv/HTTPS identity")
+            contract = ScientificContract(
+                task_kind=args.task_kind, identifiers=args.identifiers, selection=args.selection,
+                papers=papers, replacement="block" if args.selection == "fixed" else "discover",
+                objective=("Write a deliberately selected scientific summary, retaining accurate evidence and limitations."
+                           if args.task_kind == "summary" else ScientificContract().objective),
+            )
+            if contract.selection == "fixed" and args.count > len(papers):
+                raise ValueError("count cannot exceed the fixed canonical allowlist; use --count 1 then resume --count N")
             request = {
+                "contract": contract.model_dump(),
                 "prompt": args.prompt,
                 "count": args.count,
                 "model": args.model,
@@ -197,12 +263,12 @@ def main():
             if args.command == "resume":
                 result = run(root, args.count)
             else:
-                result = validate(root)
+                result = status(root) if args.command == "status" else validate(root)
                 if args.command == "validate" and not result["task_ready"]:
                     code = 1
     except KeyboardInterrupt:
         result, code = (
-            {"ok": False, "status": "interrupted", "remedy": "papersmith resume <workspace>"},
+            {"ok": False, "status": "interrupted", "classification": "interrupted", "remedy": "papersmith resume " + shlex.quote(str(workspace))},
             130,
         )
     except (
@@ -219,13 +285,29 @@ def main():
             {
                 "ok": False,
                 "error": type(error).__name__,
-                "remedy": "Check workspace/checkpoints and papersmith doctor; then resume.",
+                "classification": getattr(error, "classification", "content" if isinstance(error, ValueError) else "deps"),
+                "remedy": "papersmith resume " + shlex.quote(str(workspace)) if workspace else "papersmith doctor",
             },
             1,
         )
         if isinstance(error, ValueError):
             result["detail"] = str(error)
-    print(json.dumps(result, indent=None if getattr(args, "json", False) else 2, sort_keys=True))
+    if getattr(args, "json", False):
+        print(json.dumps(result, sort_keys=True))
+    elif args.command == "doctor":
+        print("Dependency | Required For | State | Remedy")
+        for row in result.get("dependencies", []):
+            print(" | ".join(str(row[k]) for k in ("dependency", "required_for", "state", "remedy")))
+        print("Authentication: unverified without a model call")
+    elif "request" in result:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(f"PaperSmith: {result.get('status', 'ready' if result.get('task_ready') else 'blocked')}")
+        if "target_count" in result:
+            print(f"Tasks: {result.get('task_ready_count', 0)}/{result['target_count']} ({result.get('verification', 'authoritative validation')})")
+        for key in ("detail", "blocked_reason", "checkpoint", "remedy"):
+            if result.get(key):
+                print(f"{key}: {result[key]}")
     return code
 
 

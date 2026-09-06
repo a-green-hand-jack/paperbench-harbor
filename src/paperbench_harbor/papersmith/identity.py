@@ -2,7 +2,7 @@
 
 import json
 import re
-from urllib.parse import unquote, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 
 def identifier(value):
@@ -31,6 +31,16 @@ def identifier(value):
     return None
 
 
+def selection_identifier(value):
+    stable = identifier(value)
+    if stable:
+        return stable
+    parsed = urlsplit(value.removeprefix("canonical-url:"))
+    if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password:
+        return "canonical-url:" + urlunsplit(("https", parsed.netloc.lower(), parsed.path.rstrip("/") or "/", parsed.query, ""))
+    raise ValueError("fixed papers require DOI, arXiv or credential-free canonical HTTPS URLs")
+
+
 def canonical_identity(sources):
     aliases, observed, versions = set(), [], []
     records = json.loads((sources / "provenance.json").read_text())
@@ -47,6 +57,27 @@ def canonical_identity(sources):
             }
         )
         values = [(source["resolved_url"], False), (metadata["resolved_url"], False)]
+        # Only captured primary metadata, not a proposal URL or an arbitrary fetched page,
+        # establishes landing-page aliases. A separate source must have a matching identity
+        # or an observed primary-PDF acquisition relationship before its URLs become aliases.
+        primary_fields = {"citation_doi", "citation_arxiv_id", "dc.identifier", "dc:identifier",
+                          "dcterms.identifier", "prism:doi"}
+        primary_ids = {identifier(item["value"]) for item in metadata["canonical_metadata"]
+                       if item.get("name") in primary_fields and isinstance(item.get("value"), str)} - {None}
+        has_title = any(item.get("name") in {"citation_title", "dc.title"} and item.get("value")
+                        for item in metadata["canonical_metadata"])
+        if has_title and record.get("identity_binding") and metadata.get("acquisition", "https") == "https":
+            landing_urls = {metadata["url"], metadata["resolved_url"]}
+            values.extend((url, True) for url in landing_urls)
+            pdf_urls = {urljoin(metadata["resolved_url"], item["value"])
+                        for item in metadata["canonical_metadata"]
+                        if item.get("name") == "citation_pdf_url" and isinstance(item.get("value"), str)}
+            source_ids = {identifier(item["value"]) for item in source.get("canonical_metadata", [])
+                          if item.get("name") in primary_fields and isinstance(item.get("value"), str)} - {None}
+            if source.get("acquisition") == "https" and (source["sha256"] == metadata["sha256"]
+                    or source["resolved_url"] in landing_urls | pdf_urls
+                    or primary_ids.intersection(source_ids)):
+                values.extend((source[key], True) for key in ("url", "resolved_url"))
         for item in metadata["canonical_metadata"]:
             if item.get("name") in {
                 "citation_doi",
@@ -89,7 +120,7 @@ def canonical_identity(sources):
                 observed.append(value)
             if canonical:
                 parsed = urlsplit(value)
-                if parsed.scheme in {"https", "http"} and parsed.hostname and not parsed.username:
+                if parsed.scheme in {"https", "http"} and parsed.hostname and not parsed.username and not parsed.password:
                     normalized = urlunsplit(
                         (
                             "https",

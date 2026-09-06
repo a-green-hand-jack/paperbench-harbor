@@ -1,7 +1,10 @@
 """Four phases, three independent reviews, and hash-bound local delivery."""
 
+import ast
+import csv
 import fcntl
 import html
+import io
 import json
 import mimetypes
 import re
@@ -46,10 +49,12 @@ from .integrity import (
 )
 from .metadata import SourceMetadata
 from .network import retrieve
+from .operations import OperationalError, classify
+from .operations import run as run_process
 from .oracle import Oracle, compile_oracle
 from .oracle import render as render_oracle
 from .runtime import call, event
-from .schema import Materials, Proposal, Review
+from .schema import Materials, Proposal, Review, ScientificContract
 
 ORDER = ("proposal", "gate1", "materials", "gate2", "convert", "gate3", "deliver")
 MODEL = "openai/gpt-5.6-terra"
@@ -78,6 +83,7 @@ GATES = {
         "answer_isolation",
     ),
     "gate3": (
+        "template_compilation",
         "ground_truth_packaging",
         "oracle",
         "layout",
@@ -92,31 +98,70 @@ GATES = {
 }
 
 
+GATES = {gate: (*dimensions, "locked_objective", "item_coverage", "asset_rights", "identifier_policy")
+         for gate, dimensions in GATES.items()}
+
+
 def read(path):
     return json.loads(path.read_text())
 
 
 def implementation(stage):
-    paths = [
-        Path(__file__),
-        Path(__file__).with_name("schema.py"),
-        Path(__file__).with_name("integrity.py"),
-        Path(__file__).with_name("ground_truth.py"),
-        Path(__file__).with_name("oracle.py"),
-    ]
-    if stage == "proposal":
-        paths.append(Path(__file__).with_name("network.py"))
-        paths.append(Path(__file__).with_name("identity.py"))
-        paths.append(Path(__file__).with_name("metadata.py"))
-    if stage in {"proposal", "materials", "convert", "gate1", "gate2", "gate3"}:
-        paths.append(Path(__file__).with_name("runtime.py"))
+    return fingerprint(dependency_manifest(stage))
+
+
+def dependency_manifest(stage):
+    """Match dependencies to phase code, including generation-time schema helpers."""
+    helpers = {
+        "proposal": ("fetch_sources", "import_sources", "import_source_cache"),
+        "materials": ("check_materials",),
+        "convert": ("convert", "check_materials", "check_ground_truth_packaging"),
+        "deliver": ("check_ground_truth_packaging",),
+    }
+    modules = {
+        "proposal": ("network", "identity", "metadata", "ground_truth"),
+        "materials": (), "gate1": ("ground_truth",), "gate2": ("ground_truth",),
+        "convert": ("oracle", "ground_truth"), "gate3": ("acceptance", "oracle", "ground_truth"),
+        "deliver": ("acceptance", "ground_truth"),
+    }
+    tree = ast.parse(Path(__file__).read_text())
+    selected = {}
+
+    class PhaseCode(ast.NodeTransformer):
+        def visit_If(self, node):
+            test = ast.unparse(node.test)
+            phase = next((p for p in ("proposal", "materials", "convert") if test == f"stage == '{p}'"), None)
+            if test == "stage in GATES":
+                phase = stage if stage in GATES else "reviews"
+                if stage == "deliver":
+                    selected["phase_body"] = ast.dump(ast.Module(body=node.orelse, type_ignores=[]))
+                node.orelse = [ast.Pass()]
+            if phase:
+                if phase == stage:
+                    selected["phase_body"] = ast.dump(ast.Module(body=node.body, type_ignores=[]))
+                node.body = [ast.Pass()]
+            return self.generic_visit(node)
+
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        if isinstance(node, ast.FunctionDef):
+            if node.name == "run":
+                selected["orchestration"] = ast.dump(PhaseCode().visit(node))
+            elif node.name in (*helpers.get(stage, ()), "inputs", "reusable", "dependency_manifest"):
+                selected[node.name] = ast.dump(node)
+    files = ["schema", "integrity", "identity", "operations", *modules[stage]]
+    if stage != "deliver":
+        files.extend(("runtime", "operations", "generation"))
+    result = {"version": 3, "stage": stage, "controller": selected,
+              "sources": {name + ".py": digest(Path(__file__).with_name(name + ".py")) for name in files},
+              "order": ORDER, "dimensions": GATES.get(stage)}
+    result["state_helper"] = digest(Path(__file__).resolve().parents[1] / "construction/core/state.py")
     if stage in {"convert", "gate3", "deliver"}:
-        paths.append(TEMPLATES)
         package = Path(__file__).resolve().parents[1]
-        paths.extend([package / "common/task_contract.py", package / "adapters/core/convert.py"])
-    if stage in {"gate3", "deliver"}:
-        paths.append(Path(__file__).with_name("acceptance.py"))
-    return fingerprint([digest(p) for p in paths])
+        result["common"] = {name: digest(package / name) for name in (
+            "common/templates", "common/task_contract.py", "adapters/core/convert.py")}
+    return result
 
 
 def import_sources(source, destination):
@@ -186,7 +231,9 @@ def fetch_sources(proposal, destination, imported, cache=None):
         for label, url in queue:
             retrieved_at = time.time()
             cache_origin = None
+            acquisition = "https"
             if label == source.id and source.local_path:
+                acquisition = "local_import"
                 local = contained(imported, imported / source.local_path)
                 if not local.is_file():
                     raise ValueError("local source is outside the imported evidence")
@@ -199,6 +246,7 @@ def fetch_sources(proposal, destination, imported, cache=None):
                     (r for r in cache_records if url in {r["url"], r["resolved_url"]}), None
                 )
                 if cached:
+                    acquisition = cached.get("acquisition", "https" if cached["role"] in {"metadata", "license"} else "unverified_legacy_cache")
                     raw_cache = contained(cache, cache / (cached["id"] + ".bin"))
                     if digest(raw_cache) != cached["sha256"]:
                         raise ValueError("source cache hash mismatch")
@@ -234,7 +282,7 @@ def fetch_sources(proposal, destination, imported, cache=None):
             text_path = destination / f"{label}.txt"
             if data.startswith(b"%PDF"):
                 shutil.copyfile(raw, destination / f"{label}.pdf")
-                subprocess.run(
+                run_process(
                     ["pdftotext", "-layout", str(raw), str(text_path)],
                     check=True,
                     stdout=subprocess.DEVNULL,
@@ -282,6 +330,7 @@ def fetch_sources(proposal, destination, imported, cache=None):
                 "text_sha256": digest(text_path),
                 "retrieved_at": retrieved_at,
                 "reused_from": cache_origin,
+                "acquisition": acquisition,
                 "response_headers": headers,
                 "canonical_metadata": metadata.records,
             }
@@ -414,7 +463,19 @@ def check_materials(materials, sources):
     manifest = {s["id"]: s for s in read(sources / "manifest.json")}
     source_catalog = read(sources / "source-support.json")
     root = sources.parents[3]
-    for item in [*materials.files, *materials.requirements]:
+    table_paths = {f"tables/{t.id}.{extension}" for t in materials.tables for extension in ("csv", "json")}
+    if table_paths.intersection(paths) or any(p.startswith("template/") or p in {"contract.json", "asset-rights.json"} for p in paths):
+        raise ValueError("table exports, contract and template/ are controller-owned paths")
+    public_paths = set(paths) | table_paths | {"template/main.tex", "template/references.bib"}
+    if any(f.role == "template" for f in materials.files):
+        raise ValueError("use the controller's real public TeX template, not a Markdown substitute")
+    for table in materials.tables:
+        if table.original_image and table.original_image not in paths:
+            raise ValueError("original table image must name an actual public asset")
+        if table.original_image and not any(f.path == table.original_image and f.copy_source and f.role == "figure" for f in materials.files):
+            raise ValueError("original table image must be an authentic copied figure asset, not a generated description")
+    for item in [*materials.files, *materials.requirements, *materials.items, *materials.tables,
+                 *(cell for table in materials.tables for row in table.rows for cell in row)]:
         for support in item.support:
             if support.source not in manifest:
                 raise ValueError("unknown evidence source")
@@ -430,10 +491,21 @@ def check_materials(materials, sources):
                 if digest(path) != anchor["sha256"]:
                     raise ValueError("source-support hash mismatch")
                 located_quote(path, anchor["locator"], anchor["quote"])
+                if hasattr(item, "value") and item.value and anchor["locator"]["kind"] != "asset" and item.value not in anchor["quote"]:
+                    raise ValueError("table cell value does not occur in selected source anchor; choose an exact cell-support anchor")
             else:
                 bind_quote(sources / f"{support.source}.txt", support.quote)
-        if hasattr(item, "public_paths") and not set(item.public_paths) <= set(paths):
+                if hasattr(item, "value") and item.value and item.value not in support.quote:
+                    raise ValueError("table cell value does not occur in source-support quote")
+        if hasattr(item, "public_paths") and not set(item.public_paths) <= public_paths:
             raise ValueError("writing requirement has no actual public support path")
+        if getattr(item, "disposition", None) in {"include", "substitute"} and not item.public_paths:
+            raise ValueError("included/substituted source item requires public support")
+    included_tables = {i.id for i in materials.items if i.kind == "table" and i.disposition in {"include", "substitute"}}
+    if included_tables != {t.id for t in materials.tables}:
+        raise ValueError("each included/substituted table requires matching structured table ID")
+    if not {"figure", "table", "supplement", "method", "claim", "hypothesis", "interpretation", "limitation", "context", "reference"} <= {i.kind for i in materials.items}:
+        raise ValueError("inventory every scientific dimension; record evidenced non-applicability rather than silently omit it")
     for item in materials.files:
         if any(
             word in item.path.lower() for word in ("private", "ground_truth", "oracle", "answer")
@@ -448,7 +520,7 @@ def check_materials(materials, sources):
     return materials
 
 
-def convert(materials, sources, task):
+def convert(materials, sources, task, contract):
     check_materials(materials, sources)
     validate_ground_truth(sources / "ground_truth")
     references = "\n".join(f.content for f in materials.files if f.role == "references")
@@ -475,6 +547,45 @@ def convert(materials, sources, task):
             shutil.copyfile(sources / f"{item.copy_source}.bin", target)
         else:
             target.write_text(item.content)
+    for table in materials.tables:
+        directory = public / "tables"
+        directory.mkdir(exist_ok=True)
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(table.columns)
+        writer.writerows([[cell.value for cell in row] for row in table.rows])
+        (directory / f"{table.id}.csv").write_text(output.getvalue())
+        catalog = read(sources / "source-support.json")
+        anchors = {}
+        for support in [*table.support, *(s for row in table.rows for cell in row for s in cell.support)]:
+            anchor = catalog[support.evidence_id] if support.evidence_id else bind_quote(sources / f"{support.source}.txt", support.quote)
+            key = support.evidence_id or fingerprint(support.model_dump())
+            anchors[key] = {"source": support.source, "sha256": anchor["sha256"], "locator": anchor["locator"]}
+        atomic_json(directory / f"{table.id}.json", {**table.model_dump(), "source_anchors": anchors})
+        parsed = list(csv.reader(io.StringIO((directory / f"{table.id}.csv").read_text())))
+        if parsed != [table.columns, *[[c.value for c in row] for row in table.rows]]:
+            raise ValueError("table CSV/JSON mechanical consistency failed")
+    template = public / "template"
+    template.mkdir()
+    shutil.copyfile(TEMPLATES / "papersmith_main.tex", template / "main.tex")
+    bibliography = "\n".join(f.content for f in materials.files if f.role == "references" and "@" in f.content)
+    if not bibliography or not bib_keys:
+        raise ValueError("public materials require real BibTeX references, not only citation mappings")
+    safe_bibliography = re.sub(r"\\[&%_#$\{\}]", "", bibliography)
+    if "\\" in safe_bibliography or "^^" in bibliography or re.search(r"@\s*preamble\b", bibliography, re.IGNORECASE) or any(not re.fullmatch(r"[A-Za-z0-9:_-]+", key) for key in bib_keys):
+        raise ValueError("public BibTeX must contain plain bibliographic data, safe citation keys and no executable TeX/preambles; use plain text spellings")
+    (template / "references.bib").write_text(bibliography)
+    public_contract = contract.model_dump(exclude={"selection", "papers", "replacement"})
+    atomic_json(public / "contract.json", public_contract)
+    rights = [{"path": f.path, "rights": f.rights, "attribution": f.attribution} for f in materials.files]
+    rights.extend({"path": f"tables/{t.id}.{extension}", "rights": t.rights, "attribution": t.attribution}
+                  for t in materials.tables for extension in ("csv", "json"))
+    rights.extend([
+        {"path": "template/main.tex", "rights": "New controller-authored generic starter supplied for task use; no source manuscript or third-party template copied", "attribution": "PaperSmith generic starter"},
+        {"path": "template/references.bib", "rights": "\n".join(f.rights for f in materials.files if f.role == "references"), "attribution": "\n".join(f.attribution for f in materials.files if f.role == "references")},
+    ])
+    atomic_json(public / "asset-rights.json", rights)
+    atomic_json(dirs.tests_private / "coverage.json", [i.model_dump() for i in materials.items])
     (dirs.tests_private / "reference_notes.md").write_text(
         "# Model-Generated Reference Notes\n\nNot original ground truth or an authoritative manuscript.\n\n"
         + materials.private_reference
@@ -509,8 +620,11 @@ def convert(materials, sources, task):
     )
     (dirs.tests / "texmf").mkdir()
     (dirs.tests / "texmf/.keep").touch()
-    instruction = materials.writing_brief + "\n\n## Materials\n"
+    instruction = "## Locked Scientific Contract\n" + json.dumps(public_contract, indent=2)
+    instruction += "\n\n" + materials.writing_brief + "\n\n## Materials\n"
     instruction += "\n".join(f"- `/workspace/materials/{p.path}`" for p in materials.files)
+    instruction += "\n- `/workspace/materials/template/main.tex` and `template/references.bib`: genuine starter, not a completed submission.\n- `/workspace/materials/contract.json` and `asset-rights.json`.\n"
+    instruction += "\n".join(f"- `/workspace/materials/tables/{t.id}.csv` and `.json`: exact cells, caption, units, notes, missing-value and precision policies." for t in materials.tables)
     instruction += "\n\n## Writing Requirements\n"
     for requirement in materials.requirements:
         instruction += (
@@ -552,9 +666,10 @@ def convert(materials, sources, task):
         {
             "schema_version": 2,
             "benchmark": "PaperSmith",
+            "contract": contract.model_dump(),
             "sources_sha256": digest(sources),
             "materials_sha256": fingerprint(materials.model_dump()),
-            "public_files": {p.path: digest(public / p.path) for p in materials.files},
+            "public_files": {p.relative_to(public).as_posix(): digest(p) for p in public.rglob("*") if p.is_file()},
             "ground_truth_sha256": digest(sources / "ground_truth"),
         },
     )
@@ -615,6 +730,7 @@ def inputs(request, candidate, stage):
     return fingerprint(
         {
             "request": {**request, "count": candidate.get("scope_count", request["count"])},
+            "selected_paper": candidate.get("selected_paper"),
             "imported_sha256": digest(Path(request["imported"])),
             "source_cache_sha256": digest(Path(request["imported"]).parent / "source-cache"),
             "implementation": implementation(stage),
@@ -631,6 +747,8 @@ def inputs(request, candidate, stage):
 def reusable(request, candidate, stage):
     entry = candidate["stages"].get(stage, {})
     if entry.get("evidence_version") != 2:
+        return False
+    if "contract" not in request or entry.get("contract_sha256") != fingerprint(request["contract"]):
         return False
     if stage == "gate3" and entry.get("status") == "passed":
         try:
@@ -653,6 +771,16 @@ def reusable(request, candidate, stage):
         and entry.get("input_sha256") == inputs(request, candidate, stage)
         and entry.get("output_sha256") == digest(Path(entry["path"]))
     )
+
+
+def status(root):
+    state = load_state(root, ORDER)
+    return {"workspace": str(root), "status": state["status"],
+            "verification": "checkpoint snapshot only; run validate for authoritative evidence",
+            "target_count": state["request"]["count"],
+            "task_ready_count": sum(bool(c["stages"].get("deliver", {}).get("status") == "passed" and not c.get("excluded")) for c in state["candidates"]),
+            "blocked_reason": state.get("blocked_reason"), "checkpoint": str(root / "run.json"),
+            "candidates": [{"id": c["id"], "phases": {s: e["status"] for s, e in c["stages"].items()}} for c in state["candidates"]]}
 
 
 def validate(root):
@@ -686,6 +814,9 @@ def validate(root):
                 raise ValueError("review/build sessions were reused")
             sources = Path(candidate["stages"]["proposal"]["path"]) / "sources"
             identity = canonical_identity(sources)
+            contract = ScientificContract.model_validate(state["request"]["contract"])
+            if contract.selection == "fixed" and (candidate.get("selected_paper") not in contract.papers or candidate["selected_paper"] not in identity["aliases"]):
+                raise ValueError("canonical identity outside locked fixed allowlist")
             if read(sources / "identity.json") != identity:
                 raise ValueError("paper identity differs from retrieved metadata")
             if admitted_aliases.intersection(identity["aliases"]):
@@ -736,7 +867,12 @@ def run(root, count=None):
                 "terminal evidence integrity failure; inspect papersmith validate before resuming"
             )
         request = state["request"]
+        if "contract" not in request:
+            raise ValueError("historical workspace has no locked scientific contract; preserve it and create a new run")
+        contract = ScientificContract.model_validate(request["contract"])
         if count is not None:
+            if contract.selection == "fixed" and count > len(contract.papers):
+                raise ValueError("target exceeds the fixed canonical allowlist")
             if count < request["count"]:
                 raise ValueError("resume --count may extend the target, never shrink its scope")
             if count > request["count"]:
@@ -766,7 +902,7 @@ def run(root, count=None):
                 acceptance.check_service()
             except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
                 state["blocked_reason"] = {
-                    "phase": "gate3", "classification": "acceptance_backend_unavailable",
+                    "phase": "gate3", "classification": "acceptance", "reason_code": "backend_unavailable",
                     "backend": acceptance.backend(), "error": type(error).__name__,
                     "remedy": "Restore host Docker/Harbor or use the matching docker/e2e.sh supervisor, then resume.",
                 }
@@ -788,6 +924,12 @@ def run(root, count=None):
                         "feedback": "",
                         "scope_count": request["count"],
                     }
+                    if contract.selection == "fixed":
+                        used = {c.get("selected_paper") for c in state["candidates"]}
+                        remaining = [p for p in contract.papers if p not in used]
+                        if not remaining:
+                            raise ValueError("fixed paper selection exhausted; replacements are forbidden")
+                        candidate["selected_paper"] = remaining[0]
                     state["candidates"].append(candidate)
                 for stage in ORDER:
                     if reusable(request, candidate, stage):
@@ -813,12 +955,17 @@ def run(root, count=None):
                     attempt.mkdir(parents=True)
                     entry = {
                         "evidence_version": 2,
+                        "contract_sha256": fingerprint(request["contract"]),
+                        "scope_count": candidate["scope_count"],
+                        "selected_paper": candidate.get("selected_paper"),
                         "status": "running",
                         "path": str(attempt),
                         "started_at": time.time(),
                         "input_sha256": inputs(request, candidate, stage),
                     }
                     candidate["stages"][stage] = entry
+                    atomic_json(attempt / "dependencies.json", dependency_manifest(stage))
+                    atomic_json(attempt / "locked-contract.json", {"contract": request["contract"], "count": candidate["scope_count"]})
                     save()
                     event(
                         root,
@@ -832,9 +979,11 @@ def run(root, count=None):
                         proposal_dir = Path(stages["proposal"]["path"])
                         sources = proposal_dir / "sources"
                         context = (
+                            "LOCKED CONTRACT, not negotiable by a builder or reviewer: " + contract.model_dump_json() + "\n"
+                            +
                             f"User request: {request['prompt']}\n"
-                            "That request selects sources. The deliverable is a Harbor WRITING TASK for a downstream writer, not a paper-recommendation report. Evaluate sufficiency for the declared writing brief. Original manuscripts and private reference prose remain private; accurate bibliographic metadata for citations and license attribution is allowed.\n"
-                            f"The controller handles a batch target of {request['count']} admitted tasks. This phase concerns ONLY ONE paper for {candidate['id']}. Do not require additional papers in this per-candidate proposal; the controller replenishes and delivers the other tasks.\n"
+                            "That request selects sources. The deliverable is a Harbor WRITING TASK, not a paper-recommendation report. Evaluate sufficiency against the LOCKED objective, not a builder-narrowed brief. Identified mode permits accurate source bibliography; anonymized mode follows its explicit lawful attribution policy. Original manuscripts and private reference prose remain private.\n"
+                            f"Locked candidate scope: {candidate['scope_count']} admitted tasks. This phase concerns ONLY ONE paper for {candidate['id']}; exact selected identity: {candidate.get('selected_paper', 'discovery')}. Replacements follow the locked selection policy.\n"
                             f"User-supplied scientific sources, if any: {root / 'imported'}. "
                             "You may select their relative filenames as local_path; URLs still record "
                             "original public provenance and license evidence. Never execute imported code.\n"
@@ -892,7 +1041,9 @@ def run(root, count=None):
                                 context
                                 if local
                                 else (
-                                    f"Public paper-selection request: {request['prompt']}\n"
+                                    "Locked contract: " + contract.model_dump_json() + "\n"
+                                    + f"Candidate scope count: {candidate['scope_count']}; exact identity: {candidate.get('selected_paper', 'discovery')}.\n"
+                                    + f"Public paper-selection request: {request['prompt']}\n"
                                     "This is public discovery only. No workspace files are available. "
                                     "If retrying, provide a schema-correct proposal with accessible, exact metadata and license evidence.\n"
                                 )
@@ -966,6 +1117,8 @@ def run(root, count=None):
                                     "duplicate paper from canonical metadata/source; discover a new paper"
                                 )
                             candidate["identity"] = identity["identity"]
+                            if contract.selection == "fixed" and candidate["selected_paper"] not in identity["aliases"]:
+                                raise ValueError("canonical identity differs from exact selected paper; replacement forbidden")
                         elif stage == "materials":
                             result, _receipt = call(
                                 root,
@@ -981,8 +1134,12 @@ def run(root, count=None):
                                 "Judge sufficiency for WRITING, not full experiment reproduction. For each requirement "
                                 "name public support files. Explain coverage/non-applicability of methods, results, "
                                 "figures, tables, references, context. Original paper and full reference prose stay "
-                                "private. Supply accurate bibliographic metadata for the focal source, with a usable BibTeX entry or declared citation-key mapping; do not invent bibliographic details or expose the full source manuscript/private reference prose. Inspect publisher figure/table assets and cite their S catalog IDs for visual support; preserve and explain source inconsistencies instead of silently correcting numbers. A blank article template is sufficient, no domain-specific template "
-                                "required. No fake evidence. copy_source can only copy a data or figure source id.",
+                                "private. Supply accurate bibliography under the selected identifier policy, using real BibTeX entries with plain text values and safe citation keys. Escape reserved punctuation with a backslash (ampersand, percent, underscore, hash, dollar and literal braces); no other backslash commands or preambles. Use plain spellings for accents. Do not invent bibliographic details or expose the full source manuscript/private reference prose. Inspect publisher figure/table assets and cite their S catalog IDs for visual support; preserve and explain source inconsistencies instead of silently correcting numbers. A blank article template is sufficient, no domain-specific template "
+                                "required; the controller supplies template/main.tex and references.bib, so do not emit template files. Inventory item-level dispositions for every relevant table, figure, supplement, method, claim, hypothesis, authors interpretation and limitation. Include/substitute requires public support; exclude/unavailable needs a specific evidenced reason. Each included table needs matching items/tables ID, exact rectangular string cells with per-cell support, caption, column units, notes, missing-value and precision policies, and original image when legally available. CSV/JSON exports are controller-owned. Each file needs actual rights and attribution; do not infer third-party rights from article rights. "
+                                + ("The locked full_manuscript task may not be narrowed to a summary. "
+                                   if contract.task_kind == "full_manuscript" else
+                                   "The user deliberately selected summary: support that scientific summary, without imposing a full manuscript. ")
+                                + "No fake evidence. copy_source can only copy a data or figure source id.",
                                 Materials,
                                 read_paths=(proposal_dir / "response.json", sources),
                             )
@@ -991,11 +1148,40 @@ def run(root, count=None):
                             materials = Materials.model_validate(
                                 read(Path(stages["materials"]["path"]) / "response.json")
                             )
-                            convert(materials, sources, attempt / "task")
-                            convert(materials, sources, attempt / "determinism")
+                            convert(materials, sources, attempt / "task", contract)
+                            convert(materials, sources, attempt / "determinism", contract)
+                            template_proof = attempt / "template-proof"
+                            template_proof.mkdir()
+                            shutil.copytree(attempt / "task/environment/materials/template", template_proof / "manuscript")
+                            compile_oracle(template_proof, attempt / "template-build", template_only=True)
                             oracle_attempt = attempt / "oracle"
-                            oracle_attempt.mkdir()
-                            oracle, _receipt = call(
+                            oracle_input = fingerprint({"instruction": digest(attempt / "task/instruction.md"),
+                                                        "public": digest(attempt / "task/environment/materials"),
+                                                        "model": request["model"],
+                                                        "schema": Oracle.model_json_schema()})
+                            recovered_oracle = None
+                            for historical in reversed(candidate["history"]):
+                                if historical["phase"] != "convert" or historical.get("classification") not in {"compile", "interrupted"} or historical.get("output_sha256") != digest(Path(historical["path"])):
+                                    continue
+                                prior_oracle = Path(historical.get("oracle_reuse", str(Path(historical["path"]) / "oracle")))
+                                if (prior_oracle / "input.json").is_file() and read(prior_oracle / "input.json").get("sha256") == oracle_input:
+                                    receipt = oracle_receipt(root, request, historical)
+                                    if receipt.get("status") == "completed":
+                                        recovered_oracle = prior_oracle
+                                        break
+                            if recovered_oracle:
+                                oracle_attempt = recovered_oracle
+                                oracle = Oracle.model_validate(read(oracle_attempt / "response.json"))
+                                entry["oracle_reuse"] = str(oracle_attempt)
+                                save()
+                                event(root, "oracle_response_reused", path=str(oracle_attempt), scientific_approval=False)
+                            else:
+                                oracle_attempt.mkdir()
+                                atomic_json(oracle_attempt / "input.json", {"sha256": oracle_input,
+                                            "instruction_sha256": digest(attempt / "task/instruction.md"),
+                                            "public_materials_sha256": digest(attempt / "task/environment/materials"),
+                                            "model": request["model"]})
+                                oracle, _receipt = call(
                                 root, oracle_attempt, request["model"], "oracle builder",
                                 "Author a scientifically meaningful, complete new reference manuscript satisfying EVERY requirement in "
                                 + str(attempt / "task/instruction.md")
@@ -1008,7 +1194,7 @@ def run(root, count=None):
                                 + ". Recheck the public submission contract. No private error text or review feedback is provided.",
                                 Oracle,
                                 read_paths=(attempt / "task/instruction.md", attempt / "task/environment/materials"),
-                            )
+                                )
                             for name in ("task", "determinism"):
                                 render_oracle(oracle, materials, attempt / name, attempt / name / "solution")
                             if digest(attempt / "task") != digest(attempt / "determinism"):
@@ -1020,13 +1206,15 @@ def run(root, count=None):
                             atomic_json(
                                 attempt / "checks.json",
                                 {"deterministic": True, "task_sha256": digest(attempt / "task"),
+                                 "template_proof": str(template_proof / "validation.json"),
+                                 "template_proof_sha256": digest(template_proof),
                                  "scope": "fixed materials and fixed synthetic oracle response render identical task sources; compiled preview reused byte-for-byte",
                                  "oracle_response_sha256": digest(oracle_attempt / "response.json"),
                                  "oracle_receipt_sha256": digest(oracle_attempt / "receipt.json"),
                                  "ground_truth_sha256": digest(sources / "ground_truth")},
                             )
                         elif stage in GATES:
-                            review_paths = [proposal_dir / "response.json", sources]
+                            review_paths = [proposal_dir / "response.json", sources, attempt / "locked-contract.json"]
                             if stage in {"gate2", "gate3"}:
                                 review_paths.append(
                                     Path(stages["materials"]["path"]) / "response.json"
@@ -1037,13 +1225,13 @@ def run(root, count=None):
                                     acceptance.accept(root, candidate, conversion / "task", attempt)
                                 except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
                                     state["blocked_reason"] = {
-                                        "phase": "gate3", "classification": "runtime_acceptance",
+                                        "phase": "gate3", "classification": "acceptance", "reason_code": "runtime_acceptance",
                                         "error": str(error), "path": str(attempt),
                                         "remedy": "Inspect trusted Harbor jobs/receipts, restore the backend, then resume; successful unchanged subjobs are reused.",
                                     }
                                     raise acceptance.AcceptanceBlocked("gate3 runtime acceptance blocked") from error
                                 review_paths.extend(
-                                    conversion / p for p in ("task", "determinism", "checks.json")
+                                    conversion / p for p in ("task", "determinism", "checks.json", "template-proof")
                                 )
                                 review_paths.append(attempt / "acceptance.json")
                             evidence = [str(path) for path in review_paths]
@@ -1107,6 +1295,7 @@ def run(root, count=None):
                                 + json.dumps(mandatory)
                                 + ". Publisher binding anchors (select identity_binding IDs for sources, license_binding IDs for licenses; also cite a provenance.json ID for licenses): "
                                 + json.dumps(bindings)
+                                + f". Directly read {attempt / 'locked-contract.json'} and cite its catalog IDs under locked_objective. Assess the full locked scientific objective, not a narrower builder brief. Template compilation is a separate proof and never a completed-submission pass. "
                                 + ". Every checked dimension requires relevant selected IDs. No placeholder acceptances. Accepting any gate requires completed direct read tool calls for the proposal sources/ground_truth/paper.pdf AND paper.txt, not just their catalog entries. Gate3 also requires a completed direct read of task/solution/preview.pdf. "
                                 "For gate1 inspect EVERY source's identity/license bindings; the controller parsed real publisher tags, not a model-authored quote. These extractions are not approvals. Compare "
                                 "bindings against the actual publisher/repository metadata. Judge authority, applicable "
@@ -1136,6 +1325,11 @@ def run(root, count=None):
                                 entry["output_sha256"] = digest(attempt)
                                 candidate["feedback"] = result.model_dump_json()
                                 if result.decision == "reject":
+                                    if contract.selection == "fixed":
+                                        state["blocked_reason"] = {"phase": stage, "classification": "scientific",
+                                                                   "path": str(attempt), "remedy": "Inspect the fixed-paper rejection; no substitute is authorized"}
+                                        save()
+                                        raise OperationalError("scientific", "fixed paper rejected; replacement forbidden, inspect review before resuming")
                                     candidate["excluded"] = result.model_dump()
                                 else:
                                     repair = (
@@ -1145,6 +1339,7 @@ def run(root, count=None):
                                             f.classification in {"source", "license"}
                                             for f in result.findings
                                         )
+                                        else "convert" if all(f.classification == "conversion" for f in result.findings)
                                         else "materials"
                                     )
                                     candidate["stages"][repair]["status"] = "repair"
@@ -1166,6 +1361,21 @@ def run(root, count=None):
                                     "task": str(delivered),
                                     "reviews": {g: stages[g] for g in GATES},
                                     "identity": canonical_identity(sources)["identity"],
+                                    "contract": contract.model_dump(),
+                                    "implementation": {s: implementation(s) for s in ORDER},
+                                    "package_version": version("paperbench-harbor"),
+                                    "installation_identity": acceptance.installation_identity(),
+                                    "image_identity": read(Path(stages["gate3"]["path"]) / "acceptance.json")["request"].get("controller_image_id"),
+                                    "artifact_index": {
+                                        "original_pdf": str(delivered / "tests/private/ground_truth/paper.pdf"),
+                                        "original_availability": str(delivered / "tests/private/ground_truth/manifest.json"),
+                                        "public_materials": str(delivered / "environment/materials"),
+                                        "coverage": str(delivered / "tests/private/coverage.json"),
+                                        "oracle_preview": str(delivered / "solution/preview.pdf"),
+                                        "template_proof": str(Path(stages["convert"]["path"]) / "template-proof/validation.json"),
+                                        **{g: str(Path(stages[g]["path"]) / "review-bindings.json") for g in GATES},
+                                        "oracle_nop": str(Path(stages["gate3"]["path"]) / "acceptance.json"),
+                                    },
                                     "publication": "not_requested",
                                      "writer_trial": "not_requested",
                                      "harbor_oracle_nop_acceptance": read(Path(stages["gate3"]["path"]) / "acceptance.json"),
@@ -1202,6 +1412,7 @@ def run(root, count=None):
                         }
                         entry.update(
                             status="failed",
+                            classification=classify(error),
                             finished_at=time.time(),
                             error=detail,
                             output_sha256=digest(attempt),
@@ -1219,7 +1430,8 @@ def run(root, count=None):
                         if count >= 3:
                             state["blocked_reason"] = {
                                 "phase": stage,
-                                "classification": "repeated_mechanical_validation",
+                                "classification": classify(error),
+                                "reason_code": "repeated_mechanical_validation",
                                 "attempts": count,
                                 "error": detail,
                                 "path": str(attempt),
@@ -1239,7 +1451,7 @@ def run(root, count=None):
                             "blocked_reason",
                             {
                                 "phase": phase,
-                                "classification": state["status"],
+                                "classification": classify(error),
                                 "error": type(error).__name__,
                                 "path": record["path"],
                                 "remedy": "Inspect this attempt's receipt and source access; fix infrastructure/controller before resuming.",
@@ -1249,6 +1461,7 @@ def run(root, count=None):
                             status=state["status"],
                             finished_at=time.time(),
                             error=type(error).__name__,
+                            classification=classify(error),
                             output_sha256=digest(Path(record["path"])),
                         )
             # Raw provider/network exceptions can include URLs or credentials: retain only class.

@@ -4,18 +4,22 @@ import hashlib
 import json
 import os
 import re
-import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 
-from paperbench_harbor.construction.core.state import atomic_json
+from paperbench_harbor.construction.core.state import atomic_json, fingerprint
 
 from .integrity import contained
+from .operations import OperationalError, classify, diagnostic, terminate
 
 
-class ModelAccessError(RuntimeError):
+class ModelAccessError(OperationalError):
     """A required artifact could not be read; never turn this into scientific repair."""
+
+    def __init__(self, message):
+        super().__init__("access", message)
 
 
 def event(root: Path, event_type: str, **fields):
@@ -64,7 +68,18 @@ def call(
         external[str(directory)] = "allow"
         external[str(directory / "**")] = "allow"
     policy = {"network_tools": network, "read_paths": [str(path) for path in read_paths]}
+    atomic_json(attempt / "read-scope.json", {"role": role, "policy": policy})
+    state = json.loads((root / "run.json").read_text())
+    candidate_id = attempt.relative_to(root).parts[1]
+    candidate = next(c for c in state["candidates"] if c["id"] == candidate_id)
+    locked_contract = state["request"]["contract"]
+    if role == "oracle builder":
+        locked_contract = {k: v for k, v in locked_contract.items() if k not in {"selection", "papers", "replacement"}}
+    request_scope = {"contract": locked_contract, "count": candidate["scope_count"]}
     output_contract = (
+        "Locked user scientific objective and candidate scope, never narrow implicitly: "
+        + json.dumps(request_scope) + "\n"
+        +
         f"You are PaperSmith's {role}. Complete the independent evidence assessment requested "
         "by the user. Return ONLY one JSON object, no fences or prose report, matching the "
         "exact property names and constraints in this schema:\n"
@@ -127,19 +142,37 @@ def call(
         "model": model,
         "role": role,
         "access_policy": policy,
+        "read_scope_sha256": hashlib.sha256((attempt / "read-scope.json").read_bytes()).hexdigest(),
+        "request_scope_sha256": fingerprint(request_scope),
         "request_sha256": hashlib.sha256((attempt / "request.txt").read_bytes()).hexdigest(),
         "artifact_reads": [],
     }
+    diagnostics = set()
+    stopped = threading.Event()
+
+    def drain():
+        for line in process.stderr:
+            diagnostics.add(diagnostic(line))
+
+    def pulse():
+        while not stopped.wait(10):
+            event(root, "model_liveness", role=role, pid=process.pid,
+                  elapsed_seconds=round(time.time() - started, 2), state="running")
+
+    threads = []
     try:
         process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             env=env,
             start_new_session=True,
         )
+        threads = [threading.Thread(target=drain, daemon=True), threading.Thread(target=pulse, daemon=True)]
+        for thread in threads:
+            thread.start()
         process.stdin.write(request)
         process.stdin.close()
         for line in process.stdout:
@@ -156,6 +189,7 @@ def call(
                 chunks.append(part.get("text", ""))
             if kind == "error":
                 failed = True
+                diagnostics.add(diagnostic(json.dumps(message)))
             if kind == "tool_use" and part.get("tool") == "read":
                 state = part.get("state", {})
                 requested = state.get("input", {}).get("filePath")
@@ -174,7 +208,7 @@ def call(
                             "permission" in error_text or "rule which prevents" in error_text
                         ):
                             receipt["tool_failure"] = {
-                                "classification": "required_artifact_read_failed",
+                                "classification": "access", "reason_code": "required_artifact_read_failed",
                                 "path": str(path),
                             }
                             raise ModelAccessError(
@@ -197,7 +231,8 @@ def call(
             provider_error=failed,
         )
         if code or failed or len(sessions) != 1:
-            raise RuntimeError(
+            category = next((c for c in ("quota", "access", "network") if c in diagnostics), "deps")
+            raise OperationalError(category,
                 "OpenCode infrastructure/auth failure; inspect session in OpenCode; resume"
             )
         text = "\n".join(chunks).strip()
@@ -216,19 +251,15 @@ def call(
             response_sha256=hashlib.sha256((attempt / "response.json").read_bytes()).hexdigest(),
         )
     except BaseException as error:
-        if process is not None and process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+        if process is not None:
+            terminate(process)
         receipt.update(
             returncode=process.returncode if process is not None else None,
             sessions=sorted(sessions),
             provider_error=failed,
             status="interrupted" if isinstance(error, KeyboardInterrupt) else "failed",
             error=type(error).__name__,
+            classification=classify(error),
             response_sha256=hashlib.sha256((attempt / "response.json").read_bytes()).hexdigest()
             if (attempt / "response.json").is_file()
             else None,
@@ -236,6 +267,10 @@ def call(
         )
         raise
     finally:
+        stopped.set()
+        for thread in threads:
+            thread.join(timeout=2)
+        receipt["diagnostic_categories"] = sorted(diagnostics)
         receipt["elapsed_seconds"] = time.time() - started
         atomic_json(attempt / "receipt.json", receipt)
     return result, receipt

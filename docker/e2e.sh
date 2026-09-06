@@ -21,6 +21,10 @@ action=${1:-help}
 [ "$#" -eq 0 ] || shift
 managed=0
 case "$action" in run|resume) managed=1 ;; esac
+# Request description is image-only and must work without a host environment.
+for argument in "$@"; do
+    case "$argument" in --describe-request|--describe) managed=0; PAPERSMITH_DETACH=0 ;; esac
+done
 case "$action" in status|validate|doctor) PAPERSMITH_DETACH=0 ;; esac
 case "${PAPERSMITH_DETACH:-0}" in 0|1) ;; *) exit 2 ;; esac
 
@@ -48,7 +52,9 @@ case "$action" in
             'Optional: PAPERSMITH_IMAGE, PAPERSMITH_VOLUME_PREFIX.' \
             'run/resume automatically supervise host Harbor oracle/nop acceptance.' \
             'PAPERSMITH_DETACH=1 launches a nohup host supervisor and reports PID/log/state paths.' \
-            'PAPERSMITH_HOST_PYTHON: existing Harbor 0.22.0 venv Python (default: checkout .venv).' \
+            'PAPERSMITH_HOST_PYTHON: existing Python >=3.12 venv with compatible wheel dependencies (default: checkout .venv).' \
+            'Host environment is exclusively locked for the supervisor lifetime; concurrent runs fail before reinstall.' \
+            '--describe-request/--describe uses only the image, without a host venv or worker.' \
             'PAPERSMITH_ACCEPTANCE_STATE: private host evidence directory (default: XDG state).' \
             'PAPERSMITH_CONTAINER_NAME: optional Docker container name.' \
             'PAPERSMITH_NETWORK: bridge (default, network ALLOWED) or none (opt out).' \
@@ -78,8 +84,16 @@ esac
 if [ "$managed" = 1 ]; then
     host_python=${PAPERSMITH_HOST_PYTHON:-$repo/.venv/bin/python}
     [ -x "$host_python" ] || { printf '%s\n' 'Select an existing Harbor venv with PAPERSMITH_HOST_PYTHON.' >&2; exit 2; }
-    "$host_python" -c 'from importlib.metadata import version; assert version("harbor") == "0.22.0"'
+    unset PYTHONPATH PYTHONHOME
+    environment=$("$host_python" -I -c 'import pathlib,sys; assert sys.version_info >= (3,12), "Python >=3.12 required"; assert sys.prefix != sys.base_prefix, "Select an existing virtual environment"; print(pathlib.Path(sys.prefix).resolve())')
+    host_python="$environment/bin/python"
+    command -v flock >/dev/null
+    # Same lock as install.sh for its prefix/venv; acquire BEFORE wheel mutation.
+    exec 9>"$(dirname -- "$environment")/.papersmith-environment.lock"
+    flock -n 9 || { printf '%s\n' 'Host environment is in use; no packages were changed.' >&2; exit 2; }
+    export PAPERSMITH_ENV_LOCK_FD=9
     command -v uv >/dev/null
+    uv pip check --python "$host_python"
     umask 077
     mkdir -p "$acceptance_state/invocations"
     chmod 700 "$acceptance_state"
@@ -95,7 +109,9 @@ if [ "$managed" = 1 ]; then
         [ "$#" -eq 1 ] && [ -f "$1" ] && [ ! -L "$1" ] || {
             printf '%s\n' 'Image must supply exactly one regular wheel in this invocation.' >&2; return 1;
         }
+        "$host_python" -I "$repo/packaging/check_install.py" "$1"
         uv pip install --python "$host_python" --no-deps --reinstall "$1"
+        uv pip check --python "$host_python"
     }
     install_wheel
     host_bin=$(dirname -- "$host_python")

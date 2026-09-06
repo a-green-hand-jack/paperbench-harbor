@@ -5,7 +5,7 @@ ARG OPENCODE_VERSION=1.18.29
 ARG CODEX_VERSION=0.153.4
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git build-essential python3 python3-venv \
+    ca-certificates curl git build-essential python3 python3-venv util-linux \
     poppler-utils latexmk texlive-latex-extra texlive-fonts-recommended \
     texlive-science texlive-xetex texlive-luatex biber \
     && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 COPY pyproject.toml /opt/papersmith-dependencies.toml
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
-RUN python -c 'import subprocess,tomllib; p=tomllib.load(open("/opt/papersmith-dependencies.toml","rb"))["project"]; deps=p["dependencies"]+sum((p["optional-dependencies"][k] for k in ("datasets","harbor","sidecar")),[]); subprocess.check_call(["python","-m","pip","install","--no-cache-dir","uv","ruff",*deps])'
+RUN python -c 'import subprocess,tomllib; deps=tomllib.load(open("/opt/papersmith-dependencies.toml","rb"))["project"]["dependencies"]; subprocess.check_call(["python","-m","pip","install","--no-cache-dir",*deps])'
 COPY pyproject.toml README.md install.sh /opt/papersmith-build/
 COPY src /opt/papersmith-build/src
 COPY packaging /opt/papersmith-build/packaging

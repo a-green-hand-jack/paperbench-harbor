@@ -92,6 +92,17 @@ def configure_generation_schema(workspace=None):
             schema["oneOf"] = choices
 
     def materials(schema):
+        schema["properties"]["items"]["description"] = (
+            "Inventory every relevant source item, not just broad dimension summaries. Include all kinds: "
+            "figure, table, supplement, method, claim, hypothesis, interpretation, limitation, context, reference. "
+            "If a kind is absent, record evidenced non-applicability. Included/substituted table IDs must exactly "
+            "match tables IDs; generated CSV/JSON paths are tables/ID.csv and tables/ID.json."
+        )
+        schema["properties"]["tables"]["description"] = (
+            "Exact source table cells, each with its own support; column and units arrays and every row "
+            "have the same width. Preserve displayed precision, missing-value markers, caption and notes. "
+            "Original image must name a copied public figure when legally available; document actual availability."
+        )
         schema["properties"]["submission_sections"]["items"].update(
             type="string", minLength=3, pattern=r"^[A-Za-z0-9][A-Za-z0-9 .,:'()/?!-]*$"
         )
@@ -130,6 +141,8 @@ def configure_generation_schema(workspace=None):
         path = contained(workspace, Path(active["stages"]["materials"]["path"]) / "response.json")
         materials = Materials.model_validate_json(path.read_text())
         figures = [f.path for f in materials.files if f.role == "figure"]
+        tables = [t.id for t in materials.tables]
+        table_schema = {"items": {"properties": {"source_table": {"enum": tables}}}} if tables else {"maxItems": 0}
         figure_schema = (
             {
                 "items": {"properties": {"public_path": {"enum": figures}}},
@@ -143,7 +156,7 @@ def configure_generation_schema(workspace=None):
             {
                 "allOf": [
                     sections["items"],
-                    {"properties": {"heading": {"const": heading}, "figures": figure_schema}},
+                    {"properties": {"heading": {"const": heading}, "figures": figure_schema, "tables": table_schema}},
                 ]
             }
             for heading in materials.submission_sections
@@ -160,7 +173,9 @@ def configure_generation_schema(workspace=None):
         schema["properties"]["rows"]["description"] = (
             "Rectangular data rows only. Every row MUST have exactly len(columns) string cells. "
             "Do not add row labels outside the declared columns, ragged rows, or spanning cells. "
-            "Use an empty string for a missing cell; include units and notes in the caption."
+            "Copy exact columns and cell strings from the public table named by source_table, including "
+            "its actual missing-value markers and precision. Include every required public table; "
+            "the controller renders its public units and notes without inventing or changing them."
         )
 
     Material.model_config["json_schema_extra"] = material

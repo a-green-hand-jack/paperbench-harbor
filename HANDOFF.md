@@ -1,5 +1,104 @@
 # PaperSmith Handoff
 
+## FD9 Lifecycle Integration Verified
+
+The installer-held environment lock now survives detached `acceptance.launch`
+through explicit `pass_fds=(9,)`. The installed worker requires exactly the declared
+FD9, verifies its regular-file inode against the resolved environment's lock path
+and checks Linux exclusive FLOCK metadata. No explicit unlock is performed; the
+supervisor owns the inherited description until exit. Docker children close inherited
+descriptors. Process-start installed identity/protocol are frozen; the worker checks
+disk identity for changes instead of redefining its heartbeat identity.
+
+Current installed image: `paperbench-papersmith:contract-v3-fd9`.
+Image ID: `sha256:2aaf4170e1af6edd66e703eb1c281a65804f84b2009a736f2dbacd587ef2e26d`.
+Image wheel and independently rebuilt current-source wheel both SHA256:
+`7cb8164bb433b2c3d3a896dcd15f5cf6a07a1620c83c0ea084a1f3b49bbf5c75`.
+Installed package identity matches between the existing host venv and image:
+`37553504046fde08f3bfc5124ac0a60f96eb95183b1c2409012086e856d071a3`.
+
+Credential-free installed observations (network disabled, no model calls):
+
+- Wrapper `run --describe` with `PAPERSMITH_DETACH=1` and a nonexistent host Python
+  succeeded synchronously with `model_calls=0`; no host invocation/state was created.
+- The wrapper installed the exact image wheel into the existing `.venv` under its
+  environment lock. A deliberate missing-workspace resume exited 1 before any model
+  work, with an exited foreground supervisor and unchanged process/disk identity.
+- A directly invoked installed detached worker ran a real `create --describe-request`
+  controller. Its own container was briefly paused solely to observe concurrency.
+  Supervisor PID `1890357` retained FD9 after the launcher exited: device `66306`,
+  inode `6323012`. Docker child PID `1890484` held no descriptor for that inode.
+- Owned container `bb20d0e326b4751d11c47605279415f1b755739a7c1a337b63f91fabf75340d9`
+  had worker label `bec11d37b425495da6979dfa3d4e9099` and the current image ID.
+- A real concurrent wrapper invocation exited 2 with `Host environment is in use;
+  no packages were changed.` Installed identity, package inode and mtime were unchanged,
+  and no competitor invocation directory was created.
+- Heartbeat retained the frozen identity while the controller was paused. After
+  unpause the real describe controller and supervisor exited 0, `model_calls=0`,
+  owned-container cleanup reported stopped, and a new nonblocking lock acquisition
+  succeeded only after supervisor exit.
+- The first event-observation attempt missed its pause because the Docker event
+  formatter used the wrong field; that real detached describe still exited 0. The
+  corrected observer used `.Actor.ID` and established the overlap evidence above.
+- Ruff and `git diff --check` passed. No model/Harbor scientific E2E or commits ran.
+
+The fixture containers are stopped and retained; old runs were not touched. The
+managed disposable observation directory is cleaned after recording this evidence.
+The root `.papersmith-environment.lock` is an intentional runtime inode, not a source
+file: do not commit it or unlink it as a cleanup shortcut. Parent scientific review
+and one-then-five acceptance launch remain separate from these lifecycle checks.
+
+## Current Comprehensive Optimization
+
+Base: clean `main` at `267cf81` on Ubuntu. This phase owns PaperSmith source,
+common templates and product docs; installer lifecycle remains with the parallel
+agent (`install.sh`, Docker wrapper/image and `pyproject.toml` are not edited here).
+No commit/push, pytest, paid model call or long Docker E2E is authorized in this
+phase. The parent owns native review and subsequent live launch.
+
+Contract v3 locks full manuscript by default, explicit summary/identifier policies,
+discovery versus fixed canonical papers and coherent replacement/count behavior.
+Materials now require item coverage, per-asset rights/credit and structured tables
+with cell anchors, exact CSV/JSON values and interpretation metadata. Conversion
+uses the public real TeX starter; template proof is distinct from a completed oracle.
+Compile failures retain the successful model response for mechanical resume.
+All reviews share the locked objective. Real Harbor oracle=1/nop=0 remains mandatory
+alongside Sol scientific review, never replaced by template compilation.
+
+Installer integration surface: `papersmith identity --json` returns stable installed
+content identity and separate acceptance protocol; `papersmith acceptance-status
+--state PATH --json` reports request lifecycle snapshots. Reuse the installer agent's
+governed installation/process lifecycle, do not create duplicate environments.
+
+Next live sequence, only when parent launches: build/install the current image;
+create one task; inspect original PDF/TeX availability, genuine starter, structured
+tables and rights/coverage; confirm three reviews and actual oracle/nop receipts;
+then expand the same target to five and verify interrupted checkpoint reuse.
+The delivery artifact index links all these proofs. Keep existing results, volumes
+and history unchanged. Old PNG-table/Markdown-template successes do not establish
+the current scientific contract, and old runs are not force-migrated.
+
+Static verification completed for this phase:
+
+- `.venv/bin/ruff check src/paperbench_harbor/papersmith`: `All checks passed!`
+- `.venv/bin/python -m compileall -q src/paperbench_harbor/papersmith`: exit 0.
+- `uv build --wheel --out-dir /tmp/opencode/papersmith-contract-v3-wheel`: successful.
+- `.venv/bin/python -m zipfile -t /tmp/opencode/papersmith-contract-v3-wheel/paperbench_harbor-0.2.0-py3-none-any.whl`: archive integrity passed.
+- `git diff --check`: exit 0.
+- Source CLI `create --help`, `identity --json` and no-write `--describe --json`
+  checks passed, including fixed canonical DOI normalization and deliberate summary/
+  anonymized selection; request display reports `model_calls: 0`. Invalid argparse
+  input returns structured JSON with `classification: usage` and exit 2.
+
+Wheel SHA256: `0dd0012f5cdcdb4e3bb81c7553e5b1098405920bc4e2c2ee7149a6f65c98f1b2`.
+Source CLI checks explicitly used `PYTHONPATH=src`; the initial existing-venv probe
+loaded the old installed wheel and is NOT evidence for this implementation. No
+environment was overwritten or duplicate runtime installation created. Current-image
+installed CLI checks and real scientific/oracle/nop acceptance remain parent-launched.
+
+Everything below is historical context, not current launch instructions or proof
+of this optimization's acceptance. README and DEV define the current interface.
+
 ## Issue 71 Implementation Handoff
 
 The sections below preserve the stopped issue-70 run history. Their old script

@@ -9,6 +9,7 @@ from pydantic import Field
 from paperbench_harbor.construction.core.state import atomic_json
 
 from .integrity import artifact_hash, contained
+from .operations import OperationalError, run
 from .schema import Record
 
 
@@ -20,6 +21,7 @@ class Paragraph(Record):
 
 
 class Table(Record):
+    source_table: str = Field(description="Exact ID of an audited public structured table; values must match")
     caption: str = Field(min_length=1)
     columns: list[str] = Field(min_length=1)
     rows: list[list[str]] = Field(min_length=1)
@@ -88,6 +90,8 @@ def render(oracle, materials, task, destination):
     references = "\n".join(f.content for f in materials.files if f.role == "references")
     neutral = set(re.findall(r"^\[([A-Za-z0-9:_-]+)\]\s*=", references, re.MULTILINE))
     supplied = set(re.findall(r"@\w+\s*\{\s*([^,\s]+)", references))
+    if not cited <= supplied:
+        raise ValueError("oracle citations must use the actual public BibTeX bibliography")
     if (neutral and not neutral <= cited) or (not neutral and not supplied.intersection(cited)):
         raise ValueError("oracle fails the public source citation contract")
     word_counts = [
@@ -115,6 +119,9 @@ def render(oracle, materials, task, destination):
         r"\end{abstract}",
     ]
     public_files = {f.path: f for f in materials.files}
+    source_tables = {t.id: t for t in materials.tables}
+    used_tables = set()
+    body_start = len(lines)
     for section in oracle.sections:
         lines.append(r"\section{" + tex(section.heading) + "}")
         for paragraph in section.paragraphs:
@@ -124,6 +131,10 @@ def render(oracle, materials, task, destination):
                 + "\n"
             )
         for table in section.tables:
+            original = source_tables.get(table.source_table)
+            if original is None or table.columns != original.columns or table.rows != [[c.value for c in row] for row in original.rows]:
+                raise ValueError("oracle table must preserve exact public source-table columns/cells")
+            used_tables.add(table.source_table)
             if any(len(row) != len(table.columns) for row in table.rows):
                 raise ValueError("oracle table row width mismatch")
             column = r"p{\dimexpr\linewidth/" + str(len(table.columns)) + r"-2\tabcolsep\relax}"
@@ -136,6 +147,8 @@ def render(oracle, materials, task, destination):
             )
             lines.extend(" & ".join(map(tex, row)) + r"\\" for row in table.rows)
             lines.append(r"\end{longtable}")
+            lines.append(tex("Units: " + "; ".join(original.units) + ". " + original.notes
+                             + " Missing values: " + original.missing_values + ". Precision: " + original.precision))
         for figure in section.figures:
             item = public_files.get(figure.public_path)
             if item is None or item.role != "figure":
@@ -159,27 +172,17 @@ def render(oracle, materials, task, destination):
                     r"\end{figure}",
                 ]
             )
-    lines.extend([r"\bibliographystyle{plain}", r"\bibliography{references}", r"\end{document}"])
-    (manuscript / "main.tex").write_text("\n".join(lines) + "\n")
-    (manuscript / "references.bib").write_text(
-        "\n".join(
-            "@misc{"
-            + c.key
-            + ",\n"
-            + ",\n".join(
-                f"  {field} = {{{tex(value)}}}"
-                for field, value in (
-                    ("author", c.author),
-                    ("title", c.title),
-                    ("year", c.year),
-                    ("howpublished", c.publication),
-                )
-            )
-            + "\n}"
-            for c in oracle.bibliography
-        )
-        + "\n"
-    )
+    if used_tables != set(source_tables):
+        raise ValueError("oracle must include every required public structured table")
+    template = task / "environment/materials/template/main.tex"
+    starter = template.read_text()
+    starter = starter.replace(r"\title{Manuscript title}", r"\title{" + tex(oracle.title) + "}")
+    starter = starter.replace(r"\author{Author}", r"\author{PaperSmith synthetic reference baseline}")
+    starter = starter.replace("% Replace with a scientific abstract supported by the supplied materials.", tex(oracle.abstract))
+    starter = starter.replace("% PAPERSMITH_BODY", "\n".join(lines[body_start:]))
+    starter = starter.replace(r"\nocite{*}", "")
+    (manuscript / "main.tex").write_text(starter)
+    shutil.copyfile(task / "environment/materials/template/references.bib", manuscript / "references.bib")
     (destination / "solve.sh").write_text(
         '#!/bin/sh\nset -eu\nbase=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\n'
         'mkdir -p /workspace/submission\ncp -R "$base/manuscript/." /workspace/submission/\n'
@@ -196,6 +199,7 @@ def render(oracle, materials, task, destination):
             "authorship": "execution model, separate offline oracle builder session",
             "instruction_sha256": artifact_hash(task / "instruction.md"),
             "public_materials_sha256": artifact_hash(task / "environment/materials"),
+            "public_template_sha256": artifact_hash(template),
             "manuscript_sha256": artifact_hash(manuscript),
             "requirement_coverage": oracle.requirement_coverage,
             "scientific_approval": "requires independent gate3 comparison with original and requirements",
@@ -203,7 +207,7 @@ def render(oracle, materials, task, destination):
     )
 
 
-def compile_oracle(solution, build):
+def compile_oracle(solution, build, *, template_only=False):
     shutil.copytree(solution / "manuscript", build)
     commands = [
         ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", "main.tex"],
@@ -211,22 +215,24 @@ def compile_oracle(solution, build):
     ]
     commands += [commands[0], commands[0]]
     for command in commands:
-        result = subprocess.run(command, cwd=build, capture_output=True, text=True, check=False)
+        result = run(command, cwd=build, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode:
-            raise ValueError("synthetic oracle compile failed: " + result.stdout[-3000:])
+            atomic_json(solution / "validation.json", {"compiled": False, "classification": "compile",
+                        "command": command, "build": str(build), "returncode": result.returncode,
+                        "scope": "template only" if template_only else "synthetic oracle"})
+            raise OperationalError("compile", "TeX compilation failed; retained source, model response and build logs")
     log = (build / "main.log").read_text()
     if re.search(
         r"Citation[^\n]*undefined|There were undefined (?:references|citations)|No file .*\.bbl",
         log,
     ):
-        raise ValueError("synthetic oracle has unresolved citations/references")
+        raise OperationalError("compile", "TeX has unresolved citations/references; retained build logs")
     shutil.copyfile(build / "main.pdf", solution / "preview.pdf")
-    result = subprocess.run(
+    result = run(
         ["pdftotext", "-layout", str(build / "main.pdf"), str(solution / "preview.txt")],
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
-    if result.returncode or len((solution / "preview.txt").read_text().split()) < 200:
+    if result.returncode or (not template_only and len((solution / "preview.txt").read_text().split()) < 200):
         raise ValueError("synthetic oracle rendered PDF is unreadable")
     atomic_json(
         solution / "validation.json",
@@ -236,5 +242,7 @@ def compile_oracle(solution, build):
             "source_sha256": artifact_hash(solution / "manuscript"),
             "pdf_sha256": artifact_hash(solution / "preview.pdf"),
             "scope": "controller compilation and structural checks; Harbor oracle/nop trials not run",
+            "template_only": template_only,
+            "completed_submission": False,
         },
     )

@@ -1,5 +1,64 @@
 # PaperSmith Developer Workflow
 
+## Current Optimization Contract
+
+Current implementation uses locked scientific contract v3. Default creation means
+full-manuscript writing; summary requires `--task-kind summary`. Use explicit
+`--selection fixed --paper DOI_OR_ARXIV` for exact papers, not prose alone. Fixed
+selection has a canonical allowlist, count bounded by that list, and no automatic
+replacement. Discovery replenishes rejected candidates. `--describe` exposes all
+resolved policies. `--identifiers identified|anonymized` is explicit, with required
+legal attribution retained or a lawful supported substitution/exclusion.
+
+Material schemas include item-level dispositions and cell-anchored structured
+tables. CSV is a mechanical projection of JSON, not independent model output.
+`template/main.tex` is a shipped real public TeX starter with real bibliography;
+conversion compiles it separately into `template-proof/`, before authoring the
+synthetic oracle. That proof is not a completed submission. All three review
+sessions assess the same objective, coverage and asset rights, not a model-narrowed brief.
+
+Conversion retains successful oracle responses on compile failures/interruption;
+new attempts may reuse their immutable receipt only with matching public inputs,
+model and output schema. Compilation artifacts and failed attempts remain intact.
+Conversion-only findings return to conversion, not materials by default. Typed
+operational categories are quota/network/access/schema/content/compile/deps/
+acceptance/scientific/interrupted. Model and compilation execution remain uncapped;
+subprocess grace periods apply only to cancellation.
+
+`status` is a quick checkpoint snapshot; only `validate` rereads authoritative
+hash-bound evidence. Host queue requests record observed/copying/executing and a
+terminal state; Docker archives stream into bounded-memory regular-file extraction.
+Cached oracle/nop jobs bind acceptance protocol, canonical identity, task and agent.
+`papersmith identity --json` exposes `installation_identity` separately from
+`acceptance_protocol` for installer lifecycle reuse. `acceptance-status --state PATH
+--json` exposes the current request without running full evidence validation. An
+idle spool worker is not a broken installation in doctor.
+
+Managed run/resume locks the resolved host environment before package mutation.
+The wrapper passes its exclusive open-file-description lock on FD9 with
+`PAPERSMITH_ENV_LOCK_FD=9`. The installed worker checks the actual descriptor,
+inode and Linux lock metadata; detached launch explicitly passes FD9 to the new
+supervisor, and neither process explicitly unlocks it. The supervisor holds it
+until process exit. Docker/agent subprocesses do not inherit the descriptor.
+Process-start installed identity and acceptance protocol are frozen in supervisor
+records/heartbeats; disk changes are checked against that identity, never adopted
+as a new heartbeat identity. `--describe` bypasses worker setup and environment
+mutation even when `PAPERSMITH_DETACH=1` was requested.
+
+For parent-authorized live acceptance, first create `--count 1`, review the real
+materials and delivered artifacts, then `resume --count 5`. Build/install the current
+package/image first through the installer-owned workflow. The supervisor observes
+the owned controller's immutable Docker image ID and binds it into receipts; local
+non-container execution records no controller image. A tag or old success is not new proof.
+`delivery.json` contains a navigable artifact index for original material, template
+proof, synthetic oracle, all three reviews and real oracle/nop receipts.
+
+This optimization phase runs code/build/static verification only. Native review,
+current-image installed Docker checks, one-then-five model construction, interruption
+recovery and actual Harbor trials remain parent-launched. No prior result, including
+`results/first-correct-accepted`, is silently upgraded to this contract. Preserve old
+workspaces and use a new output path; no forced data migration.
+
 ## Build The Installed Product
 
 ```sh
@@ -147,7 +206,7 @@ are refused before launch. Ordinary installed
 `papersmith create`/`resume` on a Docker host uses the `local` backend directly,
 with controller-owned evidence under `<workspace>/.acceptance`. Explicit backend
 selection is `PAPERSMITH_ACCEPTANCE_BACKEND=local|spool`; absent services block.
-Standalone Docker `doctor` reports an unavailable spool worker when none is active.
+Standalone Docker `doctor` reports an idle spool worker when none is active; it is required at gate3, not installation time.
 
 Public defaults are execution `openai/gpt-5.6-terra` and all review gates
 `openai/gpt-5.6-sol`. Supply `--model` and `--review-model` externally if the
@@ -266,7 +325,7 @@ not scientifically incorrect prose. Existing upstream verifier output is unchang
 - Invalid source/material artifact: targeted repair feedback goes to a fresh
   builder session; no manual approval exchange is needed.
 - Reviewer `repair`: return to proposal for gate 1 or source/license findings,
-  otherwise materials for gates 2/3.
+  conversion for exclusively conversion findings, otherwise materials for gates 2/3.
   Reviewer `reject`: preserve exclusion and discover a replacement paper.
 - Stale evidence: input/output/implementation hashes invalidate affected nodes.
   Never edit checkpoint hashes to force readiness.
@@ -366,8 +425,8 @@ sh docker/e2e.sh status /runs/five-ground-truth-v1 --json --headless
 sh docker/e2e.sh validate /runs/five-ground-truth-v1 --json --headless
 ```
 
-For the current five PLOS papers, replace the selection prompt with an explicit
-request for exactly these five identities (one candidate at a time):
+For the historical five PLOS papers, use `--selection fixed` and repeat `--paper`
+for each of these identities, with `--count 1` followed by `resume --count 5`:
 `10.1371/journal.pone.0297034`, `10.1371/journal.pone.0304214`,
 `10.1371/journal.pone.0274664`, `10.1371/journal.pone.0268440`,
 `10.1371/journal.pone.0305882`. Their publisher metadata exposes PDF acquisition;

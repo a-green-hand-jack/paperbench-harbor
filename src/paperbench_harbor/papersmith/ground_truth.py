@@ -5,7 +5,6 @@ import io
 import json
 import re
 import shutil
-import subprocess
 import tarfile
 import time
 import unicodedata
@@ -19,6 +18,7 @@ from paperbench_harbor.construction.core.state import atomic_json
 from .identity import identifier
 from .integrity import artifact_hash, contained
 from .network import retrieve
+from .operations import run
 
 
 def acquire(sources, proposal, cache=None):
@@ -122,11 +122,11 @@ def acquire(sources, proposal, cache=None):
     else:
         raise ValueError("mandatory publisher paper.pdf unavailable: " + json.dumps(failures))
     pdf = root / "paper.pdf"
-    info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, check=False)
+    info = run(["pdfinfo", str(pdf)], capture_output=True, text=True, check=False)
     pages = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
     if info.returncode or not pages or int(pages[1]) < 1:
         raise ValueError("publisher PDF is invalid or has no pages")
-    extracted = subprocess.run(
+    extracted = run(
         ["pdftotext", "-layout", str(pdf), str(root / "paper.txt")],
         capture_output=True,
         check=False,
